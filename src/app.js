@@ -16,6 +16,7 @@ import { sourceConfigWithSeeds, syncSourceSite } from './core/source-manager.js'
 import { dueSources } from './core/schedule.js';
 import { buildNotifiers } from './notify/index.js';
 import { flushNotifications } from './notify/queue.js';
+import { recoverInterruptedDiscoveryRuns, runDueDiscoveries } from './core/discovery.js';
 
 export function createApp(overrides = {}) {
   loadEnv();
@@ -56,7 +57,7 @@ export function syncSources(app) {
 }
 
 export function recoverInterruptedWork(app) {
-  return recoverInterruptedCrawlRuns(app.db);
+  return recoverInterruptedCrawlRuns(app.db) + recoverInterruptedDiscoveryRuns(app.db);
 }
 
 /**
@@ -100,6 +101,10 @@ export async function runOnce(app, { onlyKey, dueOnly = false, nowMs = Date.now(
     }
   }
 
+  const discovery = await runDueDiscoveries(db, {
+    userAgent: config.http?.userAgent,
+  });
+
   const notifyResult = await flushNotifications(db, app.notifiers);
   logger.info(
     `notifications: ${notifyResult.groups} groups, ${notifyResult.sent} sent, ` +
@@ -107,7 +112,7 @@ export async function runOnce(app, { onlyKey, dueOnly = false, nowMs = Date.now(
   );
 
   cleanupRaw(app);
-  return { ...summary, notify: notifyResult };
+  return { ...summary, discovery, notify: notifyResult };
 }
 
 function parseSourceConfig(db, source) {

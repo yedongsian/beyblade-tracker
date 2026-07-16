@@ -7,6 +7,7 @@ import { parseProductPage } from '../connectors/parse.js';
 import { connectorVersion, createConnector } from '../connectors/index.js';
 import { fetchPublicText } from '../net/public-http.js';
 import { upsertSource } from './store.js';
+import { ensureDiscoverySettings } from './discovery.js';
 
 const now = () => new Date().toISOString();
 
@@ -25,7 +26,9 @@ export function ensureSite(db, domain, displayName = displayNameForDomain(domain
   return db.get('SELECT * FROM sites WHERE id=?', [info.lastInsertRowid]);
 }
 
-export function addSeedUrl(db, { siteId, sourceId = null, originalUrl, origin = 'ui' }) {
+export function addSeedUrl(db, {
+  siteId, sourceId = null, originalUrl, origin = 'ui', purpose = 'monitor',
+}) {
   const canonicalUrl = canonicalizeSeedUrl(originalUrl);
   const ts = now();
   const existing = db.get(
@@ -33,14 +36,18 @@ export function addSeedUrl(db, { siteId, sourceId = null, originalUrl, origin = 
   );
   if (existing) {
     db.run(
-      `UPDATE seed_urls SET source_id=COALESCE(?,source_id),enabled=1,updated_at=? WHERE id=?`,
-      [sourceId, ts, existing.id]
+      `UPDATE seed_urls SET source_id=COALESCE(?,source_id),enabled=1,
+       purpose=CASE WHEN purpose='monitor' OR ?='monitor' THEN 'monitor' ELSE 'discovery' END,
+       updated_at=? WHERE id=?`,
+      [sourceId, purpose, ts, existing.id]
     );
     return { seed: db.get('SELECT * FROM seed_urls WHERE id=?', [existing.id]), created: false };
   }
   const info = db.run(
-    `INSERT INTO seed_urls (site_id,source_id,original_url,canonical_url,origin,enabled,created_at,updated_at)
-     VALUES (?,?,?,?,?,1,?,?)`, [siteId, sourceId, originalUrl, canonicalUrl, origin, ts, ts]
+    `INSERT INTO seed_urls
+      (site_id,source_id,original_url,canonical_url,origin,enabled,created_at,updated_at,purpose)
+     VALUES (?,?,?,?,?,1,?,?,?)`,
+    [siteId, sourceId, originalUrl, canonicalUrl, origin, ts, ts, purpose]
   );
   return { seed: db.get('SELECT * FROM seed_urls WHERE id=?', [info.lastInsertRowid]), created: true };
 }
@@ -64,7 +71,8 @@ export function syncSourceSite(db, source, definition) {
 export function sourceConfigWithSeeds(db, source) {
   const config = parseJson(source.config_json);
   const seedPages = db.all(
-    'SELECT original_url FROM seed_urls WHERE source_id=? AND enabled=1 ORDER BY id', [source.id]
+    `SELECT original_url FROM seed_urls
+     WHERE source_id=? AND enabled=1 AND purpose='monitor' ORDER BY id`, [source.id]
   ).map((row) => row.original_url);
   const pages = [...new Set([...(config.pages || []), ...seedPages])];
   return { url: source.url, ...config, ...(pages.length ? { pages } : {}) };
@@ -73,7 +81,7 @@ export function sourceConfigWithSeeds(db, source) {
 export function listManagedSources(db) {
   return db.all(`
     SELECT s.*,si.registrable_domain,si.display_name AS site_name,si.status AS site_status,
-      (SELECT COUNT(*) FROM seed_urls u WHERE u.source_id=s.id AND u.enabled=1) AS seed_count,
+      (SELECT COUNT(*) FROM seed_urls u WHERE u.source_id=s.id AND u.enabled=1 AND u.purpose='monitor') AS seed_count,
       (SELECT COUNT(*) FROM offers o WHERE o.source_id=s.id) AS offer_count
     FROM sources s LEFT JOIN sites si ON si.id=s.site_id
     ORDER BY s.enabled DESC,s.name COLLATE NOCASE
@@ -137,7 +145,7 @@ export async function previewSourceUrl(db, input, options = {}) {
     const useful = listing && (listing.title || listing.price != null || listing.availabilityText || listing.availabilityRaw);
     if (!useful) {
       result.connection = { ok: true, message: '網站可以連線，但這一頁尚未辨識到商品資料。' };
-      result.canConfirm = Boolean(site);
+      result.canConfirm = true;
       return result;
     }
     const normalized = { ...listing, title: normalizeWhitespace(listing.title) };
@@ -176,6 +184,7 @@ export function confirmSource(db, payload) {
   const domain = registrableDomain(canonicalUrl);
   let site = db.get('SELECT * FROM sites WHERE registrable_domain=?', [domain]);
   site ||= ensureSite(db, domain, payload.name || displayNameForDomain(domain));
+  const discoveryOnly = payload.discoveryOnly === true;
   let source = db.get('SELECT * FROM sources WHERE site_id=? ORDER BY enabled DESC,id LIMIT 1', [site.id]);
   let sourceCreated = false;
   if (!source) {
@@ -188,18 +197,24 @@ export function confirmSource(db, payload) {
       managedBy: 'ui',
       siteId: site.id,
       url: `https://${domain}`,
-      enabled: true,
+      enabled: !discoveryOnly,
       checkIntervalSeconds: Number(payload.checkIntervalSeconds || 3600),
-      config: { pages: [originalUrl] },
+      config: { pages: discoveryOnly ? [] : [originalUrl] },
     });
     sourceCreated = true;
-  } else if (!source.enabled) {
+  } else if (!source.enabled && !discoveryOnly) {
     db.run('UPDATE sources SET enabled=1,updated_at=? WHERE id=?', [now(), source.id]);
     source = db.get('SELECT * FROM sources WHERE id=?', [source.id]);
   }
-  const seedResult = addSeedUrl(db, { siteId: site.id, sourceId: source.id, originalUrl, origin: 'ui' });
+  const seedResult = addSeedUrl(db, {
+    siteId: site.id, sourceId: source.id, originalUrl, origin: 'ui',
+    purpose: discoveryOnly ? 'discovery' : 'monitor',
+  });
+  ensureDiscoverySettings(db, site.id);
   db.run("UPDATE sites SET status='active',updated_at=? WHERE id=?", [now(), site.id]);
-  return { site, source, seed: seedResult.seed, sourceCreated, seedCreated: seedResult.created };
+  return {
+    site, source, seed: seedResult.seed, sourceCreated, seedCreated: seedResult.created, discoveryOnly,
+  };
 }
 
 export function setSourceEnabled(db, sourceId, enabled) {

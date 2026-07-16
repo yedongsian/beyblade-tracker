@@ -20,6 +20,8 @@
 - 通知先進入**彙整佇列**，同商品多商店結果合併成一則摘要。
 - **Console 通知器**永遠可用；**Telegram / Discord** 為可選，未設定憑證時安靜跳過、不崩潰。
 - **可操作的 Local Web App**：首次導覽、網址預覽、來源新增、連線測試與安全停用。
+- **受控站內探索**：遵守 robots、同網域與資源預算，優先 Sitemap／公開搜尋，再有限追蹤相關連結。
+- **Review Queue**：候選商品先顯示信心與列入原因，人工核准後才建立 Product／Offer 和持續監控。
 - `/health` 健康檢查端點。
 - 所有網路要求具備 timeout、User-Agent、網域限速、有限重試與指數退避。
 - 日誌會遮蔽疑似密鑰；資料庫不保存 Token／Webhook。
@@ -102,6 +104,7 @@ Remove-Item Env:\FIXTURE_FRAME
 - `/products` 商品清單
 - `/offers` 目前可購買刊登（現貨優先、依價格排序）
 - `/events` 最近事件
+- `/review` 探索候選的核准、排除、稍後處理與批次操作
 - `/sources` 貼網址預覽、加入商店、連線測試、啟用／停用與來源健康
 - `/health` JSON 健康檢查端點（回傳 `ok` 或 `degraded`）
 
@@ -109,8 +112,13 @@ Remove-Item Env:\FIXTURE_FRAME
 registrable domain、既有商店警告、單頁候選商品及請求預算；只有按下「確認加入」才會寫入
 正式來源。相同商店只新增 `SeedUrl`，不建立重複 `Site`。停用來源會保留商品、事件及歷史。
 
-任意網址預覽只允許公開 HTTP(S)，會攔截本機／內網位址、重新導向及超大下載；Phase 1
-只測試使用者貼入的一頁，不會擴大成全站探索。
+任意網址預覽只允許公開 HTTP(S)，會攔截本機／內網位址、重新導向及超大下載。若貼入首頁或
+分類頁，確認後會建立探索入口：預設每站最多 100 頁、深度 2、5 分鐘、50 MB，請求至少間隔
+1 秒。探索會先讀 robots 與 Sitemap，再檢查公開搜尋、分類／分頁及高相關連結；不跨 Site，
+網站拒絕或 Recipe 失效時停止。候選必須在 `/review` 核准後才進入商品監控。
+
+來源管理的「探索安全預算與 Recipe」可調整頁數、深度、時間、流量、24 小時預設探索間隔及
+網址包含／排除詞。失效 Recipe 會暫停自動探索，避免對網站盲目重試；調整設定後可手動再試。
 
 ## 設定來源 (`config/sources.json`)
 
@@ -182,7 +190,7 @@ Token／Webhook 只存在於 `.env`，**不會**寫入資料庫或日誌。
 
 ## 資料庫備份與還原
 
-資料庫預設在 `data\tracker.db`，目前 schema version 為 3。程式啟動正式 DB 前會先檢查
+資料庫預設在 `data\tracker.db`，新版程式 schema version 為 4。程式啟動正式 DB 前會先檢查
 `backups\`；預設每 24 小時建立一次交易一致的 `auto-*.db`，保留 30 天且最多 30 份。
 即使 SQLite 正使用 WAL，備份仍會包含已提交的 WAL 資料。
 
@@ -221,6 +229,7 @@ src/
   maintenance/  一致性備份、保留週期與安全還原
   connectors/   base、fixture、jsonld、browser 與 HTML/JSON-LD 解析
   core/         normalize、classify、store、events、pipeline、per-source schedule
+                discovery、Crawl Frontier、Recipe 與 Review Queue
   notify/       console/telegram/discord 通知器與彙整佇列
   web/          可操作 Local Web App、來源管理 API 與 /health
   util/         logger（會遮蔽密鑰）、env
@@ -247,7 +256,8 @@ archive/demo/   已歸檔的歷史 Demo 資料
 
 `npm test` 涵蓋：文字/網址/價格/型號正規化、JSON-LD 與 CSS 解析、可購買判定與排除規則、
 商品合併、狀態轉換、去重與冷卻、來源隔離、密鑰不落地、通知彙整、migration、崩潰復原、
-設定 validation、Connector 契約，以及跨資料夾備份還原。
+設定 validation、Connector 契約、robots／Sitemap／Crawl Frontier、Review Queue，以及跨資料夾
+備份還原。目前為 73 項 Node 測試；Web smoke test 涵蓋 8 條管理路由。
 
 ## 明確不包含於第一版
 

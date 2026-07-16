@@ -1,6 +1,6 @@
 # Beyblade Tracker 未來架構與 Roadmap（討論草案）
 
-> 狀態：Phase 0、Phase 1 已完成；Phase 2 待確認
+> 狀態：Phase 0、Phase 1、Phase 2 已完成；待重啟正式服務進行 Phase 2 實站驗收
 > 更新日期：2026-07-16
 > 原則：先討論與縮小範圍；每一階段分開驗收，不一次重寫全部系統。
 
@@ -10,7 +10,9 @@
 - **Phase 1 已完成：**首次導覽、來源網址安全預覽、Site／SeedUrl 去重、確認加入、測試、停用／重新啟用及手機／無障礙 UI。
 - 完成基準 commit：`689c181f94076a6146e1e1409e1c978dd6d6067b`（`feat: complete phase 0 and phase 1`）。
 - 驗收基準：schema version 3、62/62 項 Node 測試、7/7 條 Web 路由煙霧測試、正式 DB 完整性通過，真實 Yodobashi 預覽及來源測試成功。
-- **下一個起點是 Phase 2。**除非發現可重現的回歸問題或使用者明確要求，後續協作者不得重新實作 Phase 0 或 Phase 1。
+- **Phase 2 已完成實作：**schema version 4、受控 Crawl Frontier、robots／Sitemap／公開搜尋與有限連結探索、每站安全預算、Recipe 微調、Review Queue 及核准後監控。
+- Phase 2 離線驗收使用 Takara Tomy Mall BEYBLADE X fixture；73/73 項 Node 測試與 8/8 條 Web 路由煙霧測試通過。正式背景服務尚未重啟，實站驗收需在重啟後進行。
+- **下一個規劃起點是 Phase 3。**除非發現可重現的回歸問題或使用者明確要求，後續協作者不得重新實作 Phase 0、Phase 1 或 Phase 2。
 
 ## 1. 目標使用者與產品原則
 
@@ -144,23 +146,23 @@ URL 正規化  Sitemap／搜尋／有限連結探索   已知 Offer 分級排程
 
 驗收：沒有程式經驗的測試者可以只靠 UI 加入一個已支援網站並看見第一個結果。
 
-### Phase 2：受控的全站商品發現
+### Phase 2：受控的全站商品發現（2026-07-16 完成實作，待實站驗收）
 
 目標：從使用者提供的任一頁面，安全地找到同網站的 Beyblade 候選商品。
 
-- [ ] 只允許同 Site 範圍探索，防止連結跳到整個外部網路。
-- [ ] 優先讀取 `robots.txt`、Sitemap／Sitemap index 與網站公開搜尋。
-- [ ] 偵測分類頁、站內搜尋頁、分頁與商品頁樣式。
-- [ ] 建立 Crawl Frontier：URL 指紋、已訪問集合、優先級、深度與重試。
-- [ ] 每站設定頁數、時間、頻寬、瀏覽器頁數與並行數預算。
-- [ ] 建立 Beyblade 候選分類規則：品牌、系列、型號、關鍵字與排除詞。
-- [ ] 候選商品先進 Review Queue，可批次確認／排除。
-- [ ] 確認後才建立正式 Product／Offer 與持續監控工作。
-- [ ] 建立網站 Recipe 自動建議與人工微調機制。
-- [ ] Recipe 失效時停止擴大掃描並提示修復，不盲目重試。
-- [ ] 保存發現來源與原因，讓使用者知道商品為何被列入。
+- [x] 只允許同 Site 範圍探索，防止連結跳到整個外部網路。
+- [x] 優先讀取 `robots.txt`、Sitemap／Sitemap index 與網站公開搜尋。
+- [x] 偵測分類頁、站內搜尋頁、分頁與商品頁樣式。
+- [x] 建立 Crawl Frontier：URL 指紋、已訪問集合、優先級、深度與重試。
+- [x] 每站設定頁數、時間、頻寬、瀏覽器頁數與並行數預算。
+- [x] 建立 Beyblade 候選分類規則：品牌、系列、型號、關鍵字與排除詞。
+- [x] 候選商品先進 Review Queue，可批次確認／排除／稍後處理。
+- [x] 確認後才建立正式 Product／Offer 與持續監控工作。
+- [x] 建立網站 Recipe 自動建議與人工微調機制。
+- [x] Recipe 失效時停止擴大掃描並提示修復，排程不盲目重試。
+- [x] 保存發現來源、信心分數與原因，讓使用者知道商品為何被列入。
 
-驗收：對測試商店輸入一個商品頁或首頁，能在預算內找出大部分已知 Beyblade 頁，且不離開該商店網域。
+驗收：Takara Tomy Mall BEYBLADE X 離線 fixture 可由分類頁、Sitemap 找到 UX-20，且不離開該商店網域；正式網站待服務重啟後驗收。
 
 ### Phase 3：多語言與商品辨識
 
@@ -297,10 +299,10 @@ URL 正規化  Sitemap／搜尋／有限連結探索   已知 Offer 分級排程
 
 ## 8. 建議的下一次討論順序
 
-1. 確認 Phase 2 的探索安全預算：最大頁數、深度、同網域規則、逾時與停止條件。
-2. 定義 Review Queue 的候選欄位、信心分數與使用者核准／忽略流程。
-3. 以 Takara Tomy Mall 分類頁定義第一個 Phase 2 驗收樣本與預期探索範圍。
-4. 定義商品發現、一般監控及未來 Watchlist 監控的三種掃描頻率。
-5. X `@bey_sokuhou` 屬 Phase 6，API 成本決策不阻擋 Phase 2；到該階段前再確認。
+1. 重啟服務，確認正式 DB 由 schema version 3 安全升級至 4，並檢查 `/health`。
+2. 以 Takara Tomy Mall 分類頁執行一次正式探索，檢查 robots、預算與候選數量。
+3. 在 Review Queue 核准一個候選，確認建立 Product／Offer 且只加入商品頁監控。
+4. 實站驗收完成後，再共同確認 Phase 3 多語言與辨識詞典的範圍。
+5. X `@bey_sokuhou` 仍屬 Phase 6，API 成本決策不影響目前驗收。
 
-Phase 0 與 Phase 1 已由使用者明確授權並於 2026-07-16 完成；Phase 2 之後仍需依各階段範圍確認後開始。
+Phase 0、Phase 1 與 Phase 2 已由使用者明確授權並於 2026-07-16 完成實作；Phase 2 正式實站驗收安排在下一次重啟後進行。

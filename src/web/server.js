@@ -5,8 +5,12 @@ import {
   confirmSource, listManagedSources, previewSourceUrl, readSettings,
   saveOnboardingSettings, setSourceEnabled, testManagedSource,
 } from '../core/source-manager.js';
+import {
+  listDiscoverySites, runSiteDiscovery, updateDiscoveryConfiguration,
+} from '../core/discovery.js';
+import { listCandidates, reviewCandidate, reviewCandidates } from '../core/review-queue.js';
 import { assertPublicUrl } from '../net/public-http.js';
-import { esc, layout, sourcesScript, table } from './ui.js';
+import { esc, layout, reviewQueueScript, sourcesScript, table } from './ui.js';
 
 function stateBadge(state) {
   const kind = ['in_stock'].includes(state) ? 'good' :
@@ -26,6 +30,7 @@ export function healthData(db) {
       JOIN sources s ON s.id=o.source_id WHERE o.purchasable=1 AND s.enabled=1`).c,
     events: db.get('SELECT COUNT(*) c FROM events').c,
     pendingNotifications: db.get('SELECT COUNT(*) c FROM events WHERE notified=0').c,
+    pendingCandidates: db.get("SELECT COUNT(*) c FROM product_candidates WHERE status='pending'").c,
   };
   return {
     status: unhealthy.length ? 'degraded' : 'ok',
@@ -99,18 +104,57 @@ function eventsPage(db, base) {
 
 function sourcesPage(db, base) {
   const rows = listManagedSources(db);
-  const cards = rows.map((source) => `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : ''}">${source.enabled ? '已啟用' : '已停用'}</span></h3>
-    <div class="meta"><span>${esc(source.registrable_domain || source.url || '未指定網域')}</span><span>${esc(source.connector)} v${esc(source.connector_version)}</span><span>${source.seed_count} 個種子</span><span>${source.offer_count} 個 Offer</span><span>${source.managed_by === 'ui' ? '由介面管理' : '內建來源'}</span></div>
-    ${source.last_error ? `<p class="status error">${esc(source.last_error)}</p>` : ''}</div><div class="actions">
-    <button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">測試連線</button>
-    <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${source.enabled ? '停用並保留歷史' : '重新啟用'}</button></div></article>`).join('');
-  const body = `<div class="section-head"><div><p class="eyebrow">來源管理</p><h1>加入商店網址</h1><p>先測試一頁並預覽；確認後才會加入監控。</p></div></div><div class="grid two-col"><section class="card"><h2>貼上網址</h2>
+  const discoverySites = new Map(listDiscoverySites(db).map((site) => [Number(site.id), site]));
+  const cards = rows.map((source) => {
+    const discovery = discoverySites.get(Number(source.site_id));
+    const hasMonitorPages = Number(source.seed_count) > 0;
+    let recipe = {};
+    try { recipe = discovery?.recipe_config_json ? JSON.parse(discovery.recipe_config_json) : {}; } catch { recipe = {}; }
+    const settingPanel = discovery ? `<details style="margin-top:.75rem"><summary>探索安全預算與 Recipe</summary><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-top:.75rem" data-discovery-settings="${source.site_id}">
+      <div><label for="max-pages-${source.id}">最多頁數</label><input id="max-pages-${source.id}" data-setting="maxPages" type="number" min="1" max="500" value="${esc(discovery.max_pages || 100)}"></div>
+      <div><label for="max-depth-${source.id}">最大深度</label><input id="max-depth-${source.id}" data-setting="maxDepth" type="number" min="0" max="5" value="${esc(discovery.max_depth ?? 2)}"></div>
+      <div><label for="max-seconds-${source.id}">最長秒數</label><input id="max-seconds-${source.id}" data-setting="maxSeconds" type="number" min="10" max="1800" value="${esc(discovery.max_seconds || 300)}"></div>
+      <div><label for="max-mb-${source.id}">最多 MB</label><input id="max-mb-${source.id}" data-setting="maxMb" type="number" min="1" max="250" value="${esc(Math.round(Number(discovery.max_bytes || 52428800) / 1048576))}"></div>
+      <div><label for="interval-${source.id}">探索間隔（小時）</label><input id="interval-${source.id}" data-setting="intervalHours" type="number" min="1" max="168" value="${esc(Math.round(Number(discovery.interval_seconds || 86400) / 3600))}"></div>
+      <div><label for="include-${source.id}">網址包含詞</label><input id="include-${source.id}" data-setting="includeTerms" value="${esc((recipe.includeTerms || []).join(', '))}" placeholder="beyblade, beyX"></div>
+      <div><label for="exclude-${source.id}">網址排除詞</label><input id="exclude-${source.id}" data-setting="excludeTerms" value="${esc((recipe.excludeTerms || []).join(', '))}" placeholder="used, parts"></div>
+      <div class="actions" style="align-items:end"><button class="btn secondary" type="button" data-save-discovery="${source.site_id}">儲存探索設定</button></div>
+    </div></details>` : '';
+    return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : discovery && !hasMonitorPages ? 'warn' : ''}">${source.enabled ? '已啟用' : discovery && !hasMonitorPages ? '探索來源' : '已停用'}</span></h3>
+    <div class="meta"><span>${esc(source.registrable_domain || source.url || '未指定網域')}</span><span>${esc(source.connector)} v${esc(source.connector_version)}</span><span>${source.seed_count} 個監控網址</span><span>${source.offer_count} 個 Offer</span><span>${source.managed_by === 'ui' ? '由介面管理' : '內建來源'}</span>${source.site_id ? `<span>${esc(discoverySites.get(Number(source.site_id))?.pending_candidates || 0)} 個待審核</span>` : ''}</div>
+    ${source.last_error ? `<p class="status error">${esc(source.last_error)}</p>` : ''}${discovery?.recipe_error ? `<p class="status error">Recipe：${esc(discovery.recipe_error)}</p>` : ''}${settingPanel}</div><div class="actions">
+    ${source.site_id ? `<button class="btn secondary" type="button" data-discovery-site="${source.site_id}">探索商品</button>` : ''}
+    ${hasMonitorPages ? `<button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">測試連線</button>
+    <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${source.enabled ? '停用並保留歷史' : '重新啟用'}</button>` : ''}</div></article>`;
+  }).join('');
+  const body = `<div class="section-head"><div><p class="eyebrow">來源管理</p><h1>加入商店網址</h1><p>商品頁可直接加入監控；首頁或分類頁會先受控探索，再由你核准候選。</p></div></div><div class="grid two-col"><section class="card"><h2>貼上網址</h2>
     <form id="add-source-form" class="inline-form"><div><label for="source-url">商店或商品頁網址</label><input id="source-url" name="url" type="url" inputmode="url" autocomplete="url" required placeholder="https://store.example/product"><p class="hint">只允許公開 HTTP(S) 網址，不會連線到本機或內部網路。</p></div><button class="btn" type="submit">先預覽</button></form>
     <p id="source-status" class="status" role="status" aria-live="polite"></p><div id="source-preview" class="preview" hidden></div></section>
-    <aside class="card"><h2>加入流程</h2><ol><li>辨識並標準化商店網域。</li><li>只測試你貼上的這一頁。</li><li>顯示候選商品、錯誤與資源上限。</li><li>你確認後才加入排程。</li></ol><div class="notice">相同主網域已存在時，只會加入新的種子網址。</div></aside></div>
+    <aside class="card"><h2>加入流程</h2><ol><li>辨識並標準化商店網域。</li><li>先安全預覽你貼上的一頁。</li><li>探索遵守 robots、同網域與資源預算。</li><li>候選進入審核佇列，核准後才監控。</li></ol><div class="notice">預設每站最多 100 頁、深度 2、5 分鐘與 50 MB；網站拒絕時立即停止。</div></aside></div>
     <section id="source-list" style="margin-top:1.5rem"><div class="section-head"><div><h2>目前來源</h2><p>停用來源會保留商品、事件與價格歷史。</p></div></div><p id="source-action-status" class="status" role="status" aria-live="polite"></p><div class="source-list">${cards || '<div class="card muted">目前沒有來源。</div>'}</div></section>`;
   return layout(pageOptions(db, {
     ...base, title: '來源管理', current: '/sources', body, extraScript: sourcesScript(),
+  }));
+}
+
+function reviewPage(db, base, status = 'pending') {
+  const candidates = listCandidates(db, { status });
+  const rows = candidates.map((candidate) => [
+    `<input name="candidate" type="checkbox" value="${candidate.id}" aria-label="選擇 ${esc(candidate.title)}">`,
+    `<strong>${esc(candidate.title)}</strong>${candidate.model ? `<br><span class="muted">${esc(candidate.model)}</span>` : ''}`,
+    `${esc(candidate.site_name)}<br><span class="muted">${esc(candidate.discovery_method)}</span>`,
+    `${Math.round(Number(candidate.confidence) * 100)}%<br><span class="muted">${candidate.reasons.map(esc).join('、') || '未提供原因'}</span>`,
+    candidate.price == null ? '—' : esc(`${candidate.price} ${candidate.currency || ''}`),
+    `<a href="${esc(candidate.canonical_url)}" target="_blank" rel="noopener noreferrer">查看原頁</a>`,
+    `<div class="actions"><button class="btn" type="button" data-single-review="approve" data-candidate-id="${candidate.id}">核准</button><button class="btn secondary" type="button" data-single-review="defer" data-candidate-id="${candidate.id}">稍後</button><button class="btn danger" type="button" data-single-review="exclude" data-candidate-id="${candidate.id}">排除</button></div>`,
+  ]);
+  const body = `<div class="section-head"><div><p class="eyebrow">人工確認</p><h1>候選商品審核</h1><p>自動探索只提出候選；只有核准後才建立 Product／Offer 並加入持續監控。</p></div><a class="btn secondary" href="/sources">回來源管理</a></div>
+    <div class="actions" style="justify-content:flex-start;margin-bottom:1rem"><a href="/review?status=pending">待審核</a><a href="/review?status=deferred">稍後處理</a><a href="/review?status=approved">已核准</a><a href="/review?status=excluded">已排除</a></div>
+    <section class="card"><div class="actions" style="justify-content:flex-start;margin-bottom:1rem"><label style="margin:0"><input id="select-all" type="checkbox" style="width:auto"> 全選</label><button class="btn" type="button" data-review-action="approve">批次核准</button><button class="btn secondary" type="button" data-review-action="defer">稍後處理</button><button class="btn danger" type="button" data-review-action="exclude">批次排除</button></div><p id="review-status" class="status" role="status" aria-live="polite"></p>${table(
+      ['選取', '商品', '商店／來源', '信心與原因', '價格', '原始頁面', '操作'], rows
+    )}</section>`;
+  return layout(pageOptions(db, {
+    ...base, title: '候選審核', current: '/review', body, extraScript: reviewQueueScript(),
   }));
 }
 
@@ -158,10 +202,12 @@ export function createWebServer(db, options = {}) {
       else if (req.method === 'GET' && url.pathname === '/products') out = response(productsPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/offers') out = response(offersPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/events') out = response(eventsPage(db, base));
+      else if (req.method === 'GET' && url.pathname === '/review') out = response(reviewPage(db, base, url.searchParams.get('status') || 'pending'));
       else if (req.method === 'GET' && url.pathname === '/sources') out = response(sourcesPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/health') out = json(healthData(db));
       else if (req.method === 'GET' && url.pathname === '/api/sources') out = json({ sources: listManagedSources(db) });
       else if (req.method === 'GET' && url.pathname === '/api/settings') out = json(readSettings(db));
+      else if (req.method === 'GET' && url.pathname === '/api/candidates') out = json({ candidates: listCandidates(db, { status: url.searchParams.get('status') || 'pending' }) });
       else if (req.method === 'POST' && url.pathname === '/api/settings') {
         out = json({ settings: saveOnboardingSettings(db, await readJson(req)) });
       } else if (req.method === 'POST' && url.pathname === '/api/sources/preview') {
@@ -175,22 +221,57 @@ export function createWebServer(db, options = {}) {
         const previewUrl = new URL(body.url);
         await assertPublicUrl(previewUrl);
         const result = confirmSource(db, body);
-        out = json({ ...result, message: result.sourceCreated ? '商店已加入，將在下一輪開始監控。' : result.seedCreated ? '已把這一頁加入既有商店。' : '這個網址已經在商店中。' }, 201);
+        const message = result.discoveryOnly
+          ? '探索入口已加入；可立即按「探索商品」，之後預設每 24 小時執行一次。'
+          : result.sourceCreated ? '商店已加入，將在下一輪開始監控。'
+            : result.seedCreated ? '已把這一頁加入既有商店。' : '這個網址已經在商店中。';
+        out = json({ ...result, message }, 201);
       } else {
-        const match = url.pathname.match(/^\/api\/sources\/(\d+)(?:\/(test))?$/);
-        if (match && req.method === 'POST' && match[2] === 'test') {
+        const discoveryMatch = url.pathname.match(/^\/api\/sites\/(\d+)\/discover$/);
+        const discoverySettingsMatch = url.pathname.match(/^\/api\/sites\/(\d+)\/discovery-settings$/);
+        const candidateMatch = url.pathname.match(/^\/api\/candidates\/(\d+)\/review$/);
+        if (discoveryMatch && req.method === 'POST') {
+          const body = await readJson(req);
+          const run = await runSiteDiscovery(db, Number(discoveryMatch[1]), {
+            budget: body.budget || {}, userAgent: appConfig.http?.userAgent,
+            ...(options.discoveryDeps || {}),
+          });
+          out = json({ run });
+        } else if (discoverySettingsMatch && req.method === 'PATCH') {
+          const body = await readJson(req);
+          out = json(updateDiscoveryConfiguration(db, Number(discoverySettingsMatch[1]), body));
+        } else if (candidateMatch && req.method === 'POST') {
+          const body = await readJson(req);
+          const candidate = reviewCandidate(db, Number(candidateMatch[1]), body.action, {
+            note: body.note, preorderIsPurchasable: appConfig.preorderIsPurchasable,
+            eventCooldownSeconds: appConfig.eventCooldownSeconds,
+            priceChangeThreshold: appConfig.priceChangeThreshold,
+          });
+          out = json({ candidate });
+        } else if (url.pathname === '/api/candidates/review' && req.method === 'POST') {
+          const body = await readJson(req);
+          const candidates = reviewCandidates(db, body.ids, body.action, {
+            note: body.note, preorderIsPurchasable: appConfig.preorderIsPurchasable,
+            eventCooldownSeconds: appConfig.eventCooldownSeconds,
+            priceChangeThreshold: appConfig.priceChangeThreshold,
+          });
+          out = json({ candidates });
+        } else {
+          const match = url.pathname.match(/^\/api\/sources\/(\d+)(?:\/(test))?$/);
+          if (match && req.method === 'POST' && match[2] === 'test') {
           out = json(await testManagedSource(db, Number(match[1]), {
             httpDeps: {
               http: appConfig.http || {},
               debug: { saveHtml: false, dir: appConfig.debugDir },
             },
           }));
-        } else if (match && ['PATCH', 'DELETE'].includes(req.method)) {
+          } else if (match && ['PATCH', 'DELETE'].includes(req.method)) {
           const body = req.method === 'PATCH' ? await readJson(req) : { enabled: false };
           const enabled = req.method === 'PATCH' ? body.enabled === true : false;
           setSourceEnabled(db, Number(match[1]), enabled);
           out = json({ message: enabled ? '來源已重新啟用。' : '來源已停用，歷史資料完整保留。' });
-        } else out = response('找不到頁面。', 'text/plain; charset=utf-8', 404);
+          } else out = response('找不到頁面。', 'text/plain; charset=utf-8', 404);
+        }
       }
       res.writeHead(out.status, {
         'Content-Type': out.type,

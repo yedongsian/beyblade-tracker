@@ -133,6 +133,25 @@
 - [x] 鍵盤焦點、跳到主要內容、live region、mobile responsive 與 reduced motion。
 - [x] 62/62 項自動化測試、7/7 Web 路由煙霧測試及真實 Yodobashi 預覽／連線測試通過。
 
+## Roadmap Phase 2：受控站內探索與 Review Queue（2026-07-16）
+
+- [x] schema version 4：探索設定、Recipe、Discovery Run、Crawl Frontier 與 Product Candidate。
+- [x] `SeedUrl` 區分 discovery／monitor，分類頁不會誤進 Offer 監控。
+- [x] 同 Site 安全邊界、redirect 重驗證、robots Allow／Disallow 與 Sitemap／Sitemap index。
+- [x] 公開搜尋表單、分類／分頁、商品網址樣式及有限深度連結探索。
+- [x] URL 指紋去重、持久化 Frontier、優先級、深度、嘗試與錯誤狀態。
+- [x] 預設 100 頁、深度 2、300 秒、50 MB、瀏覽器 3 頁、並行上限 2、間隔 1 秒。
+- [x] 品牌、型號、多語關鍵字與排除詞候選分類，保存信心分數與列入原因。
+- [x] `/review` 單筆／批次核准、排除、稍後處理；只有核准才建立 Product／Offer 與監控。
+- [x] 每站探索安全預算、24 小時排程、Recipe 包含／排除詞及 CSS selector 微調。
+- [x] 網站拒絕、預算耗盡、Recipe 失效停掃；失效 Recipe 不由排程盲目重試。
+- [x] 異常關閉時復原未完成的 Discovery Run 與 fetching Frontier。
+- [x] Takara Tomy Mall BEYBLADE X 離線 fixture 驗收通過。
+- [x] 正式 schema 3 備份的隔離副本成功升級至 schema 4，完整性 `ok` 且既有資料筆數不遺失。
+- [x] 73/73 項 Node 自動化測試與 8/8 條 Web 路由煙霧測試通過。
+- [ ] 重啟正式背景服務，驗證 schema version 3 → 4 migration 與正式 DB 完整性。
+- [ ] 使用 Takara Tomy Mall 真實分類頁完成探索及 Review Queue 核准驗收。
+
 ## 明確不包含於第一版
 
 - 自動購買、登入商店或操作購物車。

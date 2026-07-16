@@ -13,6 +13,7 @@ const checks = [
   ['/products', 200, /商品/],
   ['/offers', 200, /商店刊登/],
   ['/events', 200, /事件/],
+  ['/review', 200, /候選商品審核/],
   ['/sources', 200, /來源管理/],
   ['/health', 200, /"status"/],
   ['/nope', 404, /找不到頁面/],

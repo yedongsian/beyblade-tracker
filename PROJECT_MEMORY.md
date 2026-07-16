@@ -1,7 +1,7 @@
 # Beyblade Tracker 專案記憶與交接文件
 
 > 更新日期：2026-07-16（Asia/Taipei）
-> 專案階段：第一版 MVP 已可運行；Roadmap Phase 0、Phase 1 已完成
+> 專案階段：第一版 MVP 已可運行；Roadmap Phase 0、Phase 1、Phase 2 已完成實作
 > 專案位置：`C:\Users\yedon\OneDrive\桌面\Beyblade`
 
 ## 1. 這份文件的用途
@@ -18,17 +18,20 @@
 
 ### 2026-07-16 完成基線（後續協作者必讀）
 
-以下工作已完成並驗收，**不要重新設計、重建或從 Phase 0 開始**：
+以下工作已完成，**不要重新設計、重建或從 Phase 0 開始**：
 
 - Phase 0：migration、備份／還原、執行資料分離、異常復原、設定驗證、Connector 契約測試及 Demo 歸檔。
 - Phase 1：首次導覽、來源網址安全預覽、Site／SeedUrl 去重、確認加入、測試、停用／重新啟用及手機／無障礙 UI。
+- Phase 2：同 Site 受控探索、robots／Sitemap／公開搜尋／有限連結、持久化 Crawl Frontier、每站安全預算、Recipe、Review Queue 與核准後正式監控。
 - Git 初始完成基準：`689c181f94076a6146e1e1409e1c978dd6d6067b`（`feat: complete phase 0 and phase 1`）。
 - 正式資料庫已升級至 schema version 3，保留 3 個真實來源與既有 UX-20 歷史；完整性檢查通過且沒有 orphan foreign key。
 - 驗收結果：62/62 項 Node 測試、7/7 條 Web 路由煙霧測試均通過，真實 Yodobashi 預覽及來源測試成功。
 - Local Web App 位於 `http://127.0.0.1:8787`，完成時 `/health` 回傳 `ok`。
 
-下一個尚未實作的起點是 **Phase 2：安全的站內商品探索與 Review Queue**。除非出現可重現的
-回歸問題或使用者明確要求變更，後續工作不得重做 Phase 0 或 Phase 1。
+Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node 測試與 8 條 Web 路由煙霧
+測試均通過。正式背景服務仍是本輪修改前啟動的程序，尚未套用 schema version 4；依使用者決定，
+下一次共同重啟後再做正式 DB migration 與 Takara Tomy Mall 實站驗收。除非出現可重現的回歸問題
+或使用者明確要求，後續工作不得重做 Phase 0、Phase 1 或 Phase 2。
 
 ## 2. 產品願景
 
@@ -78,8 +81,10 @@
 - 單一來源失敗不會中止其他來源。
 - Console 通知永遠可用；Telegram Bot 與 Discord Webhook 為選用。
 - Local Web App：`http://127.0.0.1:8787`，可預覽、加入、測試、停用及重新啟用來源。
+- 來源首頁／分類頁可啟動受控探索；候選先進 `/review`，核准後才建立 Product／Offer 與監控網址。
 - `/health` 提供服務與來源健康資訊。
 - 62 項 Node 自動化測試已通過，另有 7 條 Web 路由煙霧測試。
+- Phase 2 完成後為 73 項 Node 自動化測試與 8 條 Web 路由煙霧測試。
 
 ### Phase 0 已完成（2026-07-16）
 
@@ -105,6 +110,20 @@
 - 任意網址預覽封鎖本機／內網、逐次驗證 redirect、限制 2 MB 與最長 30 秒，並具 CSRF 防護。
 - UI 提供繁中人類化錯誤、鍵盤焦點、skip link、live region、手機版與 reduced-motion 支援。
 - 真實 Yodobashi UX-20 預覽與來源測試通過；正確辨識既有 Site、UX-20 與缺貨狀態。
+
+### Phase 2 已完成實作（2026-07-16；正式服務待重啟驗收）
+
+- schema version 4 新增探索設定、網站 Recipe、Discovery Run、Crawl Frontier 與 Product Candidate。
+- 分類頁與商品監控網址以 `SeedUrl.purpose` 分流，不會把分類頁誤當商品頁持續建立 Offer。
+- 探索只允許同一 registrable domain，重新導向後再次驗證；遵守 robots 並優先 Sitemap、公開搜尋與高相關連結。
+- 預設每站最多 100 頁、深度 2、5 分鐘、50 MB、瀏覽器頁面 3、並行上限 2、請求間隔至少 1 秒。
+- 網站拒絕、超出預算或既有 Recipe 失效時停止；失效 Recipe 不會由每日排程盲目重試。
+- `/review` 顯示候選來源、價格、型號、信心分數及列入原因，支援單筆／批次核准、排除與稍後處理。
+- 只有核准候選才會建立或合併 Product／Offer、產生首次事件並加入正式商品監控。
+- 每站可在來源管理調整安全預算、探索間隔、網址包含詞／排除詞及必要的 CSS selector Recipe。
+- Takara Tomy Mall BEYBLADE X fixture 垂直切片通過；實際網站探索保留到下一次重啟後進行。
+- 修改前已建立正式 DB 備份：`backups/manual-20260716-032419Z.db`，完整性 `ok`、schema version 3。
+- 該正式備份的隔離副本已成功 migration 至 schema version 4；完整性 `ok`、0 個 foreign key orphan，且 1 Product／3 Offers／1 Event 均保留。
 
 ### 目前正式來源
 
@@ -182,8 +201,9 @@
 
 > 請先完整閱讀 `C:\Users\yedon\OneDrive\桌面\Beyblade\PROJECT_MEMORY.md`、
 > `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0、Phase 1 已完成並驗收，Git 基準為
-> `689c181`，正式資料庫為 schema version 3；不要重做已完成部分。先核對目前程式、資料庫、
-> 62 項測試與服務狀態，再摘要 Phase 2 尚待確認的範圍，保留既有資料與設定並等待確認後執行。
+> `689c181`，Phase 2 工作樹已完成但尚未建立新 commit；不要重做已完成部分。正式服務仍待重啟
+> 套用 schema version 4。先確認備份、73 項測試、8 條 Web 路由與服務狀態，再執行 Takara
+> Tomy Mall 實站探索及 Review Queue 核准驗收。
 
 ## 9. 已確認的未來架構決策
 
@@ -211,9 +231,10 @@
 
 ## 10. 本次執行狀態
 
-- Roadmap Phase 0、Phase 1 已實作並完成驗收；正式服務目前使用 schema version 3。
+- Roadmap Phase 0、Phase 1 已完成驗收；Phase 2 已完成實作與離線驗收。
 - 升級前後商品與事件未遺失；version 0 備份已在另一個測試資料夾成功還原並升級。
 - 正式 DB 已清除可明確識別的 Demo 資料，目前只保留三個真實商店與 UX-20 歷史。
 - 背景服務已在新版 Local Web App 下啟動，`/health` 回傳 `ok`。
-- Phase 2 尚未開始；下一階段才會加入 Sitemap、搜尋、有限連結探索及 Review Queue。
+- 正式背景服務尚未重啟，因此正式 DB 目前仍為 schema version 3；新版啟動時才會 migration 至 4。
+- 下一次先完成 Takara Tomy Mall 實站探索與 Review Queue 核准驗收，再討論 Phase 3。
 - 2026-07-16 已建立 Git repository 與初始 commit `689c181`；作者為 Darren Ye，使用 GitHub noreply Email。

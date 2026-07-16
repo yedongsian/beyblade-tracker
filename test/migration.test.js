@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CURRENT_SCHEMA_VERSION, Database } from '../src/db/database.js';
 import { recoverInterruptedCrawlRuns, upsertSource } from '../src/core/store.js';
+import { recoverInterruptedDiscoveryRuns } from '../src/core/discovery.js';
 
 test('new database applies every migration and records schema version', () => {
   const db = new Database(':memory:');
@@ -14,6 +15,10 @@ test('new database applies every migration and records schema version', () => {
   const columns = db.all("PRAGMA table_info('sources')").map((row) => row.name);
   assert.ok(columns.includes('connector_version'));
   assert.ok(columns.includes('recipe_version'));
+  const seedColumns = db.all("PRAGMA table_info('seed_urls')").map((row) => row.name);
+  assert.ok(seedColumns.includes('purpose'));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='product_candidates'"));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='crawl_frontier'"));
   db.close();
 });
 
@@ -47,5 +52,20 @@ test('startup recovery marks abandoned crawl runs as failed', () => {
   assert.equal(run.status, 'failed');
   assert.match(run.error, /未正常結束/);
   assert.ok(run.finished_at);
+  db.close();
+});
+
+test('startup recovery marks abandoned discovery frontier work as failed', () => {
+  const db = new Database(':memory:');
+  db.run("INSERT INTO sites (registrable_domain,display_name,status,created_at,updated_at) VALUES ('example.com','Example','active','x','x')");
+  const run = db.run(`INSERT INTO discovery_runs
+    (site_id,seed_url,status,started_at,max_pages,max_depth,max_seconds,max_bytes)
+    VALUES (1,'https://example.com','running','x',100,2,300,52428800)`).lastInsertRowid;
+  db.run(`INSERT INTO crawl_frontier
+    (discovery_run_id,canonical_url,url_fingerprint,discovery_kind,depth,priority,status,created_at,updated_at)
+    VALUES (?,'https://example.com/p','fingerprint','page',0,1,'fetching','x','x')`, [run]);
+  assert.equal(recoverInterruptedDiscoveryRuns(db), 1);
+  assert.equal(db.get('SELECT status FROM discovery_runs WHERE id=?', [run]).status, 'failed');
+  assert.equal(db.get('SELECT status FROM crawl_frontier WHERE discovery_run_id=?', [run]).status, 'failed');
   db.close();
 });

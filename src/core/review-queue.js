@@ -37,6 +37,11 @@ function ensureMonitoringSource(db, site) {
     db.run('UPDATE sources SET enabled=1,updated_at=? WHERE id=?', [now(), source.id]);
     source = db.get('SELECT * FROM sources WHERE id=?', [source.id]);
   }
+  const official = db.get('SELECT id FROM official_sources WHERE site_id=? ORDER BY id LIMIT 1', [site.id]);
+  if (official) {
+    db.run('UPDATE sources SET official_source_id=?,updated_at=? WHERE id=?', [official.id, now(), source.id]);
+    source = db.get('SELECT * FROM sources WHERE id=?', [source.id]);
+  }
   return source;
 }
 

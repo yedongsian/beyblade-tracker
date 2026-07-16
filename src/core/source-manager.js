@@ -8,6 +8,7 @@ import { connectorVersion, createConnector } from '../connectors/index.js';
 import { fetchPublicText } from '../net/public-http.js';
 import { upsertSource } from './store.js';
 import { ensureDiscoverySettings } from './discovery.js';
+import { ensureSourceMonitorSettings } from './monitor.js';
 
 const now = () => new Date().toISOString();
 
@@ -59,7 +60,9 @@ export function syncSourceSite(db, source, definition) {
   try { canonical = canonicalizeSeedUrl(candidate); } catch { return source; }
   const domain = registrableDomain(canonical);
   const site = ensureSite(db, domain, definition.name || displayNameForDomain(domain));
-  db.run('UPDATE sources SET site_id=? WHERE id=?', [site.id, source.id]);
+  const official = db.get('SELECT id FROM official_sources WHERE site_id=? ORDER BY id LIMIT 1', [site.id]);
+  db.run('UPDATE sources SET site_id=?,official_source_id=COALESCE(?,official_source_id) WHERE id=?',
+    [site.id, official?.id || null, source.id]);
   const pages = definition.config?.pages || [candidate];
   for (const page of pages) {
     try { addSeedUrl(db, { siteId: site.id, sourceId: source.id, originalUrl: page, origin: 'config' }); }
@@ -81,9 +84,13 @@ export function sourceConfigWithSeeds(db, source) {
 export function listManagedSources(db) {
   return db.all(`
     SELECT s.*,si.registrable_domain,si.display_name AS site_name,si.status AS site_status,
+      ms.next_run_at AS monitor_next_run_at,ms.freshness_seconds,ms.consecutive_failures AS monitor_failures,
+      ms.last_manual_requested_at,ms.manual_cooldown_seconds,os.source_class,os.name AS official_source_name,
       (SELECT COUNT(*) FROM seed_urls u WHERE u.source_id=s.id AND u.enabled=1 AND u.purpose='monitor') AS seed_count,
       (SELECT COUNT(*) FROM offers o WHERE o.source_id=s.id) AS offer_count
     FROM sources s LEFT JOIN sites si ON si.id=s.site_id
+    LEFT JOIN source_monitor_settings ms ON ms.source_id=s.id
+    LEFT JOIN official_sources os ON os.id=s.official_source_id
     ORDER BY s.enabled DESC,s.name COLLATE NOCASE
   `).map((row) => ({ ...row, config: parseJson(row.config_json) }));
 }
@@ -205,6 +212,9 @@ export function confirmSource(db, payload) {
   } else if (!source.enabled && !discoveryOnly) {
     db.run('UPDATE sources SET enabled=1,updated_at=? WHERE id=?', [now(), source.id]);
     source = db.get('SELECT * FROM sources WHERE id=?', [source.id]);
+    ensureSourceMonitorSettings(db, source);
+    db.run('UPDATE source_monitor_settings SET enabled=1,next_run_at=?,updated_at=? WHERE source_id=?',
+      [now(), now(), source.id]);
   }
   const seedResult = addSeedUrl(db, {
     siteId: site.id, sourceId: source.id, originalUrl, origin: 'ui',
@@ -223,6 +233,9 @@ export function setSourceEnabled(db, sourceId, enabled) {
   const ts = now();
   db.transaction(() => {
     db.run('UPDATE sources SET enabled=?,updated_at=? WHERE id=?', [enabled ? 1 : 0, ts, sourceId]);
+    ensureSourceMonitorSettings(db, { ...source, enabled: enabled ? 1 : 0 });
+    db.run('UPDATE source_monitor_settings SET enabled=?,next_run_at=CASE WHEN ?=1 THEN ? ELSE next_run_at END,updated_at=? WHERE source_id=?',
+      [enabled ? 1 : 0, enabled ? 1 : 0, ts, ts, sourceId]);
     db.run('UPDATE seed_urls SET enabled=?,updated_at=? WHERE source_id=?', [enabled ? 1 : 0, ts, sourceId]);
     if (source.site_id) db.run(
       `UPDATE sites SET status=?,updated_at=? WHERE id=?`, [enabled ? 'active' : 'disabled', ts, source.site_id]
@@ -276,4 +289,15 @@ export function readSettings(db) {
   return Object.fromEntries(db.all('SELECT key,value_json FROM user_settings').map((row) => [
     row.key, parseJson(row.value_json, null),
   ]));
+}
+
+export function saveLanguageSetting(db, language) {
+  const chosen = ['zh-TW', 'ja', 'en'].includes(language) ? language : null;
+  if (!chosen) throw new Error('不支援的介面語言。');
+  db.run(
+    `INSERT INTO user_settings (key,value_json,updated_at) VALUES ('language',?,?)
+     ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`,
+    [JSON.stringify(chosen), now()]
+  );
+  return chosen;
 }

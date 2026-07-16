@@ -5,7 +5,7 @@ import {
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp, recoverInterruptedWork, runOnce, syncSources } from '../src/app.js';
-import { workerDelaySeconds } from '../src/core/schedule.js';
+import { schedulerDelaySeconds } from '../src/core/monitor.js';
 import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 import { projectPaths } from '../src/paths.js';
@@ -74,13 +74,16 @@ function requestStop(reason) {
 
 function scheduleNext() {
   if (stopping) return;
-  const rows = app.db.all(
-    'SELECT check_interval_seconds, last_success_at, last_failure_at FROM sources WHERE enabled = 1'
-  );
-  const seconds = workerDelaySeconds(rows);
+  const seconds = schedulerDelaySeconds(app.db);
   logger.info(`next crawl in ${seconds}s`);
   writeStatus({ status: 'running', nextCrawlAt: new Date(Date.now() + seconds * 1000).toISOString() });
   nextTimer = setTimeout(tick, seconds * 1000);
+}
+
+function wakeMonitor() {
+  if (stopping || tickInProgress) return;
+  if (nextTimer) clearTimeout(nextTimer);
+  nextTimer = setTimeout(tick, 25);
 }
 
 async function tick() {
@@ -113,7 +116,9 @@ async function main() {
     const recovered = recoverInterruptedWork(app);
     if (recovered) logger.warn(`已復原 ${recovered} 個上次未完成的掃描工作。`);
     syncSources(app);
-    server = await startWebServer(app.db, { ...app.config.web, appConfig: app.config });
+    server = await startWebServer(app.db, {
+      ...app.config.web, appConfig: app.config, onMonitorRequested: wakeMonitor,
+    });
     writeStatus({ status: 'running', webUrl: `http://${app.config.web.host}:${app.config.web.port}` });
     stopPoll = setInterval(() => {
       if (existsSync(STOP_FILE)) requestStop('stop.request');

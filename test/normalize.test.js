@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   normalizeUrl, normalizeWhitespace, toHalfWidth, normalizePrice,
   normalizeCurrency, extractModel, normalizeBarcode,
+  detectTaxInclusion, normalizeDateTime, normalizeReleaseDate,
 } from '../src/core/normalize.js';
 
 test('toHalfWidth converts full-width ascii and spaces', () => {
@@ -47,4 +48,11 @@ test('normalizeCurrency maps symbols and codes', () => {
 test('normalizeBarcode keeps valid gtins only', () => {
   assert.equal(normalizeBarcode('4570118488384'), '4570118488384');
   assert.equal(normalizeBarcode('12'), null);
+});
+
+test('tax, release date and timezone values normalize across store formats', () => {
+  assert.equal(detectTaxInclusion('1,600円（税込）'), true);
+  assert.equal(detectTaxInclusion('NT$690 未稅'), false);
+  assert.equal(normalizeReleaseDate('2026年7月16日'), '2026-07-16');
+  assert.equal(normalizeDateTime('2026/07/16 18:30', { defaultOffset: '+09:00' }), '2026-07-16T09:30:00.000Z');
 });

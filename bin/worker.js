@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createApp, recoverInterruptedWork, runOnce, syncSources } from '../src/app.js';
 import { logger } from '../src/util/logger.js';
-import { workerDelaySeconds } from '../src/core/schedule.js';
+import { schedulerDelaySeconds } from '../src/core/monitor.js';
 
 const app = createApp();
 const dev = process.argv.includes('--dev');
@@ -19,10 +19,7 @@ async function tick() {
     logger.error(`worker tick failed: ${err.message}`);
   }
   if (stopping) return;
-  const rows = app.db.all(
-    'SELECT check_interval_seconds, last_success_at, last_failure_at FROM sources WHERE enabled = 1'
-  );
-  const seconds = dev ? 30 : workerDelaySeconds(rows);
+  const seconds = dev ? 30 : schedulerDelaySeconds(app.db);
   logger.info(`next crawl in ${seconds}s`);
   timer = setTimeout(tick, seconds * 1000);
 }

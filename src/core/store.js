@@ -1,4 +1,5 @@
 import { normalizeBarcode } from './normalize.js';
+import { ensureSourceMonitorSettings } from './monitor.js';
 
 const now = () => new Date().toISOString();
 
@@ -32,7 +33,9 @@ export function upsertSource(db, def) {
         existing.id,
       ]
     );
-    return db.get('SELECT * FROM sources WHERE id = ?', [existing.id]);
+    const row = db.get('SELECT * FROM sources WHERE id = ?', [existing.id]);
+    ensureSourceMonitorSettings(db, row);
+    return row;
   }
   const info = db.run(
     `INSERT INTO sources (key, name, connector, url, config_json, enabled,
@@ -54,7 +57,9 @@ export function upsertSource(db, def) {
       ts,
     ]
   );
-  return db.get('SELECT * FROM sources WHERE id = ?', [info.lastInsertRowid]);
+  const row = db.get('SELECT * FROM sources WHERE id = ?', [info.lastInsertRowid]);
+  ensureSourceMonitorSettings(db, row);
+  return row;
 }
 
 /** Marks work left running by an unclean shutdown as interrupted. */
@@ -167,6 +172,7 @@ export function findOrCreateProduct(db, listing) {
     // Enrich missing fields without overwriting existing ones.
     const patch = {};
     if (!product.barcode && barcode) patch.barcode = barcode;
+    if (!product.sku && listing.sku) patch.sku = String(listing.sku);
     if (!product.model && model) patch.model = model;
     if (!product.brand && listing.brand) patch.brand = listing.brand;
     if (!product.series && listing.series) patch.series = listing.series;
@@ -184,14 +190,15 @@ export function findOrCreateProduct(db, listing) {
   }
 
   const info = db.run(
-    `INSERT INTO products (name, brand, series, model, barcode, release_date, image, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (name, brand, series, model, barcode, sku, release_date, image, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       listing.title || model || barcode || 'Unknown product',
       listing.brand || null,
       listing.series || null,
       model,
       barcode,
+      listing.sku || null,
       listing.releaseDate || null,
       listing.image || null,
       ts,
@@ -207,14 +214,20 @@ export function findOffer(db, sourceId, url) {
   return db.get('SELECT * FROM offers WHERE source_id = ? AND url = ?', [sourceId, url]);
 }
 
-export function insertOffer(db, { productId, sourceId, url, title, price, currency, availability, confidence, purchasable }) {
+export function insertOffer(db, {
+  productId, sourceId, url, title, price, currency, availability, confidence, purchasable,
+  availabilityRawText, availabilityLocale, priceTaxIncluded,
+}) {
   const ts = now();
   const info = db.run(
     `INSERT INTO offers (product_id, source_id, url, title, price, currency, availability,
-      confidence, purchasable, first_seen_at, last_seen_at, last_changed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      confidence, purchasable, availability_raw_text, availability_locale, price_tax_included,
+      first_seen_at, last_seen_at, last_changed_at, last_stable_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [productId, sourceId, url, title || null, price ?? null, currency || null,
-     availability, confidence, purchasable ? 1 : 0, ts, ts, ts, ts, ts]
+     availability, confidence, purchasable ? 1 : 0, availabilityRawText || null,
+     availabilityLocale || null, priceTaxIncluded == null ? null : (priceTaxIncluded ? 1 : 0),
+     ts, ts, ts, ts, ts, ts]
   );
   return db.get('SELECT * FROM offers WHERE id = ?', [info.lastInsertRowid]);
 }
@@ -223,7 +236,9 @@ export function updateOffer(db, id, patch, { changed }) {
   const ts = now();
   db.run(
     `UPDATE offers SET title=?, price=?, currency=?, availability=?, confidence=?,
-      purchasable=?, last_seen_at=?, last_changed_at=?, updated_at=? WHERE id=?`,
+      purchasable=?, availability_raw_text=?, availability_locale=?, price_tax_included=?,
+      availability_candidate=?, availability_candidate_count=?,
+      last_seen_at=?, last_changed_at=?, last_stable_at=?, updated_at=? WHERE id=?`,
     [
       patch.title ?? null,
       patch.price ?? null,
@@ -231,8 +246,14 @@ export function updateOffer(db, id, patch, { changed }) {
       patch.availability,
       patch.confidence,
       patch.purchasable ? 1 : 0,
+      patch.availabilityRawText || null,
+      patch.availabilityLocale || null,
+      patch.priceTaxIncluded == null ? null : (patch.priceTaxIncluded ? 1 : 0),
+      patch.availabilityCandidate || null,
+      Number(patch.availabilityCandidateCount || 0),
       ts,
       changed ? ts : patch.last_changed_at,
+      changed ? ts : (patch.last_stable_at || patch.last_changed_at),
       ts,
       id,
     ]

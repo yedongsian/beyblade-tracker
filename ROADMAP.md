@@ -1,6 +1,6 @@
 # Beyblade Tracker 未來架構與 Roadmap（討論草案）
 
-> 狀態：Phase 0、Phase 1、Phase 2 已完成；正式服務已升級，Takara 實站驗收暫受 Queue-it 等候室阻擋
+> 狀態：Phase 0 至 Phase 5 已完成；Takara 實站驗收暫受 Queue-it 等候室阻擋
 > 更新日期：2026-07-16
 > 原則：先討論與縮小範圍；每一階段分開驗收，不一次重寫全部系統。
 
@@ -11,8 +11,11 @@
 - 完成基準 commit：`689c181f94076a6146e1e1409e1c978dd6d6067b`（`feat: complete phase 0 and phase 1`）。
 - 驗收基準：schema version 3、62/62 項 Node 測試、7/7 條 Web 路由煙霧測試、正式 DB 完整性通過，真實 Yodobashi 預覽及來源測試成功。
 - **Phase 2 已完成實作：**schema version 4、受控 Crawl Frontier、robots／Sitemap／公開搜尋與有限連結探索、每站安全預算、Recipe 微調、Review Queue 及核准後監控。
-- Phase 2 離線驗收使用 Takara Tomy Mall BEYBLADE X fixture；73/73 項 Node 測試與 8/8 條 Web 路由煙霧測試通過。正式背景服務尚未重啟，實站驗收需在重啟後進行。
-- **下一個規劃起點是 Phase 3。**除非發現可重現的回歸問題或使用者明確要求，後續協作者不得重新實作 Phase 0、Phase 1 或 Phase 2。
+- Phase 2 離線驗收使用 Takara Tomy Mall BEYBLADE X fixture；正式背景服務已升級。實站驗收仍待 Queue-it 等候室解除。
+- **Phase 3 已完成：**schema version 5、三語 UI／狀態詞典、Catalog、多語別名、來源證據、零件關聯與未知詞彙審核。
+- **Phase 4 已完成：**schema version 6、獨立 Discovery／Offer 排程、Offer freshness、stale／archived／恢復、時間線、來源健康、穩定確認與手動重查冷卻。
+- **Phase 5 已完成：**schema version 7、Watchlist、官方來源 Registry、官方 Catalog／公告、匹配優先級、通知偏好與首次掃描預覽。
+- **下一個規劃起點是 Phase 6。**除非發現可重現的回歸問題或使用者明確要求，後續協作者不得重新實作 Phase 0 至 Phase 5。
 
 ## 1. 目標使用者與產品原則
 
@@ -172,69 +175,81 @@ Catalog 的每筆名稱、組成與日期都必須保存來源、取得時間、
 
 驗收：Takara Tomy Mall BEYBLADE X 離線 fixture 可由分類頁、Sitemap 找到 UX-20，且不離開該商店網域；正式網站待服務重啟後驗收。
 
-### Phase 3：多語言與商品辨識
+### Phase 3：多語言與商品辨識（2026-07-16 完成）
 
 目標：介面與解析正式支援繁中、日文、英文。
 
-- [ ] 導入 UI i18n，所有字串使用翻譯 key，不在頁面中硬編碼。
-- [ ] 建立繁中、日文、英文的庫存／預購／停售／按鈕文字詞典。
-- [ ] 建立最小可用的 Beyblade Catalog schema：正式商品、零件、商品組成、多語別名及來源證據。
-- [ ] 建立 Beyblade 品牌、世代、BX／UX／CX 系統、系列、商品號、型號與常見拼寫詞典。
-- [ ] 建立 Blade、Ratchet、Bit、Assist Blade 等零件類型與商品－零件關聯；第一版不納入
+- [x] 導入 UI i18n，所有字串使用翻譯 key，不在頁面中硬編碼。
+- [x] 建立繁中、日文、英文的庫存／預購／停售／按鈕文字詞典。
+- [x] 建立最小可用的 Beyblade Catalog schema：正式商品、零件、商品組成、多語別名及來源證據。
+- [x] 建立 Beyblade 品牌、世代、BX／UX／CX 系統、系列、商品號、型號與常見拼寫詞典。
+- [x] 建立 Blade、Ratchet、Bit、Assist Blade 等零件類型與商品－零件關聯；第一版不納入
   戰鬥數值、勝率、牌組規則或模擬功能。
-- [ ] 保存日文、英文、繁中名稱、社群縮寫與空白／連字號變體，支援可解釋的別名匹配。
-- [ ] 每筆 Catalog 資料保存來源 URL、官方／社群類型、取得時間、可信度與人工驗證狀態。
-- [ ] 未具明確授權的外部程式碼、圖片或資料不得直接匯入；必要時先取得作者許可並記錄授權。
-- [ ] 處理全半形、日文變體、英文大小寫、Unicode 正規化。
-- [ ] 正規化 JPY／TWD／USD、含稅／未稅、時區與日期格式。
-- [ ] 為每個語言狀態詞加入 fixture 與自動測試。
-- [ ] UI 顯示原始商店文字與翻譯後狀態，避免翻譯隱藏重要資訊。
-- [ ] 未知詞彙、別名與疑似新商品進入可檢視佇列，核准後才擴充 Catalog 或解析規則。
+- [x] 保存日文、英文、繁中名稱、社群縮寫與空白／連字號變體，支援可解釋的別名匹配。
+- [x] 每筆 Catalog 資料保存來源 URL、官方／社群類型、取得時間、可信度與人工驗證狀態。
+- [x] 未具明確授權的外部程式碼、圖片或資料不得直接匯入；必要時先取得作者許可並記錄授權。
+- [x] 處理全半形、日文變體、英文大小寫、Unicode 正規化。
+- [x] 正規化 JPY／TWD／USD、含稅／未稅、時區與日期格式。
+- [x] 為每個語言狀態詞加入 fixture 與自動測試。
+- [x] UI 顯示原始商店文字與翻譯後狀態，避免翻譯隱藏重要資訊。
+- [x] 未知詞彙、別名與疑似新商品進入可檢視佇列，核准後才擴充 Catalog 或解析規則。
 
 驗收：同一個測試流程可用三種 UI 語言完成，正確解析三語的主要庫存狀態，且日／英／繁中
 商品名稱可連結到同一個經驗證 Catalog 身份並顯示匹配理由。
 
-### Phase 4：持續更新、資料新鮮度與排程
+完成驗收：schema version 5 已正式套用；既有 Product 已回填 Catalog 身分與來源證據。80/80 項
+Node 自動化測試與 9 條 Web 路由煙霧測試通過，繁中／日文／英文介面、三語狀態 fixture、原文狀態、
+多語別名、零件關聯及未知庫存詞彙核准後生效均有測試覆蓋。
+
+### Phase 4：持續更新、資料新鮮度與排程（2026-07-16 完成）
 
 目標：發現商品後持續確認狀態，清楚區分新鮮資料、過期資料與來源故障。
 
-- [ ] 將 Discovery Scheduler 與 Offer Monitor Scheduler 分離。
-- [ ] 依 Watchlist、可購買狀態、發售日距離與來源限制決定掃描頻率。
-- [ ] 加入 jitter、backoff、網域級限速與最大並行數。
-- [ ] 為每個 Offer 保存 last attempted、last successful、fresh until。
-- [ ] 超過新鮮期限顯示 stale，不得繼續當作確認現貨。
-- [ ] 連續多次 404／停售時標為 archived，但保留歷史與恢復偵測。
-- [ ] 顯示價格歷史、庫存時間線與來源健康。
-- [ ] 同一狀態去重，只有必要時通知；對快速抖動增加穩定確認策略。
-- [ ] 提供「立即重新檢查」但有冷卻與使用者提示。
+- [x] 將 Discovery Scheduler 與 Offer Monitor Scheduler 分離。
+- [x] 依 Watchlist、可購買狀態、發售日距離與來源限制決定掃描頻率。
+- [x] 加入 jitter、backoff、網域級限速與最大並行數。
+- [x] 為每個 Offer 保存 last attempted、last successful、fresh until。
+- [x] 超過新鮮期限顯示 stale，不得繼續當作確認現貨。
+- [x] 連續多次 404／停售時標為 archived，但保留歷史與恢復偵測。
+- [x] 顯示價格歷史、庫存時間線與來源健康。
+- [x] 同一狀態去重，只有必要時通知；對快速抖動增加穩定確認策略。
+- [x] 提供「立即重新檢查」但有冷卻與使用者提示。
 
 驗收：模擬現貨→缺貨、網站故障、資料過期與恢復，UI 和通知均不會把舊資料誤報為現貨。
 
-### Phase 5：官方情報與 Watchlist
+完成驗收：正式 DB 已升級至 schema version 6；87/87 項 Node 自動化測試與 10 條 Web 路由
+煙霧測試通過，完整性 `ok`、0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。
+
+### Phase 5：官方情報與 Watchlist（2026-07-16 完成）
 
 目標：讓使用者先描述想找的商品，再用官方資訊與商店結果匹配。
 
-- [ ] 建立 Watchlist UI：商品號、型號、條碼、關鍵字、排除詞與語言。
-- [ ] Watchlist 可選擇 Catalog 正式商品或零件；追蹤零件時可命中包含該零件的正式商品，
+- [x] 建立 Watchlist UI：商品號、型號、條碼、關鍵字、排除詞與語言。
+- [x] Watchlist 可選擇 Catalog 正式商品或零件；追蹤零件時可命中包含該零件的正式商品，
   但第一版不提供牌組建構、戰鬥統計或賽制合法性判定。
-- [ ] 支援精確、包含、正規表示式（進階模式）與同義詞匹配。
-- [ ] 建立官方來源 Registry，明確標記官方／零售商／媒體。
-- [ ] 將 [Takara Tomy Mall BEYBLADE X 分類頁](https://takaratomymall.jp/shop/c/cBeyX/?wovn=english)
+- [x] 支援精確、包含、正規表示式（進階模式）與同義詞匹配。
+- [x] 建立官方來源 Registry，明確標記官方／零售商／媒體。
+- [x] 將 [Takara Tomy Mall BEYBLADE X 分類頁](https://takaratomymall.jp/shop/c/cBeyX/?wovn=english)
   登錄為第一個官方商店 Seed URL，Site 為 `takaratomymall.jp`。
-- [ ] 對 Takara Tomy Mall 建立 Discovery Recipe：分類、商品子分類、新品、補貨、分頁與商品詳情。
-- [ ] 將 `wovn=english` 視為顯示語言參數；URL 去重與商品身份不可因語言參數重複建立。
-- [ ] 區分 Takara Tomy Mall 的官方商店商品／庫存資訊，與未來 Beyblade 官方新聞公告來源。
-- [ ] 第一次正式掃描前先輸出預覽：預估商品數、分類範圍、排除項目與請求預算，等待使用者確認。
-- [ ] 優先串接官方 RSS、API、Sitemap 或商品清單。
-- [ ] 解析發售日期、建議售價、型號、圖片與公告更新時間。
-- [ ] 官方商品先建立或更新 CatalogProduct；商店 Product／Offer 使用商品號、型號、條碼與
+- [x] 對 Takara Tomy Mall 建立 Discovery Recipe：分類、商品子分類、新品、補貨、分頁與商品詳情。
+- [x] 將 `wovn=english` 視為顯示語言參數；URL 去重與商品身份不可因語言參數重複建立。
+- [x] 區分 Takara Tomy Mall 的官方商店商品／庫存資訊，與未來 Beyblade 官方新聞公告來源。
+- [x] 第一次正式掃描前先輸出預覽：預估商品數、分類範圍、排除項目與請求預算，等待使用者確認。
+- [x] 優先串接官方 RSS、API、Sitemap 或商品清單。
+- [x] 解析發售日期、建議售價、型號、圖片與公告更新時間。
+- [x] 官方商品先建立或更新 CatalogProduct；商店 Product／Offer 使用商品號、型號、條碼與
   已驗證別名連結，不以標題單獨強行合併。
-- [ ] Catalog 顯示「官方已驗證／社群待確認／資料衝突」狀態；低信心資料進人工 Review Queue。
-- [ ] Watchlist 命中時可提高發現與監控優先級。
-- [ ] 建立新品公告、開放預購、發售、現貨及價格異常的通知偏好。
-- [ ] UI 清楚顯示官方資訊與商店庫存是不同資料來源。
+- [x] Catalog 顯示「官方已驗證／社群待確認／資料衝突」狀態；低信心資料進人工 Review Queue。
+- [x] Watchlist 命中時可提高發現與監控優先級。
+- [x] 建立新品公告、開放預購、發售、現貨及價格異常的通知偏好。
+- [x] UI 清楚顯示官方資訊與商店庫存是不同資料來源。
 
 驗收：輸入一個尚未上市型號後，可看到官方公告，並在商店出現對應 Offer 時收到一次正確通知。
+
+完成驗收：以 CX-99 離線官方公告 fixture 建立已驗證 CatalogProduct，商店 Offer 出現後只建立並
+傳送一次 Watchlist 現貨通知。正式 DB 已升級至 schema version 7；95/95 項 Node 自動化測試與
+11 條 Web 路由煙霧測試通過，完整性 `ok`、0 個 foreign key orphan，既有資料完整保留。正式
+Takara Seed 與排程仍為停用，等待使用者日後確認首次掃描預覽。
 
 ### Phase 6：論壇與社群情報
 
@@ -342,7 +357,9 @@ Catalog 的每筆名稱、組成與日期都必須保存來源、取得時間、
 1. **已完成：**重啟服務，正式 DB 由 schema version 3 安全升級至 4，`/health` 與資料完整性正常。
 2. 待 Queue-it 等候室解除後，以 Takara Tomy Mall 分類頁執行一次正式探索，檢查 robots、預算與候選數量。
 3. 在 Review Queue 核准一個候選，確認建立 Product／Offer 且只加入商品頁監控。
-4. 實站驗收完成後，再共同確認 Phase 3 多語言與辨識詞典的範圍。
-5. X `@bey_sokuhou` 仍屬 Phase 6，API 成本決策不影響目前驗收。
+4. **已完成：**Phase 3 多語言、Catalog、來源證據與未知詞彙審核，正式 DB 已升級至 schema 5。
+5. **已完成：**Phase 4 拆分 Discovery／Offer 排程並建立資料新鮮度、stale／archived 與恢復偵測。
+6. **已完成：**Phase 5 官方情報、Watchlist、首次掃描預覽與通知偏好，正式 DB 已升級至 schema 7。
+7. 下一個可開發階段為 Phase 6；X `@bey_sokuhou` 的 API 成本與合規取得方式需先決定。
 
-Phase 0、Phase 1 與 Phase 2 已由使用者明確授權並於 2026-07-16 完成實作；Phase 2 正式實站驗收安排在下一次重啟後進行。
+Phase 0 至 Phase 5 已由使用者明確授權並於 2026-07-16 完成實作；Phase 2／5 的 Takara 正式實站驗收待 Queue-it 解除且使用者確認預覽後補做。

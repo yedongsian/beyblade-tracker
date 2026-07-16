@@ -3,23 +3,48 @@ import { randomBytes } from 'node:crypto';
 import { logger } from '../util/logger.js';
 import {
   confirmSource, listManagedSources, previewSourceUrl, readSettings,
-  saveOnboardingSettings, setSourceEnabled, testManagedSource,
+  saveLanguageSetting, saveOnboardingSettings, setSourceEnabled, testManagedSource,
 } from '../core/source-manager.js';
 import {
   listDiscoverySites, runSiteDiscovery, updateDiscoveryConfiguration,
 } from '../core/discovery.js';
 import { listCandidates, reviewCandidate, reviewCandidates } from '../core/review-queue.js';
 import { assertPublicUrl } from '../net/public-http.js';
-import { esc, layout, reviewQueueScript, sourcesScript, table } from './ui.js';
+import { catalogScript, esc, layout, reviewQueueScript, sourcesScript, table, watchlistScript } from './ui.js';
+import { createTranslator } from '../i18n.js';
+import {
+  listCatalogProducts, listTerminologyReviews, reviewTerminology,
+} from '../core/catalog.js';
+import { refreshOfferFreshness, requestImmediateMonitor } from '../core/monitor.js';
+import {
+  createWatchlist, deleteWatchlist, listWatchlistAlerts, listWatchlists, setWatchlistEnabled,
+  WATCHLIST_EVENT_TYPES,
+} from '../core/watchlist.js';
+import {
+  confirmOfficialPreview, listOfficialAnnouncements, listOfficialSources,
+} from '../core/official.js';
 
-function stateBadge(state) {
+function stateBadge(state, t) {
   const kind = ['in_stock'].includes(state) ? 'good' :
     ['out_of_stock'].includes(state) ? 'bad' : 'warn';
-  return `<span class="pill ${kind}">${esc(state)}</span>`;
+  return `<span class="pill ${kind}">${esc(t(`state.${state}`))}</span>`;
+}
+
+function currentOfferBadge(offer, t) {
+  if (offer.archived_at || offer.freshness_status === 'archived') {
+    return `<span class="pill bad">${esc(t('freshness.archived'))}</span>`;
+  }
+  if (offer.freshness_status !== 'fresh' && ['in_stock', 'preorder'].includes(offer.availability)) {
+    return `<span class="pill warn">${esc(t(`freshness.${offer.freshness_status || 'unknown'}`))}</span>`;
+  }
+  return stateBadge(offer.availability, t);
 }
 
 export function healthData(db) {
-  const sources = db.all('SELECT * FROM sources');
+  refreshOfferFreshness(db);
+  const sources = db.all(`SELECT s.*,ms.next_run_at AS monitor_next_run_at,
+    ms.consecutive_failures AS monitor_failures FROM sources s
+    LEFT JOIN source_monitor_settings ms ON ms.source_id=s.id`);
   const unhealthy = sources.filter((source) => source.enabled && source.consecutive_failures >= 3);
   const counts = {
     sources: sources.length,
@@ -27,10 +52,13 @@ export function healthData(db) {
     products: db.get('SELECT COUNT(*) c FROM products').c,
     offers: db.get('SELECT COUNT(*) c FROM offers').c,
     purchasableOffers: db.get(`SELECT COUNT(*) c FROM offers o
-      JOIN sources s ON s.id=o.source_id WHERE o.purchasable=1 AND s.enabled=1`).c,
+      JOIN sources s ON s.id=o.source_id WHERE o.purchasable=1 AND s.enabled=1
+      AND o.freshness_status='fresh' AND o.archived_at IS NULL`).c,
     events: db.get('SELECT COUNT(*) c FROM events').c,
     pendingNotifications: db.get('SELECT COUNT(*) c FROM events WHERE notified=0').c,
     pendingCandidates: db.get("SELECT COUNT(*) c FROM product_candidates WHERE status='pending'").c,
+    watchlists: db.get('SELECT COUNT(*) c FROM watchlists WHERE enabled=1').c,
+    officialAnnouncements: db.get('SELECT COUNT(*) c FROM official_announcements').c,
   };
   return {
     status: unhealthy.length ? 'degraded' : 'ok',
@@ -40,122 +68,242 @@ export function healthData(db) {
       healthy: source.consecutive_failures < 3,
       lastSuccessAt: source.last_success_at, lastFailureAt: source.last_failure_at,
       consecutiveFailures: source.consecutive_failures, lastError: source.last_error,
+      nextMonitorAt: source.monitor_next_run_at,
+      monitorFailures: source.monitor_failures || 0,
     })),
   };
 }
 
 function pageOptions(db, base) {
-  return { ...base, onboarding: !readSettings(db).onboardingCompleted };
+  const settings = readSettings(db);
+  const t = createTranslator(settings.language || 'zh-TW');
+  return { ...base, onboarding: !settings.onboardingCompleted, language: t.locale, t };
 }
 
 function overviewPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
   const health = healthData(db);
   const counts = health.counts;
-  const body = `<section class="hero"><p class="eyebrow">本機個人版</p><h1>追蹤想買的 Beyblade，不必碰設定檔</h1><p>來源、商品狀態與事件都保存在這台電腦。加入商店前會先預覽，只有確認後才開始監控。</p><p><a class="btn" href="/sources">加入或管理商店</a></p></section>
-  <section class="grid stats" aria-label="追蹤摘要">
-    <article class="card stat"><strong>${counts.enabledSources}</strong><span>啟用來源</span></article>
-    <article class="card stat"><strong>${counts.products}</strong><span>商品</span></article>
-    <article class="card stat"><strong>${counts.offers}</strong><span>商店刊登</span></article>
-    <article class="card stat"><strong>${counts.purchasableOffers}</strong><span>目前可購買</span></article>
-  </section><section class="card"><div class="section-head"><div><h2>系統狀態</h2><p>來源失敗不會中止其他商店。</p></div><span class="pill ${health.status === 'ok' ? 'good' : 'bad'}">${health.status === 'ok' ? '運作正常' : '需要注意'}</span></div>
-  ${table(['來源', '啟用', '最後成功', '連續失敗'], health.sources.map((source) => [
-    esc(source.name), source.enabled ? '是' : '否', esc(source.lastSuccessAt || '尚未成功'), esc(source.consecutiveFailures),
-  ]))}</section>`;
-  return layout(pageOptions(db, { ...base, title: '總覽', current: '/', body }));
+  const body = `<section class="hero"><p class="eyebrow">${esc(t('overview.eyebrow'))}</p><h1>${esc(t('overview.title'))}</h1><p>${esc(t('overview.intro'))}</p><p><a class="btn" href="/sources">${esc(t('overview.manage'))}</a></p></section>
+  <section class="grid stats" aria-label="${esc(t('overview.summary'))}">
+    <article class="card stat"><strong>${counts.enabledSources}</strong><span>${esc(t('overview.enabled'))}</span></article>
+    <article class="card stat"><strong>${counts.products}</strong><span>${esc(t('overview.products'))}</span></article>
+    <article class="card stat"><strong>${counts.offers}</strong><span>${esc(t('overview.offers'))}</span></article>
+    <article class="card stat"><strong>${counts.purchasableOffers}</strong><span>${esc(t('overview.buyable'))}</span></article>
+  </section><section class="card"><div class="section-head"><div><h2>${esc(t('overview.health'))}</h2><p>${esc(t('overview.healthHint'))}</p></div><span class="pill ${health.status === 'ok' ? 'good' : 'bad'}">${esc(t(health.status === 'ok' ? 'overview.ok' : 'overview.attention'))}</span></div>
+  ${table([t('table.source'), t('table.enabled'), t('table.lastSuccess'), t('table.failures')], health.sources.map((source) => [
+    esc(source.name), esc(t(source.enabled ? 'common.yes' : 'common.no')), esc(source.lastSuccessAt || t('common.never')), esc(source.consecutiveFailures),
+  ]), t)}</section>`;
+  return layout({ ...page, title: t('nav.overview'), current: '/', body });
 }
 
 function productsPage(db, base) {
-  const rows = db.all(`SELECT p.*,(SELECT COUNT(*) FROM offers o WHERE o.product_id=p.id) offers
-    FROM products p ORDER BY p.updated_at DESC LIMIT 200`);
-  const body = `<div class="section-head"><div><p class="eyebrow">追蹤結果</p><h1>商品</h1><p>同型號跨商店刊登會集中顯示。</p></div></div>${table(
-    ['商品', '型號', '品牌', '條碼', 'Offer'], rows.map((row) => [
-      esc(row.name), esc(row.model || '—'), esc(row.brand || '—'), esc(row.barcode || '—'), esc(row.offers),
-    ])
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const rows = db.all(`SELECT p.*,c.product_code,c.verification_status,
+    (SELECT COUNT(*) FROM offers o WHERE o.product_id=p.id) offers
+    FROM products p LEFT JOIN catalog_products c ON c.id=p.catalog_product_id
+    ORDER BY p.updated_at DESC LIMIT 200`);
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('products.eyebrow'))}</p><h1>${esc(t('products.title'))}</h1><p>${esc(t('products.intro'))}</p></div></div>${table(
+    [t('table.product'), t('table.model'), t('table.brand'), t('table.barcode'), t('table.catalog'), t('table.offer')], rows.map((row) => [
+      `<a href="/products/${row.id}">${esc(row.name)}</a>`, esc(row.model || '—'), esc(row.brand || '—'), esc(row.barcode || '—'),
+      row.product_code ? `${esc(row.product_code)}<br><span class="muted">${esc(t(`verification.${row.verification_status}`))}</span>` : '—', esc(row.offers),
+    ]), t
   )}`;
-  return layout(pageOptions(db, { ...base, title: '商品', current: '/products', body }));
+  return layout({ ...page, title: t('products.title'), current: '/products', body });
+}
+
+function productDetailPage(db, base, productId) {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const product = db.get('SELECT * FROM products WHERE id=?', [productId]);
+  if (!product) return null;
+  refreshOfferFreshness(db);
+  const offers = db.all(`SELECT o.*,s.name sname FROM offers o JOIN sources s ON s.id=o.source_id
+    WHERE o.product_id=? ORDER BY o.archived_at IS NOT NULL,o.last_seen_at DESC`, [productId]);
+  const observations = db.all(`SELECT ob.*,s.name sname,o.url FROM observations ob
+    JOIN offers o ON o.id=ob.offer_id JOIN sources s ON s.id=o.source_id
+    WHERE o.product_id=? ORDER BY ob.observed_at DESC LIMIT 300`, [productId]);
+  const offerRows = offers.map((row) => [
+    esc(row.sname), currentOfferBadge(row, t), esc(t(`freshness.${row.freshness_status}`)),
+    row.price == null ? '—' : esc(`${row.price} ${row.currency || ''}`),
+    esc(row.last_successful_at || t('common.never')),
+  ]);
+  const timelineRows = observations.map((row) => [
+    esc(row.observed_at), esc(row.sname), stateBadge(row.availability, t),
+    row.price == null ? '—' : esc(`${row.price} ${row.currency || ''}`),
+  ]);
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('productDetail.eyebrow'))}</p><h1>${esc(product.name)}</h1><p>${esc([product.model, product.brand, product.release_date].filter(Boolean).join(' · '))}</p></div><a class="btn secondary" href="/products">${esc(t('productDetail.back'))}</a></div>
+    <section class="card"><h2>${esc(t('productDetail.offers'))}</h2>${table([t('table.store'),t('table.status'),t('table.freshness'),t('table.price'),t('table.lastSuccess')],offerRows,t)}</section>
+    <section class="card" style="margin-top:1rem"><h2>${esc(t('productDetail.timeline'))}</h2><p class="muted">${esc(t('productDetail.timelineHint'))}</p>${table([t('table.time'),t('table.store'),t('table.status'),t('table.price')],timelineRows,t)}</section>`;
+  return layout({ ...page, title: product.name, current: '/products', body });
 }
 
 function offersPage(db, base) {
-  const rows = db.all(`SELECT o.*,p.name pname,p.model pmodel,s.name sname FROM offers o
+  const page = pageOptions(db, base);
+  const { t } = page;
+  refreshOfferFreshness(db);
+  const rows = db.all(`SELECT o.*,p.name pname,p.model pmodel,s.name sname,os.source_class FROM offers o
     JOIN products p ON p.id=o.product_id JOIN sources s ON s.id=o.source_id
-    WHERE s.enabled=1 ORDER BY o.purchasable DESC,o.last_seen_at DESC LIMIT 200`);
-  const body = `<div class="section-head"><div><p class="eyebrow">價格與庫存</p><h1>商店刊登</h1><p>狀態旁的最後檢查時間代表資料新鮮度。</p></div></div>${table(
-    ['商品', '商店', '狀態', '價格', '最後檢查', '連結'], rows.map((row) => [
-      `${esc(row.pname)}${row.pmodel ? `<br><span class="muted">${esc(row.pmodel)}</span>` : ''}`,
-      esc(row.sname), stateBadge(row.availability), Number.isFinite(row.price) ? esc(`${row.price} ${row.currency || ''}`) : '—',
-      esc(row.last_seen_at), `<a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">開啟商品頁</a>`,
+    LEFT JOIN official_sources os ON os.id=s.official_source_id
+    WHERE s.enabled=1 ORDER BY o.archived_at IS NOT NULL,o.freshness_status='fresh' DESC,o.purchasable DESC,o.last_seen_at DESC LIMIT 200`);
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('offers.eyebrow'))}</p><h1>${esc(t('offers.title'))}</h1><p>${esc(t('offers.intro'))}</p></div></div>${table(
+    [t('table.product'), t('table.store'), t('table.status'), t('table.freshness'), t('table.originalStatus'), t('table.price'), t('table.lastCheck'), t('table.link')], rows.map((row) => [
+      `<a href="/products/${row.product_id}">${esc(row.pname)}</a>${row.pmodel ? `<br><span class="muted">${esc(row.pmodel)}</span>` : ''}`,
+      `${esc(row.sname)}${row.source_class ? `<br><span class="muted">${esc(t(`sourceClass.${row.source_class}`))}</span>` : ''}`, currentOfferBadge(row, t), esc(t(`freshness.${row.freshness_status}`)), esc(row.availability_raw_text || '—'),
+      Number.isFinite(row.price) ? esc(`${row.price} ${row.currency || ''}`) : '—',
+      esc(row.last_seen_at), `<a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">${esc(t('common.open'))}</a>`,
     ])
-  )}`;
-  return layout(pageOptions(db, { ...base, title: '商店刊登', current: '/offers', body }));
+  , t)}`;
+  return layout({ ...page, title: t('offers.title'), current: '/offers', body });
 }
 
 function eventsPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
   const rows = db.all(`SELECT e.*,p.name pname,s.name sname FROM events e
     JOIN products p ON p.id=e.product_id LEFT JOIN sources s ON s.id=e.source_id
     ORDER BY e.id DESC LIMIT 200`);
-  const body = `<div class="section-head"><div><p class="eyebrow">變化紀錄</p><h1>事件</h1><p>新品、預購、補貨與價格變化會保留在這裡。</p></div></div>${table(
-    ['時間', '類型', '商品', '商店', '變化'], rows.map((row) => [
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('events.eyebrow'))}</p><h1>${esc(t('events.title'))}</h1><p>${esc(t('events.intro'))}</p></div></div>${table(
+    [t('table.time'), t('table.type'), t('table.product'), t('table.store'), t('table.change')], rows.map((row) => [
       esc(row.created_at), esc(row.type), esc(row.pname), esc(row.sname || '—'),
-      esc([row.from_state, row.to_state].filter(Boolean).join(' → ') || '—'),
+      esc([row.from_state, row.to_state].filter(Boolean).map((state) => t(`state.${state}`)).join(' → ') || '—'),
     ])
-  )}`;
-  return layout(pageOptions(db, { ...base, title: '事件', current: '/events', body }));
+  , t)}`;
+  return layout({ ...page, title: t('events.title'), current: '/events', body });
+}
+
+function catalogPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const products = listCatalogProducts(db);
+  const terms = listTerminologyReviews(db);
+  const productTable = products.length ? table(
+    [t('table.model'), t('table.system'), t('table.aliases'), t('table.officialData'), t('table.evidence'), t('table.verification')],
+    products.map((row) => [esc(row.product_code), esc(row.product_system || '—'), esc(row.aliases || '—'),
+      row.official_source_name ? `${esc(row.official_source_name)}<br><span class="muted">${esc([
+        row.release_date, row.msrp == null ? null : `${row.msrp} ${row.msrp_currency || ''}`,
+      ].filter(Boolean).join(' · '))}</span>` : '—',
+      esc(row.evidence_count), esc(t(`verification.${row.verification_status}`))]), t
+  ) : `<p class="muted">${esc(t('catalog.empty'))}</p>`;
+  const announcements = listOfficialAnnouncements(db);
+  const announcementTable = announcements.length ? table(
+    [t('table.time'),t('table.source'),t('table.product'),t('table.type'),t('table.release'),t('table.link')],
+    announcements.map((row) => [esc(row.published_at || row.created_at),
+      `${esc(row.source_name)}<br><span class="muted">${esc(t(`sourceClass.${row.source_class}`))}</span>`,
+      esc(`${row.product_code || ''} ${row.title}`.trim()),esc(t(`officialEvent.${row.event_type}`)),
+      esc(row.release_date || '—'),`<a href="${esc(row.canonical_url)}" target="_blank" rel="noopener noreferrer">${esc(t('common.original'))}</a>`]), t
+  ) : `<p class="muted">${esc(t('official.empty'))}</p>`;
+  const termTable = table(
+    [t('table.kind'), t('table.rawValue'), t('table.locale'), t('table.suggestion'), t('table.action')],
+    terms.map((row) => [esc(row.kind), esc(row.raw_value), esc(row.locale),
+      row.kind === 'availability' ? `<select data-term-value="${row.id}" aria-label="${esc(t('table.status'))}"><option value="">—</option>${['coming_soon','preorder','in_stock','out_of_stock','unknown'].map((state) => `<option value="${state}">${esc(t(`state.${state}`))}</option>`).join('')}</select>` : esc(row.suggested_value || '—'),
+      `<div class="actions"><button class="btn" type="button" data-term-action="approve" data-term-kind="${esc(row.kind)}" data-term-id="${row.id}">${esc(t('common.approve'))}</button><button class="btn danger" type="button" data-term-action="exclude" data-term-kind="${esc(row.kind)}" data-term-id="${row.id}">${esc(t('common.exclude'))}</button></div>`]), t
+  );
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('catalog.eyebrow'))}</p><h1>${esc(t('catalog.title'))}</h1><p>${esc(t('catalog.intro'))}</p></div></div>
+    <section class="card">${productTable}</section><section class="card" style="margin-top:1rem"><h2>${esc(t('official.announcements'))}</h2><p class="muted">${esc(t('official.separationHint'))}</p>${announcementTable}</section><section class="card" style="margin-top:1rem"><h2>${esc(t('terms.title'))}</h2><p class="muted">${esc(t('terms.intro'))}</p><p id="term-review-status" class="status" role="status" aria-live="polite"></p>${termTable}</section>`;
+  return layout({ ...page, title: t('catalog.title'), current: '/catalog', body, extraScript: catalogScript(t) });
+}
+
+function watchlistPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const watchlists = listWatchlists(db);
+  const products = listCatalogProducts(db);
+  const parts = db.all('SELECT * FROM catalog_parts ORDER BY part_type,canonical_name');
+  const alerts = listWatchlistAlerts(db);
+  const officials = listOfficialSources(db);
+  const watchCards = watchlists.map((row) => `<article class="source-card"><div><h3>${esc(row.name)} <span class="pill ${row.enabled ? 'good' : ''}">${esc(t(row.enabled ? 'watchlist.enabled' : 'watchlist.disabled'))}</span></h3><div class="meta"><span>${esc(t(`matchMode.${row.match_mode}`))}</span><span>${esc(row.selected_product_code || row.selected_part_name || row.product_code || row.model || row.barcode || row.keywords.join(', '))}</span><span>${esc(row.locale)}</span></div></div><div class="actions"><button class="btn secondary" data-watch-action="${row.enabled ? 'disable' : 'enable'}" data-watch-id="${row.id}">${esc(t(row.enabled ? 'watchlist.disable' : 'watchlist.enable'))}</button><button class="btn danger" data-watch-action="delete" data-watch-id="${row.id}">${esc(t('watchlist.delete'))}</button></div></article>`).join('');
+  const alertTable = table(
+    [t('table.time'),t('watchlist.title'),t('table.type'),t('table.product'),t('table.status')],
+    alerts.map((row) => [esc(row.created_at),esc(row.watchlist_name),esc(t(`watchEvent.${row.alert_type}`)),
+      esc(row.product_code || row.title),esc(t(row.notified ? 'watchlist.delivered' : 'watchlist.pending'))]),t
+  );
+  const officialCards = officials.map((source) => {
+    const preview = source.preview;
+    return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : 'warn'}">${esc(t(`sourceClass.${source.source_class}`))}</span></h3><div class="meta"><span>${esc(source.registrable_domain)}</span><span>${esc(t('official.priority', { value: source.feedPriority.join(' → ') }))}</span><span>${esc(t('official.announcementsCount', { count: source.announcement_count }))}</span></div>${preview ? `<details><summary>${esc(t('official.preview'))}</summary><p>${esc(t('official.estimate', { count: preview.estimated_products ?? t('common.unknown') }))}</p><p>${esc(t('official.scope'))}：${esc(JSON.stringify(preview.scope))}</p><p>${esc(t('official.exclusions'))}：${esc(preview.exclusions.join('、'))}</p><p>${esc(t('official.budget'))}：${esc(JSON.stringify(preview.budget))}</p></details>` : ''}</div><div class="actions">${preview?.status === 'pending' ? `<button class="btn" data-official-confirm="${source.id}">${esc(t('official.confirm'))}</button>` : `<span class="pill good">${esc(t('official.confirmed'))}</span>`}</div></article>`;
+  }).join('');
+  const productOptions = products.map((row) => `<option value="${row.id}">${esc(row.product_code)}</option>`).join('');
+  const partOptions = parts.map((row) => `<option value="${row.id}">${esc(`${row.part_type}: ${row.code || ''} ${row.canonical_name}`)}</option>`).join('');
+  const eventChecks = WATCHLIST_EVENT_TYPES.map((eventType) => `<label style="font-weight:400"><input style="width:auto" type="checkbox" name="notificationEvents" value="${eventType}" checked> ${esc(t(`watchEvent.${eventType}`))}</label>`).join('');
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('watchlist.eyebrow'))}</p><h1>${esc(t('watchlist.title'))}</h1><p>${esc(t('watchlist.intro'))}</p></div></div>
+  <section class="card"><h2>${esc(t('watchlist.add'))}</h2><form id="watchlist-form" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div><label for="watch-name">${esc(t('watchlist.name'))}</label><input id="watch-name" name="name" required></div>
+    <div><label for="watch-target">${esc(t('watchlist.target'))}</label><select id="watch-target" name="targetType"><option value="rule">${esc(t('watchlist.rule'))}</option><option value="catalog_product">Catalog Product</option><option value="catalog_part">Catalog Part</option></select></div>
+    <div><label for="watch-product">Catalog Product</label><select id="watch-product" name="catalogProductId"><option value="">—</option>${productOptions}</select></div>
+    <div><label for="watch-part">Catalog Part</label><select id="watch-part" name="catalogPartId"><option value="">—</option>${partOptions}</select></div>
+    <div><label for="watch-code">${esc(t('watchlist.productCode'))}</label><input id="watch-code" name="productCode" placeholder="CX-99"></div>
+    <div><label for="watch-model">${esc(t('watchlist.model'))}</label><input id="watch-model" name="model" placeholder="CX-99"></div>
+    <div><label for="watch-barcode">${esc(t('table.barcode'))}</label><input id="watch-barcode" name="barcode"></div>
+    <div><label for="watch-keywords">${esc(t('watchlist.keywords'))}</label><input id="watch-keywords" name="keywords"></div>
+    <div><label for="watch-excludes">${esc(t('watchlist.excludes'))}</label><input id="watch-excludes" name="excludeTerms"></div>
+    <div><label for="watch-mode">${esc(t('watchlist.matchMode'))}</label><select id="watch-mode" name="matchMode"><option value="exact">${esc(t('matchMode.exact'))}</option><option value="contains">${esc(t('matchMode.contains'))}</option><option value="regex">${esc(t('matchMode.regex'))}</option></select></div>
+    <div><label for="watch-locale">${esc(t('table.locale'))}</label><select id="watch-locale" name="locale"><option value="any">Any</option><option value="zh-TW">繁體中文</option><option value="ja">日本語</option><option value="en">English</option></select></div>
+    <fieldset style="grid-column:1/-1"><legend>${esc(t('watchlist.notifications'))}</legend><div class="actions" style="justify-content:flex-start">${eventChecks}</div></fieldset>
+    <div><button class="btn" type="submit">${esc(t('watchlist.add'))}</button></div></form><p id="watchlist-status" class="status" role="status"></p></section>
+  <section style="margin-top:1rem"><h2>${esc(t('watchlist.current'))}</h2><div class="source-list">${watchCards || `<div class="card muted">${esc(t('watchlist.empty'))}</div>`}</div></section>
+  <section class="card" style="margin-top:1rem"><h2>${esc(t('watchlist.alerts'))}</h2>${alertTable}</section>
+  <section style="margin-top:1rem"><h2>${esc(t('official.registry'))}</h2><p class="muted">${esc(t('official.registryHint'))}</p><div class="source-list">${officialCards}</div></section>`;
+  return layout({ ...page, title: t('watchlist.title'), current: '/watchlist', body, extraScript: watchlistScript(t) });
 }
 
 function sourcesPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
   const rows = listManagedSources(db);
   const discoverySites = new Map(listDiscoverySites(db).map((site) => [Number(site.id), site]));
   const cards = rows.map((source) => {
     const discovery = discoverySites.get(Number(source.site_id));
     const hasMonitorPages = Number(source.seed_count) > 0;
+    const canMonitor = hasMonitorPages || Number(source.offer_count) > 0;
     let recipe = {};
     try { recipe = discovery?.recipe_config_json ? JSON.parse(discovery.recipe_config_json) : {}; } catch { recipe = {}; }
-    const settingPanel = discovery ? `<details style="margin-top:.75rem"><summary>探索安全預算與 Recipe</summary><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-top:.75rem" data-discovery-settings="${source.site_id}">
-      <div><label for="max-pages-${source.id}">最多頁數</label><input id="max-pages-${source.id}" data-setting="maxPages" type="number" min="1" max="500" value="${esc(discovery.max_pages || 100)}"></div>
-      <div><label for="max-depth-${source.id}">最大深度</label><input id="max-depth-${source.id}" data-setting="maxDepth" type="number" min="0" max="5" value="${esc(discovery.max_depth ?? 2)}"></div>
-      <div><label for="max-seconds-${source.id}">最長秒數</label><input id="max-seconds-${source.id}" data-setting="maxSeconds" type="number" min="10" max="1800" value="${esc(discovery.max_seconds || 300)}"></div>
-      <div><label for="max-mb-${source.id}">最多 MB</label><input id="max-mb-${source.id}" data-setting="maxMb" type="number" min="1" max="250" value="${esc(Math.round(Number(discovery.max_bytes || 52428800) / 1048576))}"></div>
-      <div><label for="interval-${source.id}">探索間隔（小時）</label><input id="interval-${source.id}" data-setting="intervalHours" type="number" min="1" max="168" value="${esc(Math.round(Number(discovery.interval_seconds || 86400) / 3600))}"></div>
-      <div><label for="include-${source.id}">網址包含詞</label><input id="include-${source.id}" data-setting="includeTerms" value="${esc((recipe.includeTerms || []).join(', '))}" placeholder="beyblade, beyX"></div>
-      <div><label for="exclude-${source.id}">網址排除詞</label><input id="exclude-${source.id}" data-setting="excludeTerms" value="${esc((recipe.excludeTerms || []).join(', '))}" placeholder="used, parts"></div>
-      <div class="actions" style="align-items:end"><button class="btn secondary" type="button" data-save-discovery="${source.site_id}">儲存探索設定</button></div>
+    const settingPanel = discovery ? `<details style="margin-top:.75rem"><summary>${esc(t('sources.budget'))}</summary><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-top:.75rem" data-discovery-settings="${source.site_id}">
+      <div><label for="max-pages-${source.id}">${esc(t('sources.maxPages'))}</label><input id="max-pages-${source.id}" data-setting="maxPages" type="number" min="1" max="500" value="${esc(discovery.max_pages || 100)}"></div>
+      <div><label for="max-depth-${source.id}">${esc(t('sources.maxDepth'))}</label><input id="max-depth-${source.id}" data-setting="maxDepth" type="number" min="0" max="5" value="${esc(discovery.max_depth ?? 2)}"></div>
+      <div><label for="max-seconds-${source.id}">${esc(t('sources.maxSeconds'))}</label><input id="max-seconds-${source.id}" data-setting="maxSeconds" type="number" min="10" max="1800" value="${esc(discovery.max_seconds || 300)}"></div>
+      <div><label for="max-mb-${source.id}">${esc(t('sources.maxMb'))}</label><input id="max-mb-${source.id}" data-setting="maxMb" type="number" min="1" max="250" value="${esc(Math.round(Number(discovery.max_bytes || 52428800) / 1048576))}"></div>
+      <div><label for="interval-${source.id}">${esc(t('sources.intervalHours'))}</label><input id="interval-${source.id}" data-setting="intervalHours" type="number" min="1" max="168" value="${esc(Math.round(Number(discovery.interval_seconds || 86400) / 3600))}"></div>
+      <div><label for="include-${source.id}">${esc(t('sources.include'))}</label><input id="include-${source.id}" data-setting="includeTerms" value="${esc((recipe.includeTerms || []).join(', '))}" placeholder="beyblade, beyX"></div>
+      <div><label for="exclude-${source.id}">${esc(t('sources.exclude'))}</label><input id="exclude-${source.id}" data-setting="excludeTerms" value="${esc((recipe.excludeTerms || []).join(', '))}" placeholder="used, parts"></div>
+      <div class="actions" style="align-items:end"><button class="btn secondary" type="button" data-save-discovery="${source.site_id}">${esc(t('sources.saveDiscovery'))}</button></div>
     </div></details>` : '';
-    return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : discovery && !hasMonitorPages ? 'warn' : ''}">${source.enabled ? '已啟用' : discovery && !hasMonitorPages ? '探索來源' : '已停用'}</span></h3>
-    <div class="meta"><span>${esc(source.registrable_domain || source.url || '未指定網域')}</span><span>${esc(source.connector)} v${esc(source.connector_version)}</span><span>${source.seed_count} 個監控網址</span><span>${source.offer_count} 個 Offer</span><span>${source.managed_by === 'ui' ? '由介面管理' : '內建來源'}</span>${source.site_id ? `<span>${esc(discoverySites.get(Number(source.site_id))?.pending_candidates || 0)} 個待審核</span>` : ''}</div>
+    const statusKey = source.enabled ? 'sources.active' : discovery && !hasMonitorPages ? 'sources.discovery' : 'sources.disabled';
+    return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : discovery && !hasMonitorPages ? 'warn' : ''}">${esc(t(statusKey))}</span></h3>
+    <div class="meta"><span>${esc(source.registrable_domain || source.url || t('sources.noDomain'))}</span><span>${esc(source.connector)} v${esc(source.connector_version)}</span>${source.source_class ? `<span>${esc(t(`sourceClass.${source.source_class}`))}</span>` : ''}<span>${esc(t('sources.monitorUrls', { count: source.seed_count }))}</span><span>${esc(t('sources.offerCount', { count: source.offer_count }))}</span><span>${esc(t('sources.nextMonitor', { time: source.monitor_next_run_at || t('common.never') }))}</span><span>${esc(t('sources.monitorFailures', { count: source.monitor_failures || 0 }))}</span><span>${esc(t(source.managed_by === 'ui' ? 'sources.uiManaged' : 'sources.builtIn'))}</span>${source.site_id ? `<span>${esc(t('sources.pending', { count: discoverySites.get(Number(source.site_id))?.pending_candidates || 0 }))}</span>` : ''}</div>
     ${source.last_error ? `<p class="status error">${esc(source.last_error)}</p>` : ''}${discovery?.recipe_error ? `<p class="status error">Recipe：${esc(discovery.recipe_error)}</p>` : ''}${settingPanel}</div><div class="actions">
-    ${source.site_id ? `<button class="btn secondary" type="button" data-discovery-site="${source.site_id}">探索商品</button>` : ''}
-    ${hasMonitorPages ? `<button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">測試連線</button>
-    <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${source.enabled ? '停用並保留歷史' : '重新啟用'}</button>` : ''}</div></article>`;
+    ${source.site_id ? `<button class="btn secondary" type="button" data-discovery-site="${source.site_id}">${esc(t('sources.discover'))}</button>` : ''}
+    ${canMonitor ? `<button class="btn secondary" type="button" data-source-action="check-now" data-source-id="${source.id}">${esc(t('sources.checkNow'))}</button><button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">${esc(t('sources.test'))}</button>
+    <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${esc(t(source.enabled ? 'sources.disable' : 'sources.enable'))}</button>` : ''}</div></article>`;
   }).join('');
-  const body = `<div class="section-head"><div><p class="eyebrow">來源管理</p><h1>加入商店網址</h1><p>商品頁可直接加入監控；首頁或分類頁會先受控探索，再由你核准候選。</p></div></div><div class="grid two-col"><section class="card"><h2>貼上網址</h2>
-    <form id="add-source-form" class="inline-form"><div><label for="source-url">商店或商品頁網址</label><input id="source-url" name="url" type="url" inputmode="url" autocomplete="url" required placeholder="https://store.example/product"><p class="hint">只允許公開 HTTP(S) 網址，不會連線到本機或內部網路。</p></div><button class="btn" type="submit">先預覽</button></form>
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('sources.eyebrow'))}</p><h1>${esc(t('sources.title'))}</h1><p>${esc(t('sources.intro'))}</p></div></div><div class="grid two-col"><section class="card"><h2>${esc(t('sources.paste'))}</h2>
+    <form id="add-source-form" class="inline-form"><div><label for="source-url">${esc(t('sources.url'))}</label><input id="source-url" name="url" type="url" inputmode="url" autocomplete="url" required placeholder="https://store.example/product"><p class="hint">${esc(t('sources.urlHint'))}</p></div><button class="btn" type="submit">${esc(t('sources.preview'))}</button></form>
     <p id="source-status" class="status" role="status" aria-live="polite"></p><div id="source-preview" class="preview" hidden></div></section>
-    <aside class="card"><h2>加入流程</h2><ol><li>辨識並標準化商店網域。</li><li>先安全預覽你貼上的一頁。</li><li>探索遵守 robots、同網域與資源預算。</li><li>候選進入審核佇列，核准後才監控。</li></ol><div class="notice">預設每站最多 100 頁、深度 2、5 分鐘與 50 MB；網站拒絕時立即停止。</div></aside></div>
-    <section id="source-list" style="margin-top:1.5rem"><div class="section-head"><div><h2>目前來源</h2><p>停用來源會保留商品、事件與價格歷史。</p></div></div><p id="source-action-status" class="status" role="status" aria-live="polite"></p><div class="source-list">${cards || '<div class="card muted">目前沒有來源。</div>'}</div></section>`;
-  return layout(pageOptions(db, {
-    ...base, title: '來源管理', current: '/sources', body, extraScript: sourcesScript(),
-  }));
+    <aside class="card"><h2>${esc(t('sources.flow'))}</h2><ol><li>${esc(t('sources.flow1'))}</li><li>${esc(t('sources.flow2'))}</li><li>${esc(t('sources.flow3'))}</li><li>${esc(t('sources.flow4'))}</li></ol><div class="notice">${esc(t('sources.defaultBudget'))}</div></aside></div>
+    <section id="source-list" style="margin-top:1.5rem"><div class="section-head"><div><h2>${esc(t('sources.current'))}</h2><p>${esc(t('sources.disabledHistory'))}</p></div></div><p id="source-action-status" class="status" role="status" aria-live="polite"></p><div class="source-list">${cards || `<div class="card muted">${esc(t('sources.none'))}</div>`}</div></section>`;
+  return layout({ ...page, title: t('nav.sources'), current: '/sources', body, extraScript: sourcesScript(t) });
 }
 
 function reviewPage(db, base, status = 'pending') {
+  const page = pageOptions(db, base);
+  const { t } = page;
   const candidates = listCandidates(db, { status });
   const rows = candidates.map((candidate) => [
-    `<input name="candidate" type="checkbox" value="${candidate.id}" aria-label="選擇 ${esc(candidate.title)}">`,
+    `<input name="candidate" type="checkbox" value="${candidate.id}" aria-label="${esc(t('review.choose', { title: candidate.title }))}">`,
     `<strong>${esc(candidate.title)}</strong>${candidate.model ? `<br><span class="muted">${esc(candidate.model)}</span>` : ''}`,
     `${esc(candidate.site_name)}<br><span class="muted">${esc(candidate.discovery_method)}</span>`,
-    `${Math.round(Number(candidate.confidence) * 100)}%<br><span class="muted">${candidate.reasons.map(esc).join('、') || '未提供原因'}</span>`,
+    `${Math.round(Number(candidate.confidence) * 100)}%<br><span class="muted">${candidate.reasons.map(esc).join('、') || esc(t('review.noReason'))}</span>`,
     candidate.price == null ? '—' : esc(`${candidate.price} ${candidate.currency || ''}`),
-    `<a href="${esc(candidate.canonical_url)}" target="_blank" rel="noopener noreferrer">查看原頁</a>`,
-    `<div class="actions"><button class="btn" type="button" data-single-review="approve" data-candidate-id="${candidate.id}">核准</button><button class="btn secondary" type="button" data-single-review="defer" data-candidate-id="${candidate.id}">稍後</button><button class="btn danger" type="button" data-single-review="exclude" data-candidate-id="${candidate.id}">排除</button></div>`,
+    `<a href="${esc(candidate.canonical_url)}" target="_blank" rel="noopener noreferrer">${esc(t('common.original'))}</a>`,
+    `<div class="actions"><button class="btn" type="button" data-single-review="approve" data-candidate-id="${candidate.id}">${esc(t('common.approve'))}</button><button class="btn secondary" type="button" data-single-review="defer" data-candidate-id="${candidate.id}">${esc(t('common.defer'))}</button><button class="btn danger" type="button" data-single-review="exclude" data-candidate-id="${candidate.id}">${esc(t('common.exclude'))}</button></div>`,
   ]);
-  const body = `<div class="section-head"><div><p class="eyebrow">人工確認</p><h1>候選商品審核</h1><p>自動探索只提出候選；只有核准後才建立 Product／Offer 並加入持續監控。</p></div><a class="btn secondary" href="/sources">回來源管理</a></div>
-    <div class="actions" style="justify-content:flex-start;margin-bottom:1rem"><a href="/review?status=pending">待審核</a><a href="/review?status=deferred">稍後處理</a><a href="/review?status=approved">已核准</a><a href="/review?status=excluded">已排除</a></div>
-    <section class="card"><div class="actions" style="justify-content:flex-start;margin-bottom:1rem"><label style="margin:0"><input id="select-all" type="checkbox" style="width:auto"> 全選</label><button class="btn" type="button" data-review-action="approve">批次核准</button><button class="btn secondary" type="button" data-review-action="defer">稍後處理</button><button class="btn danger" type="button" data-review-action="exclude">批次排除</button></div><p id="review-status" class="status" role="status" aria-live="polite"></p>${table(
-      ['選取', '商品', '商店／來源', '信心與原因', '價格', '原始頁面', '操作'], rows
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('review.eyebrow'))}</p><h1>${esc(t('review.title'))}</h1><p>${esc(t('review.intro'))}</p></div><a class="btn secondary" href="/sources">${esc(t('review.back'))}</a></div>
+    <div class="actions" style="justify-content:flex-start;margin-bottom:1rem"><a href="/review?status=pending">${esc(t('review.pending'))}</a><a href="/review?status=deferred">${esc(t('review.deferred'))}</a><a href="/review?status=approved">${esc(t('review.approved'))}</a><a href="/review?status=excluded">${esc(t('review.excluded'))}</a></div>
+    <section class="card"><div class="actions" style="justify-content:flex-start;margin-bottom:1rem"><label style="margin:0"><input id="select-all" type="checkbox" style="width:auto"> ${esc(t('review.selectAll'))}</label><button class="btn" type="button" data-review-action="approve">${esc(t('review.batchApprove'))}</button><button class="btn secondary" type="button" data-review-action="defer">${esc(t('review.batchDefer'))}</button><button class="btn danger" type="button" data-review-action="exclude">${esc(t('review.batchExclude'))}</button></div><p id="review-status" class="status" role="status" aria-live="polite"></p>${table(
+      [t('review.select'), t('table.product'), t('review.storeSource'), t('review.confidence'), t('table.price'), t('review.originalPage'), t('review.action')], rows, t
     )}</section>`;
-  return layout(pageOptions(db, {
-    ...base, title: '候選審核', current: '/review', body, extraScript: reviewQueueScript(),
-  }));
+  return layout({ ...page, title: t('nav.review'), current: '/review', body, extraScript: reviewQueueScript(t) });
 }
 
 function response(body, type = 'text/html; charset=utf-8', status = 200) {
@@ -166,26 +314,27 @@ function json(value, status = 200) {
 }
 
 async function readJson(req, limit = 32768) {
+  const t = req.t || createTranslator();
   let body = '';
   for await (const chunk of req) {
     body += chunk;
-    if (Buffer.byteLength(body) > limit) throw new Error('要求內容過大。');
+    if (Buffer.byteLength(body) > limit) throw new Error(t('api.tooLarge'));
   }
   if (!body) return {};
-  try { return JSON.parse(body); } catch { throw new Error('要求內容不是有效的 JSON。'); }
+  try { return JSON.parse(body); } catch { throw new Error(t('api.invalidJson')); }
 }
 
 function isMutation(method) { return ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method); }
-function validateLocalRequest(req, csrfToken) {
+function validateLocalRequest(req, csrfToken, t) {
   const host = String(req.headers.host || '').toLowerCase().split(':')[0];
-  if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) throw new Error('只接受本機要求。');
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) throw new Error(t('api.localOnly'));
   if (!isMutation(req.method)) return;
   const origin = req.headers.origin;
   if (origin) {
     const originHost = new URL(origin).hostname;
-    if (!['127.0.0.1', 'localhost', '::1'].includes(originHost)) throw new Error('拒絕外部網站送出的操作。');
+    if (!['127.0.0.1', 'localhost', '::1'].includes(originHost)) throw new Error(t('api.externalDenied'));
   }
-  if (req.headers['x-csrf-token'] !== csrfToken) throw new Error('安全驗證已過期，請重新整理頁面。');
+  if (req.headers['x-csrf-token'] !== csrfToken) throw new Error(t('api.csrf'));
 }
 
 export function createWebServer(db, options = {}) {
@@ -195,21 +344,34 @@ export function createWebServer(db, options = {}) {
   const appConfig = options.appConfig || {};
   return createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    const requestT = createTranslator(readSettings(db).language || 'zh-TW');
+    req.t = requestT;
     try {
-      validateLocalRequest(req, csrfToken);
+      validateLocalRequest(req, csrfToken, requestT);
       let out;
       if (req.method === 'GET' && url.pathname === '/') out = response(overviewPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/products') out = response(productsPage(db, base));
+      else if (req.method === 'GET' && /^\/products\/\d+$/.test(url.pathname)) {
+        const detail = productDetailPage(db, base, Number(url.pathname.split('/').at(-1)));
+        out = detail ? response(detail) : response(requestT('api.notFound'), 'text/plain; charset=utf-8', 404);
+      }
       else if (req.method === 'GET' && url.pathname === '/offers') out = response(offersPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/events') out = response(eventsPage(db, base));
+      else if (req.method === 'GET' && url.pathname === '/catalog') out = response(catalogPage(db, base));
+      else if (req.method === 'GET' && url.pathname === '/watchlist') out = response(watchlistPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/review') out = response(reviewPage(db, base, url.searchParams.get('status') || 'pending'));
       else if (req.method === 'GET' && url.pathname === '/sources') out = response(sourcesPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/health') out = json(healthData(db));
       else if (req.method === 'GET' && url.pathname === '/api/sources') out = json({ sources: listManagedSources(db) });
       else if (req.method === 'GET' && url.pathname === '/api/settings') out = json(readSettings(db));
       else if (req.method === 'GET' && url.pathname === '/api/candidates') out = json({ candidates: listCandidates(db, { status: url.searchParams.get('status') || 'pending' }) });
+      else if (req.method === 'GET' && url.pathname === '/api/terminology') out = json({ terms: listTerminologyReviews(db, { status: url.searchParams.get('status') || 'pending' }) });
+      else if (req.method === 'GET' && url.pathname === '/api/watchlists') out = json({ watchlists: listWatchlists(db), alerts: listWatchlistAlerts(db) });
+      else if (req.method === 'GET' && url.pathname === '/api/official-sources') out = json({ sources: listOfficialSources(db), announcements: listOfficialAnnouncements(db) });
       else if (req.method === 'POST' && url.pathname === '/api/settings') {
         out = json({ settings: saveOnboardingSettings(db, await readJson(req)) });
+      } else if (req.method === 'POST' && url.pathname === '/api/settings/language') {
+        out = json({ language: saveLanguageSetting(db, (await readJson(req)).language) });
       } else if (req.method === 'POST' && url.pathname === '/api/sources/preview') {
         const body = await readJson(req);
         out = json(await previewSourceUrl(db, body.url, {
@@ -222,15 +384,32 @@ export function createWebServer(db, options = {}) {
         await assertPublicUrl(previewUrl);
         const result = confirmSource(db, body);
         const message = result.discoveryOnly
-          ? '探索入口已加入；可立即按「探索商品」，之後預設每 24 小時執行一次。'
-          : result.sourceCreated ? '商店已加入，將在下一輪開始監控。'
-            : result.seedCreated ? '已把這一頁加入既有商店。' : '這個網址已經在商店中。';
+          ? requestT('api.discoveryAdded')
+          : result.sourceCreated ? requestT('api.storeAdded')
+            : result.seedCreated ? requestT('api.seedAdded') : requestT('api.urlExists');
         out = json({ ...result, message }, 201);
+      } else if (req.method === 'POST' && url.pathname === '/api/watchlists') {
+        out = json({ watchlist: createWatchlist(db, await readJson(req)), message: requestT('api.watchlistAdded') }, 201);
       } else {
         const discoveryMatch = url.pathname.match(/^\/api\/sites\/(\d+)\/discover$/);
         const discoverySettingsMatch = url.pathname.match(/^\/api\/sites\/(\d+)\/discovery-settings$/);
         const candidateMatch = url.pathname.match(/^\/api\/candidates\/(\d+)\/review$/);
-        if (discoveryMatch && req.method === 'POST') {
+        const terminologyMatch = url.pathname.match(/^\/api\/terminology\/(\d+)\/review$/);
+        const monitorMatch = url.pathname.match(/^\/api\/sources\/(\d+)\/check-now$/);
+        const watchlistMatch = url.pathname.match(/^\/api\/watchlists\/(\d+)$/);
+        const officialConfirmMatch = url.pathname.match(/^\/api\/official-sources\/(\d+)\/confirm$/);
+        if (officialConfirmMatch && req.method === 'POST') {
+          out = json({ ...confirmOfficialPreview(db, Number(officialConfirmMatch[1])), message: requestT('api.officialConfirmed') });
+        } else if (watchlistMatch && req.method === 'PATCH') {
+          const body = await readJson(req);
+          out = json({ watchlist: setWatchlistEnabled(db, Number(watchlistMatch[1]), body.enabled === true) });
+        } else if (watchlistMatch && req.method === 'DELETE') {
+          out = json(deleteWatchlist(db, Number(watchlistMatch[1])));
+        } else if (monitorMatch && req.method === 'POST') {
+          const request = requestImmediateMonitor(db, Number(monitorMatch[1]));
+          options.onMonitorRequested?.(Number(monitorMatch[1]));
+          out = json({ request, message: requestT('api.monitorQueued') }, 202);
+        } else if (discoveryMatch && req.method === 'POST') {
           const body = await readJson(req);
           const run = await runSiteDiscovery(db, Number(discoveryMatch[1]), {
             budget: body.budget || {}, userAgent: appConfig.http?.userAgent,
@@ -248,6 +427,8 @@ export function createWebServer(db, options = {}) {
             priceChangeThreshold: appConfig.priceChangeThreshold,
           });
           out = json({ candidate });
+        } else if (terminologyMatch && req.method === 'POST') {
+          out = json({ term: reviewTerminology(db, Number(terminologyMatch[1]), await readJson(req)) });
         } else if (url.pathname === '/api/candidates/review' && req.method === 'POST') {
           const body = await readJson(req);
           const candidates = reviewCandidates(db, body.ids, body.action, {
@@ -269,8 +450,8 @@ export function createWebServer(db, options = {}) {
           const body = req.method === 'PATCH' ? await readJson(req) : { enabled: false };
           const enabled = req.method === 'PATCH' ? body.enabled === true : false;
           setSourceEnabled(db, Number(match[1]), enabled);
-          out = json({ message: enabled ? '來源已重新啟用。' : '來源已停用，歷史資料完整保留。' });
-          } else out = response('找不到頁面。', 'text/plain; charset=utf-8', 404);
+          out = json({ message: requestT(enabled ? 'api.sourceEnabled' : 'api.sourceDisabled') });
+          } else out = response(requestT('api.notFound'), 'text/plain; charset=utf-8', 404);
         }
       }
       res.writeHead(out.status, {
@@ -283,7 +464,7 @@ export function createWebServer(db, options = {}) {
       res.end(out.body);
     } catch (err) {
       logger.warn(`web request failed: ${err.message}`);
-      const status = /找不到/.test(err.message) ? 404 : 400;
+      const status = /找不到|not found|見つかり/i.test(err.message) ? 404 : 400;
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ status: 'error', error: err.message }));
     }

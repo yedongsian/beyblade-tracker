@@ -1,0 +1,21 @@
+{
+  "source": "takara-tomy-mall",
+  "items": [
+    {
+      "externalId": "takara-cx99-announcement",
+      "url": "https://takaratomymall.jp/shop/g/g4904810999999/?wovn=english",
+      "title": "BEYBLADE X CX-99 Future Starter",
+      "productCode": "CX-99",
+      "brand": "Takara Tomy",
+      "locale": "en",
+      "eventType": "announced",
+      "publishedAt": "2026-08-01T00:00:00+09:00",
+      "updatedAt": "2026-08-01T09:30:00+09:00",
+      "releaseDate": "2026-09-15",
+      "msrp": 2400,
+      "currency": "JPY",
+      "image": "https://takaratomymall.jp/img/cx99.jpg",
+      "summary": "Official product announcement fixture for offline acceptance."
+    }
+  ]
+}

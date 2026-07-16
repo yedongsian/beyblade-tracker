@@ -13,10 +13,16 @@ import {
 import { connectorVersion } from './connectors/index.js';
 import { createAutomaticBackupIfDue } from './maintenance/backup.js';
 import { sourceConfigWithSeeds, syncSourceSite } from './core/source-manager.js';
-import { dueSources } from './core/schedule.js';
 import { buildNotifiers } from './notify/index.js';
 import { flushNotifications } from './notify/queue.js';
 import { recoverInterruptedDiscoveryRuns, runDueDiscoveries } from './core/discovery.js';
+import { backfillCatalog } from './core/catalog.js';
+import { registerDefaultOfficialSources } from './core/official.js';
+import { flushWatchlistAlerts } from './core/watchlist.js';
+import {
+  ensureSourceMonitorSettings, finalizeFailedMonitor, finalizeSuccessfulMonitor,
+  listDueMonitorSources, refreshOfferFreshness, startMonitorRequests,
+} from './core/monitor.js';
 
 export function createApp(overrides = {}) {
   loadEnv();
@@ -26,16 +32,19 @@ export function createApp(overrides = {}) {
     createAutomaticBackupIfDue(config.dbPath, config.backup.dir, config.backup);
   }
   const db = openDatabase(config.dbPath);
+  registerDefaultOfficialSources(db);
+  backfillCatalog(db);
   const notifiers = buildNotifiers(config);
   return { db, config, notifiers };
 }
 
 // Pipeline options derived from config.
-function pipelineOpts(config) {
+function pipelineOpts(config, source = {}) {
   return {
     preorderIsPurchasable: config.preorderIsPurchasable,
     eventCooldownSeconds: config.eventCooldownSeconds,
     priceChangeThreshold: config.priceChangeThreshold,
+    stabilityConfirmations: Number(source.stability_confirmations || config.offerStabilityConfirmations || 2),
   };
 }
 
@@ -49,6 +58,7 @@ export function syncSources(app) {
       managedBy: 'config',
     });
     rows.push(syncSourceSite(app.db, row, def));
+    ensureSourceMonitorSettings(app.db, row);
   }
   // Only prune after a valid parse. A missing or malformed config must never
   // silently disable every existing source.
@@ -64,19 +74,14 @@ export function recoverInterruptedWork(app) {
  * Run one crawl across all enabled sources. Each source is isolated: a
  * failure records the error and moves on. Returns aggregate stats.
  */
-export async function runOnce(app, { onlyKey, dueOnly = false, nowMs = Date.now() } = {}) {
+export async function runOfferMonitors(app, {
+  onlyKey, force = false, nowMs = Date.now(), random = Math.random,
+} = {}) {
   const { db, config } = app;
-  syncSources(app);
-  const opts = pipelineOpts(config);
-
-  let sources = db.all('SELECT * FROM sources WHERE enabled = 1');
-  if (onlyKey) sources = sources.filter((s) => s.key === onlyKey);
-  if (dueOnly) sources = dueSources(sources, nowMs);
-
-  const httpDeps = {
-    http: config.http,
-    debug: { saveHtml: config.debugHtml, dir: config.debugDir },
-  };
+  refreshOfferFreshness(db, { now: new Date(nowMs).toISOString() });
+  const sources = listDueMonitorSources(db, {
+    onlyKey, force, now: new Date(nowMs).toISOString(),
+  });
 
   const summary = { sources: 0, ok: 0, failed: 0, itemsSeen: 0, eventsCreated: 0 };
 
@@ -84,11 +89,26 @@ export async function runOnce(app, { onlyKey, dueOnly = false, nowMs = Date.now(
     summary.sources += 1;
     const source2 = { ...source, config: parseSourceConfig(db, source) };
     const runId = startCrawlRun(db, source);
+    startMonitorRequests(db, source.id, new Date(nowMs).toISOString());
     try {
+      const httpDeps = {
+        http: {
+          ...config.http,
+          perHostMinIntervalMs: Math.max(
+            Number(config.http?.perHostMinIntervalMs || 0), Number(source.min_interval_ms || 0)
+          ),
+        },
+        debug: { saveHtml: config.debugHtml, dir: config.debugDir },
+      };
       const connector = createConnector(source2, httpDeps);
-      const stats = await crawlSource(db, source2, connector, opts, runId);
+      const stats = await crawlSource(db, source2, connector, pipelineOpts(config, source), runId);
       recordCrawlSuccess(db, source.id);
       finishCrawlRun(db, runId, { status: 'success', ...stats });
+      finalizeSuccessfulMonitor(db, source, {
+        seenOfferIds: stats.seenOfferIds,
+        terminalOfferIds: stats.terminalOfferIds,
+        now: new Date(nowMs).toISOString(), random,
+      });
       summary.ok += 1;
       summary.itemsSeen += stats.itemsSeen;
       summary.eventsCreated += stats.eventsCreated;
@@ -96,23 +116,44 @@ export async function runOnce(app, { onlyKey, dueOnly = false, nowMs = Date.now(
     } catch (err) {
       recordCrawlFailure(db, source.id, err.message);
       finishCrawlRun(db, runId, { status: 'failed', error: err.message });
+      finalizeFailedMonitor(db, source, err.message, {
+        now: new Date(nowMs).toISOString(), random,
+      });
       summary.failed += 1;
       logger.warn(`source ${source.key} failed: ${err.message}`);
     }
   }
 
-  const discovery = await runDueDiscoveries(db, {
-    userAgent: config.http?.userAgent,
+  return summary;
+}
+
+export async function runDiscoveryScheduler(app, { nowMs = Date.now() } = {}) {
+  return runDueDiscoveries(app.db, {
+    userAgent: app.config.http?.userAgent,
+    now: new Date(nowMs).toISOString(),
+  });
+}
+
+/** Run the independent offer monitor and discovery schedulers, then notify. */
+export async function runOnce(app, {
+  onlyKey, dueOnly = false, nowMs = Date.now(), random = Math.random,
+} = {}) {
+  syncSources(app);
+  const summary = await runOfferMonitors(app, {
+    onlyKey, force: !dueOnly, nowMs, random,
   });
 
-  const notifyResult = await flushNotifications(db, app.notifiers);
+  const discovery = await runDiscoveryScheduler(app, { nowMs });
+
+  const notifyResult = await flushNotifications(app.db, app.notifiers);
+  const watchlistNotify = await flushWatchlistAlerts(app.db, app.notifiers);
   logger.info(
     `notifications: ${notifyResult.groups} groups, ${notifyResult.sent} sent, ` +
     `${notifyResult.skipped} skipped, ${notifyResult.failed || 0} failed`
   );
 
   cleanupRaw(app);
-  return { ...summary, discovery, notify: notifyResult };
+  return { ...summary, discovery, notify: notifyResult, watchlistNotify };
 }
 
 function parseSourceConfig(db, source) {

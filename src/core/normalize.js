@@ -8,9 +8,38 @@ export function toHalfWidth(str) {
     .replace(/　/g, ' ');
 }
 
+// Unicode NFKC covers full-width forms and compatibility characters used by
+// Japanese/Chinese storefronts. Dash variants are normalized separately so
+// aliases and model numbers compare deterministically.
+export function normalizeUnicode(str) {
+  if (str == null) return str;
+  return String(str).normalize('NFKC')
+    .replace(/[‐‑‒–—―−]/g, '-')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"');
+}
+
 export function normalizeWhitespace(str) {
   if (!str) return str;
-  return toHalfWidth(String(str)).replace(/\s+/g, ' ').trim();
+  return toHalfWidth(normalizeUnicode(str)).replace(/\s+/g, ' ').trim();
+}
+
+
+export function normalizeAlias(str) {
+  const text = normalizeWhitespace(str);
+  if (!text) return '';
+  return text.toLocaleLowerCase('en-US')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/[^\p{L}\p{N}-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function detectTextLocale(str) {
+  const text = String(str || '');
+  if (/[\u3040-\u30ff]/u.test(text)) return 'ja';
+  if (/\p{Script=Han}/u.test(text)) return 'zh-TW';
+  return 'en';
 }
 
 // Normalize a URL: drop hash, strip common tracking params, sort remaining.
@@ -106,4 +135,36 @@ export function normalizeBarcode(raw) {
   const digits = String(raw).replace(/\D/g, '');
   if (digits.length < 8 || digits.length > 14) return null;
   return digits;
+}
+
+export function detectTaxInclusion(...values) {
+  const text = normalizeUnicode(values.filter(Boolean).join(' ')).toLocaleLowerCase('en-US');
+  if (/(税込|含稅|含税|tax included|including tax|inc\.? vat)/i.test(text)) return true;
+  if (/(税抜|稅前|未稅|未税|tax excluded|excluding tax|excl\.? vat)/i.test(text)) return false;
+  return null;
+}
+
+export function normalizeReleaseDate(raw) {
+  if (!raw) return null;
+  const text = normalizeUnicode(raw).trim()
+    .replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, '$1-$2-$3')
+    .replace(/^(\d{4})[/.](\d{1,2})[/.](\d{1,2})$/, '$1-$2-$3');
+  const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const result = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  const date = new Date(`${result}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== result ? null : result;
+}
+
+export function normalizeDateTime(raw, { defaultOffset = '+00:00' } = {}) {
+  if (!raw) return null;
+  let text = normalizeUnicode(raw).trim();
+  const local = text.match(/^(\d{4})[/.\-](\d{1,2})[/.\-](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (local) {
+    const [, y, m, d, h, min, sec = '00'] = local;
+    text = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T${h.padStart(2, '0')}:${min}:${sec}${defaultOffset}`;
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }

@@ -18,6 +18,7 @@ a{color:var(--brand);text-underline-offset:3px}button,input,select{font:inherit}
 .brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:12px;background:linear-gradient(135deg,#7da0ff,#3157d5)}
 nav{display:flex;gap:.25rem;flex-wrap:wrap}nav a{color:#dce5ff;text-decoration:none;padding:.5rem .7rem;border-radius:9px}
 nav a:hover,nav a[aria-current=page]{background:#ffffff18;color:#fff}
+.language-picker{width:auto;min-width:110px;padding:.38rem .5rem;background:#17233d;color:#fff;border-color:#52617c}
 main{padding:2rem 0 4rem}.hero{padding:2.2rem;border-radius:24px;background:linear-gradient(130deg,#172b59,#3157d5);color:#fff;
 box-shadow:var(--shadow);margin-bottom:1.5rem}.eyebrow{margin:0 0 .35rem;text-transform:uppercase;letter-spacing:.12em;font-size:.75rem;font-weight:800;opacity:.76}
 h1,h2,h3{line-height:1.2}h1{font-size:clamp(1.8rem,4vw,2.8rem);margin:.25rem 0 .75rem}h2{font-size:1.28rem;margin:0 0 1rem}
@@ -51,64 +52,105 @@ footer{border-top:1px solid var(--line);padding:1.25rem 0 2rem;color:var(--muted
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 `;
 
-function nav(current) {
-  const items = [['/', '總覽'], ['/products', '商品'], ['/offers', '可購買'], ['/events', '事件'], ['/review', '候選審核'], ['/sources', '來源管理']];
+function nav(current, t) {
+  const items = [
+    ['/', t('nav.overview')], ['/products', t('nav.products')], ['/offers', t('nav.offers')],
+    ['/events', t('nav.events')], ['/catalog', t('nav.catalog')], ['/watchlist', t('nav.watchlist')], ['/review', t('nav.review')],
+    ['/sources', t('nav.sources')],
+  ];
   return items.map(([href, label]) => `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
 }
 
-export function layout({ title, current = '/', body, csrfToken, nonce, onboarding = false, extraScript = '' }) {
-  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf-token" content="${esc(csrfToken)}"><title>${esc(title)}｜Beyblade Tracker</title><style>${CSS}</style></head><body>
-<a class="skip" href="#main">跳到主要內容</a><header class="topbar"><div class="shell"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">B</span><span>Beyblade Tracker</span></a><nav aria-label="主要導覽">${nav(current)}</nav></div></header>
-<main id="main" class="shell">${body}</main><footer><div class="shell">資料只保存在這台電腦。所有庫存狀態都應搭配最後檢查時間判讀。</div></footer>
-${onboarding ? onboardingDialog() : ''}<script nonce="${esc(nonce)}">${COMMON_JS}${onboarding ? ONBOARDING_JS : ''}${extraScript}</script></body></html>`;
+export function layout({
+  title, current = '/', body, csrfToken, nonce, onboarding = false, extraScript = '',
+  language = 'zh-TW', t = createTranslator(language),
+}) {
+  const htmlLanguage = t.locale === 'zh-TW' ? 'zh-Hant' : t.locale;
+  return `<!doctype html><html lang="${esc(htmlLanguage)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="${esc(csrfToken)}"><title>${esc(title)}｜${esc(t('app.name'))}</title><style>${CSS}</style></head><body>
+<a class="skip" href="#main">${esc(t('a11y.skip'))}</a><header class="topbar"><div class="shell"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">B</span><span>${esc(t('app.name'))}</span></a><nav aria-label="${esc(t('a11y.primaryNav'))}">${nav(current, t)}</nav><select id="language-picker" class="language-picker" aria-label="${esc(t('language.label'))}"><option value="zh-TW"${t.locale === 'zh-TW' ? ' selected' : ''}>繁體中文</option><option value="ja"${t.locale === 'ja' ? ' selected' : ''}>日本語</option><option value="en"${t.locale === 'en' ? ' selected' : ''}>English</option></select></div></header>
+<main id="main" class="shell">${body}</main><footer><div class="shell">${esc(t('footer.local'))}</div></footer>
+${onboarding ? onboardingDialog(t) : ''}<script nonce="${esc(nonce)}">${commonJs(t)}${onboarding ? onboardingJs(t) : ''}${extraScript}</script></body></html>`;
 }
 
-export function table(headers, rows) {
-  if (!rows.length) return '<p class="muted">目前沒有資料。</p>';
+export function table(headers, rows, t = createTranslator()) {
+  if (!rows.length) return `<p class="muted">${esc(t('common.none'))}</p>`;
   return `<div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th scope="col">${esc(header)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
-function onboardingDialog() {
-  return `<dialog id="onboarding" aria-labelledby="onboarding-title"><div class="dialog-body"><p class="eyebrow">首次設定</p><h2 id="onboarding-title">先選擇適合你的使用方式</h2><p class="muted">這些設定之後都能調整，不會阻擋商品追蹤。</p><form id="onboarding-form">
-  <div class="field"><label for="language">介面語言</label><select id="language" name="language"><option value="zh-TW">繁體中文</option><option value="ja">日本語</option><option value="en">English</option></select></div>
-  <div class="field"><label for="notification">通知方式</label><select id="notification" name="notification"><option value="app">先只保存在 App</option><option value="telegram">Telegram 私人聊天</option><option value="windows">Windows 本機通知</option></select></div>
-  <div class="field"><label for="scanFrequency">掃描頻率</label><select id="scanFrequency" name="scanFrequency"><option value="balanced">平衡（建議）</option><option value="frequent">較頻繁</option><option value="gentle">較溫和</option></select></div>
-  <div class="field"><label for="dataRetentionDays">歷史資料保存天數</label><input id="dataRetentionDays" name="dataRetentionDays" type="number" min="30" max="3650" value="365"></div>
-  <p id="onboarding-status" class="status" role="status" aria-live="polite"></p><div class="dialog-actions"><button class="btn" type="submit">儲存並開始</button></div>
+function onboardingDialog(t) {
+  return `<dialog id="onboarding" aria-labelledby="onboarding-title"><div class="dialog-body"><p class="eyebrow">${esc(t('onboarding.eyebrow'))}</p><h2 id="onboarding-title">${esc(t('onboarding.title'))}</h2><p class="muted">${esc(t('onboarding.intro'))}</p><form id="onboarding-form">
+  <div class="field"><label for="language">${esc(t('onboarding.language'))}</label><select id="language" name="language"><option value="zh-TW">繁體中文</option><option value="ja">日本語</option><option value="en">English</option></select></div>
+  <div class="field"><label for="notification">${esc(t('onboarding.notification'))}</label><select id="notification" name="notification"><option value="app">${esc(t('onboarding.app'))}</option><option value="telegram">${esc(t('onboarding.telegram'))}</option><option value="windows">${esc(t('onboarding.windows'))}</option></select></div>
+  <div class="field"><label for="scanFrequency">${esc(t('onboarding.frequency'))}</label><select id="scanFrequency" name="scanFrequency"><option value="balanced">${esc(t('onboarding.balanced'))}</option><option value="frequent">${esc(t('onboarding.frequent'))}</option><option value="gentle">${esc(t('onboarding.gentle'))}</option></select></div>
+  <div class="field"><label for="dataRetentionDays">${esc(t('onboarding.retention'))}</label><input id="dataRetentionDays" name="dataRetentionDays" type="number" min="30" max="3650" value="365"></div>
+  <p id="onboarding-status" class="status" role="status" aria-live="polite"></p><div class="dialog-actions"><button class="btn" type="submit">${esc(t('onboarding.submit'))}</button></div>
   </form></div></dialog>`;
 }
 
-const COMMON_JS = `
+function commonJs(t) { return `
 const csrf=document.querySelector('meta[name="csrf-token"]')?.content||'';
-async function api(path,options={}){const headers={'Content-Type':'application/json','X-CSRF-Token':csrf,...(options.headers||{})};const res=await fetch(path,{...options,headers});let data={};try{data=await res.json()}catch{}if(!res.ok)throw new Error(data.error||'操作失敗，請稍後再試。');return data}
-`;
+async function api(path,options={}){const headers={'Content-Type':'application/json','X-CSRF-Token':csrf,...(options.headers||{})};const res=await fetch(path,{...options,headers});let data={};try{data=await res.json()}catch{}if(!res.ok)throw new Error(data.error||${JSON.stringify(t('js.failed'))});return data}
+document.getElementById('language-picker')?.addEventListener('change',async(event)=>{event.target.disabled=true;try{await api('/api/settings/language',{method:'POST',body:JSON.stringify({language:event.target.value})});location.reload()}catch(error){event.target.disabled=false;alert(error.message)}});
+`; }
 
-const ONBOARDING_JS = `
-const onboarding=document.getElementById('onboarding');if(onboarding){onboarding.showModal();document.getElementById('onboarding-form').addEventListener('submit',async(event)=>{event.preventDefault();const status=document.getElementById('onboarding-status');const data=Object.fromEntries(new FormData(event.currentTarget));status.textContent='正在儲存…';try{await api('/api/settings',{method:'POST',body:JSON.stringify(data)});status.textContent='設定完成。';onboarding.close()}catch(error){status.className='status error';status.textContent=error.message}})}
-`;
+function onboardingJs(t) { return `
+const onboarding=document.getElementById('onboarding');if(onboarding){onboarding.showModal();document.getElementById('onboarding-form').addEventListener('submit',async(event)=>{event.preventDefault();const status=document.getElementById('onboarding-status');const data=Object.fromEntries(new FormData(event.currentTarget));status.textContent=${JSON.stringify(t('js.saving'))};try{await api('/api/settings',{method:'POST',body:JSON.stringify(data)});status.textContent=${JSON.stringify(t('js.saved'))};onboarding.close();location.reload()}catch(error){status.className='status error';status.textContent=error.message}})}
+`; }
 
-export function sourcesScript() {
+export function sourcesScript(t = createTranslator()) {
+  const messages = Object.fromEntries([
+    'existing','existingHint','model','unrecognized','category','addMonitor','addDiscovery','previewTitle',
+    'canonical','domain','scope','scopeValue','connection','existingLink','testing','previewDone','adding',
+    'testingSource','testSuccess','checkQueued','disableConfirm','discovering','discoveryDone','discoverySaved',
+  ].map((key) => [key, t(`sourceJs.${key}`)]));
+  messages.states = Object.fromEntries(['discovered','coming_soon','preorder','in_stock','out_of_stock','unknown'].map((state) => [state, t(`state.${state}`)]));
   return `
-const form=document.getElementById('add-source-form');const preview=document.getElementById('source-preview');const status=document.getElementById('source-status');let lastPreview=null;
+const sourceMessages=${JSON.stringify(messages)};const msg=(value,vars={})=>Object.entries(vars).reduce((text,[key,replacement])=>text.replaceAll('{'+key+'}',String(replacement)),value);const form=document.getElementById('add-source-form');const preview=document.getElementById('source-preview');const status=document.getElementById('source-status');let lastPreview=null;
 function setStatus(message,type=''){status.className='status '+type;status.textContent=message}
-function renderPreview(data){lastPreview=data;preview.hidden=false;const existing=data.existingSite?'<div class="notice warn"><strong>這間商店已存在。</strong> 確認後會把這個頁面加入既有商店，不會建立重複商店。</div>':'';const candidate=data.candidate?'<div class="notice"><strong>'+escapeHtml(data.candidate.title)+'</strong><br>型號：'+escapeHtml(data.candidate.model||'未辨識')+' · 狀態：'+escapeHtml(data.candidate.state)+'</div>':'<div class="notice warn">這一頁看起來是首頁或分類頁；確認後會作為探索入口，候選商品仍需人工核准。</div>';const label=data.candidate?'確認加入監控':'確認加入並探索';preview.innerHTML=existing+'<h3>加入前預覽</h3><dl><dt>標準網址</dt><dd>'+escapeHtml(data.canonicalUrl)+'</dd><dt>商店網域</dt><dd>'+escapeHtml(data.domain)+'</dd><dt>預覽範圍</dt><dd>目前只測試這一頁；確認探索後套用每站安全預算</dd><dt>連線結果</dt><dd>'+escapeHtml(data.connection.message)+'</dd></dl>'+candidate+'<div class="actions"><a class="btn secondary" href="#source-list">前往現有商店</a><button id="confirm-source" class="btn" '+(data.canConfirm?'':'disabled')+'>'+label+'</button></div>';document.getElementById('confirm-source')?.addEventListener('click',confirmSource)}
+function renderPreview(data){lastPreview=data;preview.hidden=false;const existing=data.existingSite?'<div class="notice warn"><strong>'+escapeHtml(sourceMessages.existing)+'</strong> '+escapeHtml(sourceMessages.existingHint)+'</div>':'';const candidate=data.candidate?'<div class="notice"><strong>'+escapeHtml(data.candidate.title)+'</strong><br>'+escapeHtml(sourceMessages.model)+'：'+escapeHtml(data.candidate.model||sourceMessages.unrecognized)+' · '+escapeHtml(sourceMessages.states[data.candidate.state]||data.candidate.state)+'</div>':'<div class="notice warn">'+escapeHtml(sourceMessages.category)+'</div>';const label=data.candidate?sourceMessages.addMonitor:sourceMessages.addDiscovery;preview.innerHTML=existing+'<h3>'+escapeHtml(sourceMessages.previewTitle)+'</h3><dl><dt>'+escapeHtml(sourceMessages.canonical)+'</dt><dd>'+escapeHtml(data.canonicalUrl)+'</dd><dt>'+escapeHtml(sourceMessages.domain)+'</dt><dd>'+escapeHtml(data.domain)+'</dd><dt>'+escapeHtml(sourceMessages.scope)+'</dt><dd>'+escapeHtml(sourceMessages.scopeValue)+'</dd><dt>'+escapeHtml(sourceMessages.connection)+'</dt><dd>'+escapeHtml(data.connection.message)+'</dd></dl>'+candidate+'<div class="actions"><a class="btn secondary" href="#source-list">'+escapeHtml(sourceMessages.existingLink)+'</a><button id="confirm-source" class="btn" '+(data.canConfirm?'':'disabled')+'>'+escapeHtml(label)+'</button></div>';document.getElementById('confirm-source')?.addEventListener('click',confirmSource)}
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-form.addEventListener('submit',async(event)=>{event.preventDefault();const url=document.getElementById('source-url').value;preview.hidden=true;setStatus('正在安全地測試這一頁…');const button=form.querySelector('button');button.disabled=true;try{const data=await api('/api/sources/preview',{method:'POST',body:JSON.stringify({url})});renderPreview(data);setStatus('預覽完成。請確認範圍與結果。','success')}catch(error){setStatus(error.message,'error')}finally{button.disabled=false}});
-async function confirmSource(){if(!lastPreview)return;setStatus('正在加入來源…');try{const data=await api('/api/sources',{method:'POST',body:JSON.stringify({url:lastPreview.inputUrl,name:lastPreview.suggestedName,confirmed:true,discoveryOnly:!lastPreview.candidate})});setStatus(data.message,'success');setTimeout(()=>location.reload(),500)}catch(error){setStatus(error.message,'error')}}
-document.querySelectorAll('[data-source-action]').forEach(button=>button.addEventListener('click',async()=>{const id=button.dataset.sourceId;const action=button.dataset.sourceAction;button.disabled=true;const output=document.getElementById('source-action-status');try{if(action==='test'){output.textContent='正在測試連線與解析…';const data=await api('/api/sources/'+id+'/test',{method:'POST',body:'{}'});output.className='status success';output.textContent='測試成功：辨識到 '+data.count+' 個結果。'}else{const enable=action==='enable';if(!enable&&!confirm('停用後會保留商品、事件與價格歷史。確定要停用嗎？'))return;const data=await api('/api/sources/'+id,{method:'PATCH',body:JSON.stringify({enabled:enable})});output.className='status success';output.textContent=data.message;setTimeout(()=>location.reload(),400)}}catch(error){output.className='status error';output.textContent=error.message}finally{button.disabled=false}}));
-document.querySelectorAll('[data-discovery-site]').forEach(button=>button.addEventListener('click',async()=>{const output=document.getElementById('source-action-status');button.disabled=true;output.className='status';output.textContent='正在依安全預算探索；大型網站可能需要幾分鐘…';try{const data=await api('/api/sites/'+button.dataset.discoverySite+'/discover',{method:'POST',body:'{}'});output.className='status success';output.textContent='探索完成：讀取 '+data.run.pages_fetched+' 頁，找到 '+data.run.candidates_found+' 個候選。';setTimeout(()=>location.href='/review',700)}catch(error){output.className='status error';output.textContent=error.message}finally{button.disabled=false}}));
-document.querySelectorAll('[data-save-discovery]').forEach(button=>button.addEventListener('click',async()=>{const output=document.getElementById('source-action-status');const panel=document.querySelector('[data-discovery-settings="'+button.dataset.saveDiscovery+'"]');const values=Object.fromEntries([...panel.querySelectorAll('[data-setting]')].map(input=>[input.dataset.setting,input.value]));const body={maxPages:Number(values.maxPages),maxDepth:Number(values.maxDepth),maxSeconds:Number(values.maxSeconds),maxBytes:Number(values.maxMb)*1048576,intervalSeconds:Number(values.intervalHours)*3600,includeTerms:values.includeTerms,excludeTerms:values.excludeTerms};button.disabled=true;try{await api('/api/sites/'+button.dataset.saveDiscovery+'/discovery-settings',{method:'PATCH',body:JSON.stringify(body)});output.className='status success';output.textContent='探索安全預算與 Recipe 已儲存。'}catch(error){output.className='status error';output.textContent=error.message}finally{button.disabled=false}}));
+form.addEventListener('submit',async(event)=>{event.preventDefault();const url=document.getElementById('source-url').value;preview.hidden=true;setStatus(sourceMessages.testing);const button=form.querySelector('button');button.disabled=true;try{const data=await api('/api/sources/preview',{method:'POST',body:JSON.stringify({url})});renderPreview(data);setStatus(sourceMessages.previewDone,'success')}catch(error){setStatus(error.message,'error')}finally{button.disabled=false}});
+async function confirmSource(){if(!lastPreview)return;setStatus(sourceMessages.adding);try{const data=await api('/api/sources',{method:'POST',body:JSON.stringify({url:lastPreview.inputUrl,name:lastPreview.suggestedName,confirmed:true,discoveryOnly:!lastPreview.candidate})});setStatus(data.message,'success');setTimeout(()=>location.reload(),500)}catch(error){setStatus(error.message,'error')}}
+document.querySelectorAll('[data-source-action]').forEach(button=>button.addEventListener('click',async()=>{const id=button.dataset.sourceId;const action=button.dataset.sourceAction;button.disabled=true;const output=document.getElementById('source-action-status');try{if(action==='test'){output.textContent=sourceMessages.testingSource;const data=await api('/api/sources/'+id+'/test',{method:'POST',body:'{}'});output.className='status success';output.textContent=msg(sourceMessages.testSuccess,{count:data.count})}else if(action==='check-now'){const data=await api('/api/sources/'+id+'/check-now',{method:'POST',body:'{}'});output.className='status success';output.textContent=data.message||sourceMessages.checkQueued}else{const enable=action==='enable';if(!enable&&!confirm(sourceMessages.disableConfirm))return;const data=await api('/api/sources/'+id,{method:'PATCH',body:JSON.stringify({enabled:enable})});output.className='status success';output.textContent=data.message;setTimeout(()=>location.reload(),400)}}catch(error){output.className='status error';output.textContent=error.message}finally{button.disabled=false}}));
+document.querySelectorAll('[data-discovery-site]').forEach(button=>button.addEventListener('click',async()=>{const output=document.getElementById('source-action-status');button.disabled=true;output.className='status';output.textContent=sourceMessages.discovering;try{const data=await api('/api/sites/'+button.dataset.discoverySite+'/discover',{method:'POST',body:'{}'});output.className='status success';output.textContent=msg(sourceMessages.discoveryDone,{pages:data.run.pages_fetched,count:data.run.candidates_found});setTimeout(()=>location.href='/review',700)}catch(error){output.className='status error';output.textContent=error.message}finally{button.disabled=false}}));
+document.querySelectorAll('[data-save-discovery]').forEach(button=>button.addEventListener('click',async()=>{const output=document.getElementById('source-action-status');const panel=document.querySelector('[data-discovery-settings="'+button.dataset.saveDiscovery+'"]');const values=Object.fromEntries([...panel.querySelectorAll('[data-setting]')].map(input=>[input.dataset.setting,input.value]));const body={maxPages:Number(values.maxPages),maxDepth:Number(values.maxDepth),maxSeconds:Number(values.maxSeconds),maxBytes:Number(values.maxMb)*1048576,intervalSeconds:Number(values.intervalHours)*3600,includeTerms:values.includeTerms,excludeTerms:values.excludeTerms};button.disabled=true;try{await api('/api/sites/'+button.dataset.saveDiscovery+'/discovery-settings',{method:'PATCH',body:JSON.stringify(body)});output.className='status success';output.textContent=sourceMessages.discoverySaved}catch(error){output.className='status error';output.textContent=error.message}finally{button.disabled=false}}));
 `;
 }
 
-export function reviewQueueScript() {
+export function watchlistScript(t = createTranslator()) {
+  const messages = {
+    saved: t('watchlist.saved'), confirmDelete: t('watchlist.confirmDelete'),
+    officialConfirmed: t('official.confirmed'), advanced: t('watchlist.regexWarning'),
+  };
   return `
-const reviewStatus=document.getElementById('review-status');
+const watchMessages=${JSON.stringify(messages)};const watchStatus=document.getElementById('watchlist-status');
+document.getElementById('watch-mode')?.addEventListener('change',event=>{if(event.target.value==='regex')watchStatus.textContent=watchMessages.advanced});
+document.getElementById('watchlist-form')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);const body=Object.fromEntries(form);body.notificationEvents=form.getAll('notificationEvents');body.synonymExpansion=true;watchStatus.className='status';try{const data=await api('/api/watchlists',{method:'POST',body:JSON.stringify(body)});watchStatus.className='status success';watchStatus.textContent=data.message||watchMessages.saved;setTimeout(()=>location.reload(),400)}catch(error){watchStatus.className='status error';watchStatus.textContent=error.message}});
+document.querySelectorAll('[data-watch-action]').forEach(button=>button.addEventListener('click',async()=>{const action=button.dataset.watchAction;if(action==='delete'&&!confirm(watchMessages.confirmDelete))return;button.disabled=true;try{if(action==='delete')await api('/api/watchlists/'+button.dataset.watchId,{method:'DELETE'});else await api('/api/watchlists/'+button.dataset.watchId,{method:'PATCH',body:JSON.stringify({enabled:action==='enable'})});location.reload()}catch(error){watchStatus.className='status error';watchStatus.textContent=error.message;button.disabled=false}}));
+document.querySelectorAll('[data-official-confirm]').forEach(button=>button.addEventListener('click',async()=>{button.disabled=true;try{const data=await api('/api/official-sources/'+button.dataset.officialConfirm+'/confirm',{method:'POST',body:'{}'});watchStatus.className='status success';watchStatus.textContent=data.message||watchMessages.officialConfirmed;setTimeout(()=>location.reload(),400)}catch(error){watchStatus.className='status error';watchStatus.textContent=error.message;button.disabled=false}}));
+`;
+}
+
+export function reviewQueueScript(t = createTranslator()) {
+  const messages = { choose: t('reviewJs.choose'), saving: t('reviewJs.saving'), done: t('reviewJs.done') };
+  return `
+const reviewMessages=${JSON.stringify(messages)};const reviewStatus=document.getElementById('review-status');
 function chosen(){return [...document.querySelectorAll('[name="candidate"]:checked')].map(input=>Number(input.value))}
-async function review(ids,action){if(!ids.length){reviewStatus.className='status error';reviewStatus.textContent='請先選擇候選商品。';return}reviewStatus.className='status';reviewStatus.textContent='正在儲存審核結果…';try{const data=await api('/api/candidates/review',{method:'POST',body:JSON.stringify({ids,action})});reviewStatus.className='status success';reviewStatus.textContent='已處理 '+data.candidates.length+' 個候選。';setTimeout(()=>location.reload(),450)}catch(error){reviewStatus.className='status error';reviewStatus.textContent=error.message}}
+async function review(ids,action){if(!ids.length){reviewStatus.className='status error';reviewStatus.textContent=reviewMessages.choose;return}reviewStatus.className='status';reviewStatus.textContent=reviewMessages.saving;try{const data=await api('/api/candidates/review',{method:'POST',body:JSON.stringify({ids,action})});reviewStatus.className='status success';reviewStatus.textContent=reviewMessages.done.replace('{count}',data.candidates.length);setTimeout(()=>location.reload(),450)}catch(error){reviewStatus.className='status error';reviewStatus.textContent=error.message}}
 document.querySelectorAll('[data-review-action]').forEach(button=>button.addEventListener('click',()=>review(chosen(),button.dataset.reviewAction)));
 document.querySelectorAll('[data-single-review]').forEach(button=>button.addEventListener('click',()=>review([Number(button.dataset.candidateId)],button.dataset.singleReview)));
 document.getElementById('select-all')?.addEventListener('change',event=>document.querySelectorAll('[name="candidate"]').forEach(input=>{input.checked=event.target.checked}));
 `;
 }
+
+export function catalogScript(t) {
+  const messages = {
+    reviewing: t('terms.reviewing'), reviewed: t('terms.reviewed'), hint: t('terms.approveHint'),
+  };
+  return `
+const termMessages=${JSON.stringify(messages)};const termStatus=document.getElementById('term-review-status');
+document.querySelectorAll('[data-term-action]').forEach(button=>button.addEventListener('click',async()=>{const id=button.dataset.termId;const action=button.dataset.termAction;const select=document.querySelector('[data-term-value="'+id+'"]');const value=select?.value||null;if(action==='approve'&&button.dataset.termKind==='availability'&&!value){termStatus.className='status error';termStatus.textContent=termMessages.hint;return}button.disabled=true;termStatus.className='status';termStatus.textContent=termMessages.reviewing;try{await api('/api/terminology/'+id+'/review',{method:'POST',body:JSON.stringify({action,value})});termStatus.className='status success';termStatus.textContent=termMessages.reviewed;setTimeout(()=>location.reload(),450)}catch(error){termStatus.className='status error';termStatus.textContent=error.message}finally{button.disabled=false}}));
+`;
+}
+import { createTranslator } from '../i18n.js';

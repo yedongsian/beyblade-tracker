@@ -2,11 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Database } from '../src/db/database.js';
 import { createWebServer } from '../src/web/server.js';
-import { confirmSource } from '../src/core/source-manager.js';
+import { confirmSource, saveOnboardingSettings } from '../src/core/source-manager.js';
+import { processListing } from '../src/core/pipeline.js';
+import { upsertSource } from '../src/core/store.js';
+import { importOfficialItem, registerDefaultOfficialSources } from '../src/core/official.js';
 
-async function withServer(fn) {
+async function withServer(fn, options = {}) {
   const db = new Database(':memory:');
-  const server = createWebServer(db);
+  const server = createWebServer(db, options);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
   try { await fn({ db, base: `http://127.0.0.1:${port}` }); }
@@ -24,6 +27,76 @@ test('interactive Local Web App renders accessible source management', async () 
     assert.match(html, /aria-live="polite"/);
     assert.match(html, /首次設定/);
   });
+});
+
+test('Watchlist UI creates rules and official-source preview requires explicit confirmation', async () => {
+  await withServer(async ({ db, base }) => {
+    const registered = registerDefaultOfficialSources(db);
+    const pageResponse = await fetch(`${base}/watchlist`);
+    const page = await pageResponse.text();
+    assert.equal(pageResponse.status, 200);
+    assert.match(page, /想找清單/);
+    assert.match(page, /Takara Tomy Mall/);
+    assert.match(page, /第一次掃描預覽/);
+    const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+    const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
+    const created = await fetch(`${base}/api/watchlists`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: 'CX-99', productCode: 'CX-99', matchMode: 'exact', notificationEvents: ['in_stock'] }),
+    });
+    assert.equal(created.status, 201);
+    assert.equal(db.get('SELECT COUNT(*) c FROM watchlists').c, 1);
+    assert.equal(db.get('SELECT enabled FROM official_sources WHERE id=?', [registered.official.id]).enabled, 0);
+    const confirmed = await fetch(`${base}/api/official-sources/${registered.official.id}/confirm`, {
+      method: 'POST', headers, body: '{}',
+    });
+    assert.equal(confirmed.status, 200);
+    assert.equal(db.get('SELECT enabled FROM official_sources WHERE id=?', [registered.official.id]).enabled, 1);
+
+    importOfficialItem(db, 'takara-tomy-mall', {
+      url: 'https://takaratomymall.jp/shop/g/g4904810999999/?wovn=english',
+      title: 'BEYBLADE X CX-99 Future Starter', productCode: 'CX-99', eventType: 'announced',
+      releaseDate: '2026-09-15', msrp: 2400, currency: 'JPY',
+    });
+    const catalog = await (await fetch(`${base}/catalog`)).text();
+    assert.match(catalog, /官方商品情報/);
+    assert.match(catalog, /CX-99/);
+    assert.match(catalog, /2400 JPY/);
+  });
+});
+
+test('product detail exposes price and stock timeline, and check-now API wakes the monitor with cooldown', async () => {
+  let wakes = 0;
+  await withServer(async ({ db, base }) => {
+    const source = upsertSource(db, {
+      key: 'timeline', name: 'Timeline Store', connector: 'fixture', url: 'https://timeline.example',
+    });
+    const first = processListing(db, source, {
+      url: 'https://timeline.example/bx-38', title: 'Beyblade X BX-38',
+      availabilityRaw: 'https://schema.org/OutOfStock', price: 1200, currency: 'JPY',
+    }, { preorderIsPurchasable: false, eventCooldownSeconds: 0, priceChangeThreshold: 0.05 });
+    processListing(db, source, {
+      url: 'https://timeline.example/bx-38', title: 'Beyblade X BX-38',
+      availabilityRaw: 'https://schema.org/InStock', price: 1080, currency: 'JPY',
+    }, { preorderIsPurchasable: false, eventCooldownSeconds: 0, priceChangeThreshold: 0.05 });
+    db.run("UPDATE offers SET freshness_status='fresh',fresh_until='2099-01-01T00:00:00.000Z' WHERE source_id=?", [source.id]);
+    const detail = await fetch(`${base}/products/${first.productId}`);
+    const html = await detail.text();
+    assert.equal(detail.status, 200);
+    assert.match(html, /價格與庫存時間線/);
+    assert.match(html, /1200 JPY/);
+    assert.match(html, /1080 JPY/);
+
+    const sources = await (await fetch(`${base}/sources`)).text();
+    assert.match(sources, /立即重新檢查/);
+    const token = sources.match(/name="csrf-token" content="([^"]+)"/)[1];
+    const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
+    const queued = await fetch(`${base}/api/sources/${source.id}/check-now`, { method: 'POST', headers, body: '{}' });
+    assert.equal(queued.status, 202);
+    assert.equal(wakes, 1);
+    const cooled = await fetch(`${base}/api/sources/${source.id}/check-now`, { method: 'POST', headers, body: '{}' });
+    assert.equal(cooled.status, 400);
+  }, { onMonitorRequested: () => { wakes += 1; } });
 });
 
 test('mutating API requires CSRF token and saves onboarding settings', async () => {
@@ -107,5 +180,27 @@ test('discovery settings API validates and saves per-site budgets', async () => 
     });
     assert.equal(response.status, 200);
     assert.equal(db.get('SELECT max_pages FROM discovery_settings WHERE site_id=?', [added.site.id]).max_pages, 25);
+  });
+});
+
+test('saved UI language renders English and Japanese pages with translated states and original store wording', async () => {
+  await withServer(async ({ db, base }) => {
+    const source = upsertSource(db, { key: 'i18n', name: '多語商店', connector: 'fixture', url: 'https://i18n.example' });
+    processListing(db, source, {
+      url: 'https://i18n.example/ux-20', title: 'ベイブレードX UX-20',
+      availabilityText: '在庫あり', price: 1600, currency: 'JPY',
+    }, { preorderIsPurchasable: false, eventCooldownSeconds: 0, priceChangeThreshold: 0.05 });
+    db.run("UPDATE offers SET freshness_status='fresh',fresh_until='2099-01-01T00:00:00.000Z' WHERE source_id=?", [source.id]);
+    saveOnboardingSettings(db, { language: 'en', notification: 'app', scanFrequency: 'balanced', dataRetentionDays: 365 });
+    const english = await (await fetch(`${base}/offers`)).text();
+    assert.match(english, /lang="en"/);
+    assert.match(english, /In stock/);
+    assert.match(english, /在庫あり/);
+    assert.match(english, /Store wording/);
+    saveOnboardingSettings(db, { language: 'ja', notification: 'app', scanFrequency: 'balanced', dataRetentionDays: 365 });
+    const japanese = await (await fetch(`${base}/catalog`)).text();
+    assert.match(japanese, /lang="ja"/);
+    assert.match(japanese, /商品識別/);
+    assert.match(japanese, /UX-20/);
   });
 });

@@ -152,6 +152,45 @@
 - [x] 重啟正式背景服務，驗證 schema version 3 → 4 migration、正式 DB 完整性及 live 路由。
 - [ ] 使用 Takara Tomy Mall 真實分類頁完成探索及 Review Queue 核准驗收；2026-07-16 乾淨 Chrome 被導向 Queue-it 等候室，依政策不繞過，待網站恢復後重試。
 
+## Roadmap Phase 3：多語言與商品辨識（2026-07-16）
+
+- [x] schema version 5：CatalogProduct、CatalogPart、商品組成、多語別名、來源證據與 Product 連結。
+- [x] 繁中／日文／英文 UI i18n 與介面即時切換。
+- [x] 三語庫存狀態詞典、原始商店文字與翻譯狀態並列顯示。
+- [x] BX／UX／CX 商品身分、Unicode／全半形／大小寫／連字號別名正規化。
+- [x] Blade／Ratchet／Bit／Assist Blade 零件類型與商品關聯。
+- [x] JPY／TWD／USD、含稅／未稅、發售日期與時區正規化。
+- [x] 未知庫存詞彙與無型號商品進人工佇列；庫存詞彙核准後才成為解析覆寫規則。
+- [x] 既有 Product 回填 Catalog 身分與來源證據，正式資料筆數不遺失。
+- [x] 80/80 項 Node 自動化測試與 9 條 Web 路由煙霧測試通過。
+- [x] 正式 DB 升級至 schema version 5，完整性 `ok` 且 0 個 foreign key orphan。
+
+## Roadmap Phase 4：持續更新、資料新鮮度與排程（2026-07-16）
+
+- [x] schema version 6：Offer freshness 欄位、來源監控設定與立即重查佇列。
+- [x] Discovery Scheduler 與 Offer Monitor Scheduler 分離，服務等待時間取兩者最早到期工作。
+- [x] 可購買／發售日／未來 Watchlist 優先級、自適應週期、jitter、指數 backoff 與每網域限速。
+- [x] stale 不再計入可購買；連續缺失、404 或停售封存，重新出現時恢復。
+- [x] 商品詳情顯示價格與庫存時間線；來源頁顯示健康、下次監控與連續失敗。
+- [x] 庫存狀態連續兩次確認、事件去重及 stale 現貨通知抑制。
+- [x] 「立即重新檢查」API／UI、60 秒冷卻與服務喚醒。
+- [x] 87/87 項 Node 自動化測試與 10 條 Web 路由煙霧測試通過。
+- [x] 正式 DB 升級至 schema version 6，完整性 `ok`、0 個 foreign key orphan，既有資料完整。
+
+## Roadmap Phase 5：官方情報與 Watchlist（2026-07-16）
+
+- [x] schema version 7：Watchlist、匹配、通知偏好、官方來源、公告與首次掃描預覽。
+- [x] Watchlist UI／API 支援商品號、型號、條碼、關鍵字、排除詞、語言與 Catalog 商品／零件。
+- [x] 精確、包含、進階 Regex、已驗證別名與零件組成匹配。
+- [x] Takara Tomy Mall 官方商店 Registry、Seed、Discovery Recipe 與 `wovn` 身分去重。
+- [x] 正式首次掃描預覽預設停用，顯示候選上限、範圍、排除與請求預算，確認後才啟用。
+- [x] 官方商品先更新已驗證 Catalog；公告與商店 Offer 分層，低信心／衝突可人工處理。
+- [x] Watchlist 命中提高 Discovery／Offer Monitor 優先級。
+- [x] 新品公告、預購、發售、現貨／補貨及價格異常通知偏好與一次性去重。
+- [x] CX-99 尚未上市型號的官方公告 → 商店現貨 → 單次通知離線驗收通過。
+- [x] 95/95 項 Node 自動化測試與 11 條 Web 路由煙霧測試通過。
+- [x] 正式 DB 升級至 schema version 7，完整性 `ok`、0 個 foreign key orphan，既有資料完整。
+
 ## 明確不包含於第一版
 
 - 自動購買、登入商店或操作購物車。

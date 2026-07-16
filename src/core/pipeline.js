@@ -1,4 +1,7 @@
-import { normalizeUrl, normalizeWhitespace, extractModel, normalizePrice } from './normalize.js';
+import {
+  detectTaxInclusion, extractModel, normalizePrice, normalizeReleaseDate, normalizeUrl,
+  normalizeWhitespace,
+} from './normalize.js';
 import { computeAvailability, exclusionReason, isPurchasable, STATES } from './classify.js';
 import { computeOfferEvents } from './events.js';
 import {
@@ -6,13 +9,17 @@ import {
   insertObservation, createEvent,
 } from './store.js';
 import { logger } from '../util/logger.js';
+import {
+  linkProductToCatalog, matchAvailabilityOverride, queueTerminologyReview,
+} from './catalog.js';
+import { evaluateWatchlistsForProduct } from './watchlist.js';
 
 function normalizeModel(listing) {
   if (listing.model) {
     const m = extractModel(listing.model) || String(listing.model).toUpperCase().trim();
     return m;
   }
-  return extractModel(listing.title);
+  return extractModel(listing.sku) || extractModel(listing.title);
 }
 
 function priceIsSignificant(prev, next, threshold) {
@@ -25,6 +32,24 @@ function priceIsSignificant(prev, next, threshold) {
   return base > 0 && Math.abs(a - b) / base >= threshold;
 }
 
+function stableAvailability(prevOffer, observedState, confirmations) {
+  if (!prevOffer || prevOffer.availability === observedState || confirmations <= 1) {
+    return { state: observedState, candidate: null, candidateCount: 0 };
+  }
+  const candidateCount = prevOffer.availability_candidate === observedState
+    ? Number(prevOffer.availability_candidate_count || 0) + 1 : 1;
+  if (candidateCount >= confirmations) {
+    return { state: observedState, candidate: null, candidateCount: 0 };
+  }
+  return { state: prevOffer.availability, candidate: observedState, candidateCount };
+}
+
+function isTerminalListing(listing) {
+  return /(?:discontinued|販売終了|終売|廃番|已停產|已停售)/i.test(
+    [listing.availabilityText, listing.availabilityRaw, listing.rawText].filter(Boolean).join(' ')
+  );
+}
+
 /**
  * Process a single normalized-ish listing within a transaction-friendly
  * context. Returns a small result object for aggregation/reporting.
@@ -35,7 +60,13 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
   const model = normalizeModel({ ...rawListing, title });
   const { price, currency } = normalizePrice(rawListing.price, rawListing.currency);
 
-  const listing = { ...rawListing, url, title, model, price, currency };
+  const listing = {
+    ...rawListing, url, title, model, price, currency,
+    releaseDate: normalizeReleaseDate(rawListing.releaseDate) || undefined,
+  };
+  const priceTaxIncluded = rawListing.priceTaxIncluded ?? detectTaxInclusion(
+    rawListing.price, rawListing.priceText, rawListing.rawText
+  );
 
   const reason = exclusionReason(listing);
   if (reason) {
@@ -43,12 +74,28 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
     return { excluded: true, reason };
   }
 
-  const { state, confidence } = computeAvailability(listing);
-  const purchasable = isPurchasable(state, opts);
+  const override = matchAvailabilityOverride(db, listing);
+  const classified = override || computeAvailability(listing);
+  const observedState = classified.state;
+  const confidence = classified.confidence;
+  const availabilityRawText = normalizeWhitespace(rawListing.availabilityText || rawListing.availabilityRaw);
+  const availabilityLocale = classified.locale || null;
+
+  if (observedState === STATES.UNKNOWN && rawListing.availabilityText) {
+    queueTerminologyReview(db, {
+      kind: 'availability', rawValue: rawListing.availabilityText,
+      locale: availabilityLocale || undefined,
+      context: { sourceId: Number(source.id), url, title },
+    });
+  }
 
   const { product, created: productCreated } = findOrCreateProduct(db, listing);
+  const catalog = linkProductToCatalog(db, product, listing, source);
 
   const prevOffer = findOffer(db, source.id, url);
+  const stable = stableAvailability(prevOffer, observedState, Number(opts.stabilityConfirmations || 1));
+  const state = stable.state;
+  const purchasable = isPurchasable(state, opts);
   let offer;
   let offerCreated = false;
   let stateChanged = false;
@@ -58,6 +105,8 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
     offer = insertOffer(db, {
       productId: product.id, sourceId: source.id, url, title,
       price, currency, availability: state, confidence, purchasable,
+      availabilityRawText, availabilityLocale,
+      priceTaxIncluded,
     });
     offerCreated = true;
   } else {
@@ -65,12 +114,17 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
     priceChanged = priceIsSignificant(prevOffer.price, price, opts.priceChangeThreshold);
     offer = updateOffer(db, prevOffer.id, {
       title, price, currency, availability: state, confidence, purchasable,
+      availabilityRawText, availabilityLocale,
+      priceTaxIncluded,
+      availabilityCandidate: stable.candidate,
+      availabilityCandidateCount: stable.candidateCount,
+      last_stable_at: prevOffer.last_stable_at,
       last_changed_at: prevOffer.last_changed_at,
     }, { changed: stateChanged });
   }
 
   insertObservation(db, {
-    offerId: offer.id, crawlRunId, price, currency, availability: state, confidence,
+    offerId: offer.id, crawlRunId, price, currency, availability: observedState, confidence,
     rawSummary: rawListing.rawSummary,
   });
 
@@ -86,10 +140,15 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
     }, { cooldownSeconds: opts.eventCooldownSeconds });
     if (row) events.push(row);
   }
+  const watchlist = evaluateWatchlistsForProduct(db, {
+    productId: product.id, catalogProductId: catalog?.id, offerId: offer.id,
+    state, events, listing,
+  });
 
   return {
     excluded: false, productId: product.id, offerId: offer.id,
-    state, purchasable, stateChanged, priceChanged, events,
+    state, observedState, purchasable, stateChanged, priceChanged, events,
+    terminal: isTerminalListing(rawListing), watchlist,
   };
 }
 
@@ -99,7 +158,10 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
  */
 export async function crawlSource(db, source, connector, opts, crawlRunId) {
   const listings = await connector.fetchListings();
-  const stats = { itemsSeen: 0, itemsExcluded: 0, eventsCreated: 0, events: [] };
+  const stats = {
+    itemsSeen: 0, itemsExcluded: 0, eventsCreated: 0, events: [],
+    seenOfferIds: [], terminalOfferIds: [],
+  };
   for (const raw of listings) {
     if (!raw || !raw.url) { logger.warn(`listing without url from ${source.key}, skipped`); continue; }
     stats.itemsSeen += 1;
@@ -114,6 +176,8 @@ export async function crawlSource(db, source, connector, opts, crawlRunId) {
     if (result.excluded) { stats.itemsExcluded += 1; continue; }
     stats.eventsCreated += result.events.length;
     stats.events.push(...result.events);
+    stats.seenOfferIds.push(result.offerId);
+    if (result.terminal) stats.terminalOfferIds.push(result.offerId);
   }
   return stats;
 }

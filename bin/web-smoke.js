@@ -13,11 +13,15 @@ const checks = [
   ['/products', 200, /商品/],
   ['/offers', 200, /商店刊登/],
   ['/events', 200, /事件/],
+  ['/catalog', 200, /Beyblade Catalog/],
+  ['/watchlist', 200, /Watchlist/],
   ['/review', 200, /候選商品審核/],
   ['/sources', 200, /來源管理/],
   ['/health', 200, /"status"/],
   ['/nope', 404, /找不到頁面/],
 ];
+const firstProduct = app.db.get('SELECT id FROM products ORDER BY id LIMIT 1');
+if (firstProduct) checks.splice(2, 0, [`/products/${firstProduct.id}`, 200, /價格與庫存時間線/]);
 
 let code = 0;
 try {

@@ -43,6 +43,7 @@ export function getConfig() {
   const rawRetentionHours = numberSetting('RAW_RETENTION_HOURS', 72, { min: 1 }, issues);
   const eventCooldownSeconds = numberSetting('EVENT_COOLDOWN_SECONDS', 6 * 3600, { min: 0 }, issues);
   const priceChangeThreshold = numberSetting('PRICE_CHANGE_THRESHOLD', 0.05, { min: 0, max: 1 }, issues);
+  const offerStabilityConfirmations = numberSetting('OFFER_STABILITY_CONFIRMATIONS', 2, { min: 1, max: 10, integer: true }, issues);
   const timeoutMs = numberSetting('HTTP_TIMEOUT_MS', 15000, { min: 100, integer: true }, issues);
   const maxRetries = numberSetting('HTTP_MAX_RETRIES', 3, { min: 0, max: 10, integer: true }, issues);
   const hostInterval = numberSetting('HTTP_PER_HOST_INTERVAL_MS', 2000, { min: 0, integer: true }, issues);
@@ -65,6 +66,7 @@ export function getConfig() {
     preorderIsPurchasable: process.env.PREORDER_PURCHASABLE === '1',
     eventCooldownSeconds,
     priceChangeThreshold,
+    offerStabilityConfirmations,
     http: {
       timeoutMs,
       maxRetries,

@@ -19,6 +19,19 @@ test('new database applies every migration and records schema version', () => {
   assert.ok(seedColumns.includes('purpose'));
   assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='product_candidates'"));
   assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='crawl_frontier'"));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='catalog_products'"));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='catalog_aliases'"));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='terminology_review_queue'"));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='source_monitor_settings'"));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='monitor_requests'"));
+  for (const table of ['official_sources', 'official_announcements', 'official_scan_previews',
+    'watchlists', 'watchlist_matches', 'watchlist_alerts', 'watchlist_notification_preferences']) {
+    assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [table]));
+  }
+  const offerColumns = db.all("PRAGMA table_info('offers')").map((row) => row.name);
+  for (const column of ['last_attempted_at', 'last_successful_at', 'fresh_until', 'freshness_status', 'archived_at']) {
+    assert.ok(offerColumns.includes(column));
+  }
   db.close();
 });
 

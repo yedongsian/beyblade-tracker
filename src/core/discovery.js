@@ -5,6 +5,8 @@ import { extractModel, normalizePrice, normalizeUrl, normalizeWhitespace } from 
 import { canonicalizeSeedUrl, registrableDomain } from './site.js';
 import { parseProductPage } from '../connectors/parse.js';
 import { fetchPublicText } from '../net/public-http.js';
+import { watchlistCandidateBoost } from './watchlist.js';
+import { upsertOfficialCatalogItem } from './official.js';
 
 const now = () => new Date().toISOString();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -280,9 +282,21 @@ function enqueue(db, runId, item) {
 
 function saveCandidate(db, { site, runId, url, listing, method }) {
   const classification = classifyCandidate(listing, url);
+  const boost = watchlistCandidateBoost(db, listing);
+  if (boost.score) {
+    classification.confidence = Number(Math.min(0.99, classification.confidence + boost.score).toFixed(2));
+    classification.reasons.push(boost.reason);
+  }
   if (!classification.title || classification.confidence < 0.45) return null;
   const availability = computeAvailability(listing);
   const normalizedPrice = normalizePrice(listing.price, listing.currency);
+  const official = db.get("SELECT key FROM official_sources WHERE site_id=? AND source_class='official_store'", [site.id]);
+  if (official && classification.model && classification.confidence >= 0.8 && !classification.excludedReason) {
+    upsertOfficialCatalogItem(db, official.key, {
+      ...listing, url, title: classification.title, productCode: classification.model,
+      msrp: normalizedPrice.price, currency: normalizedPrice.currency,
+    });
+  }
   const ts = now();
   const suggestedStatus = classification.excludedReason ? 'excluded' : 'pending';
   db.run(

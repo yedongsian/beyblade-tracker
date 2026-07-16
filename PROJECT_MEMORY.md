@@ -1,7 +1,7 @@
 # Beyblade Tracker 專案記憶與交接文件
 
 > 更新日期：2026-07-16（Asia/Taipei）
-> 專案階段：第一版 MVP 已可運行；Roadmap Phase 0、Phase 1、Phase 2 已完成實作
+> 專案階段：第一版 MVP 已可運行；Roadmap Phase 0 至 Phase 5 已完成實作
 > 專案位置：`C:\Users\yedon\OneDrive\桌面\Beyblade`
 
 ## 1. 這份文件的用途
@@ -23,15 +23,17 @@
 - Phase 0：migration、備份／還原、執行資料分離、異常復原、設定驗證、Connector 契約測試及 Demo 歸檔。
 - Phase 1：首次導覽、來源網址安全預覽、Site／SeedUrl 去重、確認加入、測試、停用／重新啟用及手機／無障礙 UI。
 - Phase 2：同 Site 受控探索、robots／Sitemap／公開搜尋／有限連結、持久化 Crawl Frontier、每站安全預算、Recipe、Review Queue 與核准後正式監控。
+- Phase 3：三語 UI／狀態詞典、Catalog、多語別名、來源證據、零件關聯與未知詞彙審核。
+- Phase 4：獨立 Discovery／Offer 排程、Offer freshness、stale／archived／恢復、時間線、來源健康、穩定確認與手動重查冷卻。
+- Phase 5：Watchlist、官方來源 Registry、官方 Catalog／公告、匹配優先級、通知偏好與首次掃描預覽。
 - Git 初始完成基準：`689c181f94076a6146e1e1409e1c978dd6d6067b`（`feat: complete phase 0 and phase 1`）。
 - 正式資料庫已升級至 schema version 3，保留 3 個真實來源與既有 UX-20 歷史；完整性檢查通過且沒有 orphan foreign key。
 - 驗收結果：62/62 項 Node 測試、7/7 條 Web 路由煙霧測試均通過，真實 Yodobashi 預覽及來源測試成功。
 - Local Web App 位於 `http://127.0.0.1:8787`，完成時 `/health` 回傳 `ok`。
 
-Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node 測試與 8 條 Web 路由煙霧
-測試均通過。正式背景服務仍是本輪修改前啟動的程序，尚未套用 schema version 4；依使用者決定，
-下一次共同重啟後再做正式 DB migration 與 Takara Tomy Mall 實站驗收。除非出現可重現的回歸問題
-或使用者明確要求，後續工作不得重做 Phase 0、Phase 1 或 Phase 2。
+Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式背景服務後續已完成 schema 4，
+並在 Phase 3 升級至 schema 5。Takara Tomy Mall 實站驗收仍待 Queue-it 自然解除。除非出現可重現的
+回歸問題或使用者明確要求，後續工作不得重做 Phase 0 至 Phase 5。
 
 ### 2026-07-16 Phase 2 正式重啟與實站測試
 
@@ -43,6 +45,63 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node �
   螢幕外一般 Chrome 被導向 `takaratomy.queue-it.net` 的「網站混雑」等候室。
 - 依「不繞過排隊、CAPTCHA 或存取限制」原則，本次沒有把 Takara Tomy Mall 寫入正式來源、沒有建立候選，
   也沒有使用既有瀏覽器 session 代替 Tracker 的乾淨工作階段。待網站不再導向 Queue-it 時再重試。
+
+### 2026-07-16 Phase 3 多語言與商品辨識
+
+- Phase 3 已完成實作並正式升級至 schema version 5；升級前備份為
+  `backups/manual-20260716-073425Z.db`（schema 4），升級後另有
+  `backups/manual-20260716-073627Z.db`（schema 5）。
+- UI 已導入翻譯 key，繁中／日文／英文可在介面切換；商品刊登同時顯示翻譯狀態、商店原文與最後檢查時間。
+- 新增最小 Beyblade Catalog：BX／UX／CX 商品身分、Blade／Ratchet／Bit／Assist Blade、
+  商品組成、多語別名、來源證據、可信度、人工驗證與授權備註欄位。
+- 商店 Product 仍與 Catalog 分層；只用型號精確匹配，不用相似標題強制合併。既有 1 個 Product
+  已回填為 1 個 CatalogProduct、1 個別名與 1 筆來源證據。
+- 未知庫存文字與缺少商品身分的內容會進 terminology review queue；庫存詞彙經人工核准後，
+  才寫入解析覆寫規則並於下一次觀測生效。
+- 正規化涵蓋 Unicode NFKC、全半形、連字號、大小寫、JPY／TWD／USD、含稅／未稅、日期與時區。
+- 驗收結果：80/80 項 Node 測試、9 條 Web 路由煙霧測試均通過；正式 DB 完整性 `ok`、
+  0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。
+- 正式服務已以 schema version 5 在 `http://127.0.0.1:8787` 運行，`/health` 回傳 `ok`。
+- Takara Tomy Mall 實站探索仍待 Queue-it 自然解除，Phase 3 不以繞過等候室完成驗收。
+
+### 2026-07-16 Phase 4 持續更新、資料新鮮度與排程
+
+- Phase 4 已完成實作並正式升級至 schema version 6；升級前備份為
+  `backups/manual-20260716-082702Z.db`（schema 5），升級後備份為
+  `backups/manual-20260716-082753Z.db`（schema 6）。
+- Discovery Scheduler 與 Offer Monitor Scheduler 已分離；服務依兩者最早到期工作喚醒。
+- Offer 保存 `last_attempted_at`、`last_successful_at`、`fresh_until` 與 freshness 狀態；stale／archived
+  不計入可購買，連續缺失或單一 Offer 的重複 404／410 可封存，重新出現時恢復。
+- 排程具備自適應週期、jitter、指數 backoff、來源最小請求間隔與保守單工並行；已預留 Watchlist 優先級。
+- 商品詳情顯示價格／庫存觀測時間線；來源管理顯示下次監控與連續失敗，並提供有 60 秒冷卻的立即重查。
+- 庫存狀態預設連續兩次確認才轉換；stale 現貨事件會被消耗而不送出舊庫存通知。
+- 驗收結果：87/87 項 Node 測試、10 條 Web 路由煙霧測試均通過；正式 DB 完整性 `ok`、
+  0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。
+- 正式服務 PID `352628` 以 schema version 6 在 `http://127.0.0.1:8787` 運行，`/health` 回傳 `ok`。
+- Takara Tomy Mall 實站探索仍按原決定延後，Phase 4 驗收未嘗試繞過 Queue-it。
+
+### 2026-07-16 Phase 5 官方情報與 Watchlist
+
+- Phase 5 已完成實作並正式升級至 schema version 7；升級前備份為
+  `backups/manual-20260716-093125Z.db`（schema 6），升級後備份為
+  `backups/manual-20260716-093234Z.db`（schema 7）。
+- `/watchlist` 可建立 Catalog 商品／零件或規則型 Watchlist，欄位包含商品號、型號、條碼、
+  關鍵字、排除詞、語言、精確／包含／Regex 與同義詞擴充。
+- Watchlist 通知偏好分為新品公告、預購、發售、現貨／補貨與價格異常；命中以唯一鍵去重，
+  既有新鮮現貨可在新建 Watchlist 時回填，後續狀態事件只通知一次。
+- Takara Tomy Mall 已登錄為 `official_store`，Site 為 `takaratomymall.jp`；Registry 明確區分
+  官方商店、官方公告、媒體與零售商，取得優先序為 API／RSS／Sitemap／商品清單／HTML。
+- Takara Recipe 包含分類、新品、補貨、分頁、商品詳情與排除規則；`wovn` 只影響顯示語言，
+  不參與 URL／商品身分去重。
+- 官方高信心商品會先建立／更新已驗證 CatalogProduct，再以候選進 Review Queue；低信心資料
+  直接進人工審核，條碼衝突標為 `conflict`。官方公告不直接當成商店庫存。
+- 正式 Takara Seed、Discovery 設定與掃描預覽保持停用／`pending`；預覽顯示最多 100 個候選、
+  同站範圍、排除項目與 100 頁／5 分鐘／50 MB 預算。使用者日後確認前不得掃描。
+- CX-99 離線 fixture 驗收已完成：先看到官方公告，商店現貨 Offer 出現後建立並傳送一次通知；
+  Watchlist 命中把 Offer 監控週期提高到 5 分鐘。
+- 驗收結果：95/95 項 Node 測試、11 條 Web 路由煙霧測試通過；正式 DB 完整性 `ok`、
+  0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。
+- 正式服務 PID `220908` 以 schema version 7 在 `http://127.0.0.1:8787` 運行，`/health` 回傳 `ok`。
 
 ## 2. 產品願景
 
@@ -94,12 +153,11 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node �
 - Local Web App：`http://127.0.0.1:8787`，可預覽、加入、測試、停用及重新啟用來源。
 - 來源首頁／分類頁可啟動受控探索；候選先進 `/review`，核准後才建立 Product／Offer 與監控網址。
 - `/health` 提供服務與來源健康資訊。
-- 62 項 Node 自動化測試已通過，另有 7 條 Web 路由煙霧測試。
-- Phase 2 完成後為 73 項 Node 自動化測試與 8 條 Web 路由煙霧測試。
+- 目前為 95 項 Node 自動化測試，另有 11 條 Web 路由煙霧測試。
 
 ### Phase 0 已完成（2026-07-16）
 
-- SQLite schema version 目前為 3；`src/db/migrations/` 由 migration runner 依序升級並記錄校驗碼。
+- SQLite schema version 目前為 7；`src/db/migrations/` 由 migration runner 依序升級並記錄校驗碼。
 - 正式 DB 啟動前預設每 24 小時建立一致性自動備份，保留 30 天且最多 30 份。
 - `npm run db:backup` 可立即備份；`npm run db:restore` 會驗證完整性、拒絕覆蓋運行中的服務，
   並可還原到另一個測試資料夾。
@@ -211,10 +269,9 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node �
 可在新對話中貼上：
 
 > 請先完整閱讀 `C:\Users\yedon\OneDrive\桌面\Beyblade\PROJECT_MEMORY.md`、
-> `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0、Phase 1 已完成並驗收，Git 基準為
-> `689c181`，Phase 2 工作樹已完成但尚未建立新 commit；不要重做已完成部分。正式服務仍待重啟
-> 套用 schema version 4。先確認備份、73 項測試、8 條 Web 路由與服務狀態，再執行 Takara
-> Tomy Mall 實站探索及 Review Queue 核准驗收。
+> `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0 至 Phase 5 已完成並驗收；不要重做已完成部分。
+> 正式服務使用 schema version 7，先確認備份、95 項測試、11 條 Web 路由與服務狀態。Takara
+> Tomy Mall 實站探索及 Review Queue 核准驗收待 Queue-it 自然解除後再執行。
 
 ## 9. 已確認的未來架構決策
 
@@ -242,11 +299,12 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node �
 
 ## 10. 本次執行狀態
 
-- Roadmap Phase 0、Phase 1 已完成驗收；Phase 2 已完成實作與離線驗收。
+- Roadmap Phase 0 至 Phase 5 已完成實作與自動化驗收；Takara 實站驗收仍待 Queue-it 解除及使用者確認預覽。
 - 升級前後商品與事件未遺失；version 0 備份已在另一個測試資料夾成功還原並升級。
 - 正式 DB 已清除可明確識別的 Demo 資料，目前只保留三個真實商店與 UX-20 歷史。
 - 背景服務已在新版 Local Web App 下啟動，`/health` 回傳 `ok`。
-- 正式背景服務已重啟並使用 schema version 4，`/health` 正常，既有資料完整。
+- Phase 2 至 Phase 4 曾完成 schema version 4／5／6 重啟驗收，後續已由 Phase 5 的 schema version 7 取代。
+- 正式背景服務目前使用 schema version 7，官方 Registry 已登錄但掃描停用，`/health` 正常，既有資料完整。
 - Takara Tomy Mall 實站探索目前受 Queue-it 等候室阻擋；不要繞過，待網站允許乾淨工作階段存取後重試。
-- Phase 3 可先討論，不必把外部網站暫時排隊視為 Phase 2 程式回歸。
+- 下一個可開發階段為 Phase 6；不必把外部網站暫時排隊視為程式回歸。
 - 2026-07-16 已建立 Git repository 與初始 commit `689c181`；作者為 Darren Ye，使用 GitHub noreply Email。

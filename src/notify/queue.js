@@ -59,8 +59,21 @@ function buildSummary(db, productId, events) {
  * into one message. Idempotent per (channel, dedup_key).
  */
 export async function flushNotifications(db, notifiers, { dryRun = false } = {}) {
-  const pending = db.all('SELECT * FROM events WHERE notified = 0 ORDER BY created_at ASC, id ASC');
-  if (pending.length === 0) return { groups: 0, sent: 0, skipped: 0, failed: 0 };
+  const allPending = db.all('SELECT * FROM events WHERE notified = 0 ORDER BY created_at ASC, id ASC');
+  const stale = [];
+  const pending = allPending.filter((event) => {
+    if (!event.offer_id || !['in_stock', 'preorder'].includes(event.to_state)) return true;
+    const offer = db.get('SELECT freshness_status,archived_at FROM offers WHERE id=?', [event.offer_id]);
+    if (!offer || (!offer.archived_at && !['stale', 'archived'].includes(offer.freshness_status))) return true;
+    stale.push(event.id);
+    return false;
+  });
+  if (stale.length) {
+    db.run(`UPDATE events SET notified=1 WHERE id IN (${stale.map(() => '?').join(',')})`, stale);
+  }
+  if (pending.length === 0) {
+    return { groups: 0, sent: 0, skipped: 0, failed: 0, staleSuppressed: stale.length };
+  }
 
   const byProduct = new Map();
   for (const e of pending) {
@@ -132,7 +145,7 @@ export async function flushNotifications(db, notifiers, { dryRun = false } = {})
     }
   }
 
-  return { groups: byProduct.size, sent, skipped, failed };
+  return { groups: byProduct.size, sent, skipped, failed, staleSuppressed: stale.length };
 }
 
 // Insert a notification row, or update the existing (channel, dedup_key) row on

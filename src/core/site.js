@@ -11,6 +11,7 @@ const TRACKING_PARAMS = new Set([
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
   'gclid', 'fbclid', 'ref', 'ref_', 'spm', '_ga', 'mc_cid', 'mc_eid',
 ]);
+const DISPLAY_PARAMS = new Set(['wovn']);
 
 export class UrlValidationError extends Error {
   constructor(message, code = 'invalid_url') {
@@ -20,7 +21,7 @@ export class UrlValidationError extends Error {
   }
 }
 
-function normalizeSeedUrl(input, { stripWww }) {
+function normalizeSeedUrl(input, { stripWww, stripDisplayParams = false }) {
   let url;
   try { url = new URL(String(input || '').trim()); } catch {
     throw new UrlValidationError('請輸入完整網址，例如 https://store.example/product。');
@@ -37,7 +38,8 @@ function normalizeSeedUrl(input, { stripWww }) {
   url.port = '';
   url.hash = '';
   const entries = [...url.searchParams.entries()]
-    .filter(([key]) => !TRACKING_PARAMS.has(key.toLowerCase()))
+    .filter(([key]) => !TRACKING_PARAMS.has(key.toLowerCase()) &&
+      !(stripDisplayParams && DISPLAY_PARAMS.has(key.toLowerCase())))
     .sort(([a], [b]) => a.localeCompare(b));
   url.search = '';
   for (const [key, value] of entries) url.searchParams.append(key, value);
@@ -46,7 +48,7 @@ function normalizeSeedUrl(input, { stripWww }) {
 }
 
 export function canonicalizeSeedUrl(input) {
-  return normalizeSeedUrl(input, { stripWww: true });
+  return normalizeSeedUrl(input, { stripWww: true, stripDisplayParams: true });
 }
 
 export function fetchableSeedUrl(input) {

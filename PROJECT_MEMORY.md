@@ -16,6 +16,20 @@
 除非使用者明確確認 Roadmap 的範圍，否則不要直接開始大規模改造。先核對目前程式、資料庫與
 服務狀態，保留使用者既有資料與設定。
 
+### 2026-07-16 完成基線（後續協作者必讀）
+
+以下工作已完成並驗收，**不要重新設計、重建或從 Phase 0 開始**：
+
+- Phase 0：migration、備份／還原、執行資料分離、異常復原、設定驗證、Connector 契約測試及 Demo 歸檔。
+- Phase 1：首次導覽、來源網址安全預覽、Site／SeedUrl 去重、確認加入、測試、停用／重新啟用及手機／無障礙 UI。
+- Git 初始完成基準：`689c181f94076a6146e1e1409e1c978dd6d6067b`（`feat: complete phase 0 and phase 1`）。
+- 正式資料庫已升級至 schema version 3，保留 3 個真實來源與既有 UX-20 歷史；完整性檢查通過且沒有 orphan foreign key。
+- 驗收結果：62/62 項 Node 測試、7/7 條 Web 路由煙霧測試均通過，真實 Yodobashi 預覽及來源測試成功。
+- Local Web App 位於 `http://127.0.0.1:8787`，完成時 `/health` 回傳 `ok`。
+
+下一個尚未實作的起點是 **Phase 2：安全的站內商品探索與 Review Queue**。除非出現可重現的
+回歸問題或使用者明確要求變更，後續工作不得重做 Phase 0 或 Phase 1。
+
 ## 2. 產品願景
 
 目標是製作一個一般人也能使用的 Beyblade 商品與情報追蹤 App：
@@ -125,7 +139,7 @@
 
 ## 5. 目前尚未具備
 
-- 沒有一般使用者可操作的來源新增／編輯介面。
+- 尚未提供 Recipe selector 的一般使用者進階編輯介面。
 - 不會從任一商品頁自動搜尋整個主網站。
 - 不會自動發現全新的商品網址或官方公告。
 - 沒有完整的介面國際化與多語解析字典管理。
@@ -167,8 +181,9 @@
 可在新對話中貼上：
 
 > 請先完整閱讀 `C:\Users\yedon\OneDrive\桌面\Beyblade\PROJECT_MEMORY.md`、
-> `ROADMAP.md`、`README.md` 與 `TODO.md`。先摘要目前狀態、列出尚未確認的架構決策，
-> 不要直接實作 Roadmap。保留現有資料與設定，等待我們確認本次要做的階段後再執行。
+> `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0、Phase 1 已完成並驗收，Git 基準為
+> `689c181`，正式資料庫為 schema version 3；不要重做已完成部分。先核對目前程式、資料庫、
+> 62 項測試與服務狀態，再摘要 Phase 2 尚待確認的範圍，保留既有資料與設定並等待確認後執行。
 
 ## 9. 已確認的未來架構決策
 
@@ -201,3 +216,4 @@
 - 正式 DB 已清除可明確識別的 Demo 資料，目前只保留三個真實商店與 UX-20 歷史。
 - 背景服務已在新版 Local Web App 下啟動，`/health` 回傳 `ok`。
 - Phase 2 尚未開始；下一階段才會加入 Sitemap、搜尋、有限連結探索及 Review Queue。
+- 2026-07-16 已建立 Git repository 與初始 commit `689c181`；作者為 Darren Ye，使用 GitHub noreply Email。

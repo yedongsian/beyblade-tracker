@@ -1,0 +1,2 @@
+ALTER TABLE sources ADD COLUMN connector_version TEXT NOT NULL DEFAULT '1.0.0';
+ALTER TABLE sources ADD COLUMN recipe_version INTEGER NOT NULL DEFAULT 1;

@@ -1,0 +1,71 @@
+{
+  "fixtureVersion": 1,
+  "connectorVersion": "1.0.0",
+  "_comment": "Deterministic offline dataset. Each frame is one crawl snapshot. Advance frames with FIXTURE_FRAME=0|1 to replay: discovery -> stock changes. Two stores share model BX-38 to exercise merging.",
+  "frames": [
+    [
+      {
+        "url": "https://store-a.example/products/dranzer-bx-38",
+        "title": "Beyblade X BX-38 ドランザースパイラル スターター",
+        "brand": "Takara Tomy",
+        "series": "Beyblade X",
+        "barcode": "4570118488384",
+        "sku": "BX-38",
+        "price": 1080,
+        "currency": "JPY",
+        "availabilityRaw": "https://schema.org/InStock",
+        "hasBuyButton": true,
+        "image": "https://store-a.example/img/bx-38.jpg"
+      },
+      {
+        "url": "https://store-b.example/beyblade/bx38",
+        "title": "BEYBLADE X BX-38 Dranzer Spiral Starter",
+        "brand": "Takara Tomy",
+        "barcode": "4570118488384",
+        "price": 12.99,
+        "currency": "USD",
+        "availabilityRaw": "https://schema.org/OutOfStock",
+        "availabilityText": "Sold out"
+      },
+      {
+        "url": "https://store-a.example/products/cx-05-preview",
+        "title": "Beyblade X CX-05 Weiss Tiger (Coming Soon)",
+        "brand": "Takara Tomy",
+        "series": "Beyblade X",
+        "sku": "CX-05",
+        "availabilityText": "近日発売 coming soon"
+      }
+    ],
+    [
+      {
+        "url": "https://store-a.example/products/dranzer-bx-38",
+        "title": "Beyblade X BX-38 ドランザースパイラル スターター",
+        "brand": "Takara Tomy",
+        "barcode": "4570118488384",
+        "price": 1080,
+        "currency": "JPY",
+        "availabilityRaw": "https://schema.org/OutOfStock",
+        "availabilityText": "在庫なし"
+      },
+      {
+        "url": "https://store-b.example/beyblade/bx38",
+        "title": "BEYBLADE X BX-38 Dranzer Spiral Starter",
+        "brand": "Takara Tomy",
+        "barcode": "4570118488384",
+        "price": 12.99,
+        "currency": "USD",
+        "availabilityRaw": "https://schema.org/InStock",
+        "hasBuyButton": true
+      },
+      {
+        "url": "https://store-a.example/products/cx-05-preview",
+        "title": "Beyblade X CX-05 Weiss Tiger",
+        "brand": "Takara Tomy",
+        "sku": "CX-05",
+        "price": 2200,
+        "currency": "JPY",
+        "availabilityRaw": "https://schema.org/PreOrder"
+      }
+    ]
+  ]
+}

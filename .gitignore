@@ -1,0 +1,14 @@
+node_modules/
+.codex/
+.codex-remote-attachments/
+data/
+runtime/
+backups/
+archive/*
+!archive/demo/
+archive/demo/*
+!archive/demo/README.md
+.env
+*.log
+logs/
+config/sources.json

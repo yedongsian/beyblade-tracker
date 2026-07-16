@@ -1,0 +1,30 @@
+{
+  "name": "beyblade-tracker",
+  "version": "0.1.0",
+  "description": "Reliable multi-store Beyblade product tracker with offline fixtures, SQLite storage, product/offer merging, event detection and pluggable notifications.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "crawl:once": "node --no-warnings bin/crawl-once.js",
+    "worker": "node --no-warnings bin/worker.js",
+    "web": "node --no-warnings bin/web.js",
+    "service": "node --no-warnings bin/service.js",
+    "start:tracker": "node --no-warnings scripts/service-control.js start",
+    "restart:tracker": "node --no-warnings scripts/service-control.js restart",
+    "stop:tracker": "node --no-warnings scripts/service-control.js stop",
+    "status:tracker": "node --no-warnings scripts/service-control.js status",
+    "db:backup": "node --no-warnings bin/backup.js",
+    "db:restore": "node --no-warnings bin/restore.js",
+    "config:check": "node --no-warnings bin/config-check.js",
+    "dev": "node --no-warnings bin/worker.js --dev",
+    "health": "node --no-warnings bin/health-check.js",
+    "test": "node --no-warnings --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "playwright-core": "^1.61.1"
+  }
+}

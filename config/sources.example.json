@@ -1,0 +1,37 @@
+{
+  "_comment": "Copy to config/sources.json and edit. 'fixture' runs fully offline. 'jsonld' fetches real public product pages you add yourself; be a good citizen and respect each site's terms and rate limits.",
+  "sources": [
+    {
+      "key": "demo-fixture",
+      "name": "Demo Fixture Store",
+      "connector": "fixture",
+      "recipeVersion": 1,
+      "enabled": true,
+      "checkIntervalSeconds": 3600,
+      "config": {
+        "file": "fixtures/beyblade-x.json"
+      }
+    },
+    {
+      "key": "example-jsonld",
+      "name": "Example JSON-LD Store",
+      "connector": "jsonld",
+      "recipeVersion": 1,
+      "enabled": false,
+      "checkIntervalSeconds": 21600,
+      "url": "https://store.example",
+      "config": {
+        "pages": [
+          "https://store.example/products/beyblade-x-bx-38"
+        ],
+        "selectors": {
+          "title": "h1.product-title",
+          "price": ".price",
+          "availabilityText": ".availability",
+          "buyButton": "button.add-to-cart",
+          "image": "img.product-image"
+        }
+      }
+    }
+  ]
+}

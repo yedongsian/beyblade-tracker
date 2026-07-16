@@ -55,7 +55,7 @@ footer{border-top:1px solid var(--line);padding:1.25rem 0 2rem;color:var(--muted
 function nav(current, t) {
   const items = [
     ['/', t('nav.overview')], ['/products', t('nav.products')], ['/offers', t('nav.offers')],
-    ['/events', t('nav.events')], ['/catalog', t('nav.catalog')], ['/watchlist', t('nav.watchlist')], ['/review', t('nav.review')],
+    ['/events', t('nav.events')], ['/catalog', t('nav.catalog')], ['/watchlist', t('nav.watchlist')], ['/community', t('nav.community')], ['/review', t('nav.review')],
     ['/sources', t('nav.sources')],
   ];
   return items.map(([href, label]) => `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
@@ -129,6 +129,19 @@ document.getElementById('watch-mode')?.addEventListener('change',event=>{if(even
 document.getElementById('watchlist-form')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);const body=Object.fromEntries(form);body.notificationEvents=form.getAll('notificationEvents');body.synonymExpansion=true;watchStatus.className='status';try{const data=await api('/api/watchlists',{method:'POST',body:JSON.stringify(body)});watchStatus.className='status success';watchStatus.textContent=data.message||watchMessages.saved;setTimeout(()=>location.reload(),400)}catch(error){watchStatus.className='status error';watchStatus.textContent=error.message}});
 document.querySelectorAll('[data-watch-action]').forEach(button=>button.addEventListener('click',async()=>{const action=button.dataset.watchAction;if(action==='delete'&&!confirm(watchMessages.confirmDelete))return;button.disabled=true;try{if(action==='delete')await api('/api/watchlists/'+button.dataset.watchId,{method:'DELETE'});else await api('/api/watchlists/'+button.dataset.watchId,{method:'PATCH',body:JSON.stringify({enabled:action==='enable'})});location.reload()}catch(error){watchStatus.className='status error';watchStatus.textContent=error.message;button.disabled=false}}));
 document.querySelectorAll('[data-official-confirm]').forEach(button=>button.addEventListener('click',async()=>{button.disabled=true;try{const data=await api('/api/official-sources/'+button.dataset.officialConfirm+'/confirm',{method:'POST',body:'{}'});watchStatus.className='status success';watchStatus.textContent=data.message||watchMessages.officialConfirmed;setTimeout(()=>location.reload(),400)}catch(error){watchStatus.className='status error';watchStatus.textContent=error.message;button.disabled=false}}));
+`;
+}
+
+export function communityScript(t = createTranslator()) {
+  const messages = { saved: t('community.saved') };
+  return `
+const communityMessages=${JSON.stringify(messages)};const communityStatus=document.getElementById('community-status');
+document.querySelectorAll('[data-community-settings]').forEach(form=>form.addEventListener('submit',async event=>{event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));data.muted=Boolean(data.muted);data.filterSensitive=Boolean(data.filterSensitive);data.filterSpam=Boolean(data.filterSpam);event.currentTarget.querySelector('button').disabled=true;try{await api('/api/community-sources/'+event.currentTarget.dataset.communitySettings,{method:'PATCH',body:JSON.stringify(data)});communityStatus.className='status success';communityStatus.textContent=communityMessages.saved;setTimeout(()=>location.reload(),350)}catch(error){communityStatus.className='status error';communityStatus.textContent=error.message;event.currentTarget.querySelector('button').disabled=false}}));
+const xCostDialog=document.getElementById('x-cost-dialog');const xCostAck=document.getElementById('x-cost-ack');const xConsoleLink=document.getElementById('x-console-link');
+document.querySelectorAll('[data-x-self-setup]').forEach(button=>button.addEventListener('click',()=>{xCostAck.checked=false;xConsoleLink.setAttribute('aria-disabled','true');xCostDialog.showModal()}));
+xCostAck?.addEventListener('change',()=>xConsoleLink.setAttribute('aria-disabled',xCostAck.checked?'false':'true'));
+xConsoleLink?.addEventListener('click',event=>{if(!xCostAck.checked){event.preventDefault();xCostAck.focus()}});
+document.getElementById('x-cost-cancel')?.addEventListener('click',()=>xCostDialog.close());
 `;
 }
 

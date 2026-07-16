@@ -15,6 +15,7 @@ const checks = [
   ['/events', 200, /事件/],
   ['/catalog', 200, /Beyblade Catalog/],
   ['/watchlist', 200, /Watchlist/],
+  ['/community', 200, /社群情報/],
   ['/review', 200, /候選商品審核/],
   ['/sources', 200, /來源管理/],
   ['/health', 200, /"status"/],

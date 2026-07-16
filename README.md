@@ -29,6 +29,7 @@
 - **價格／庫存時間線**：商品詳情保留每次觀測，來源頁可立即重查並有冷卻保護。
 - **Watchlist**：可依 Catalog 商品／零件、商品號、型號、條碼、關鍵字、排除詞與語言匹配。
 - **官方情報**：官方來源 Registry、首次掃描預覽、已驗證 Catalog 與公告和商店庫存分層顯示。
+- **社群情報**：非官方線索與官方／商店資料隔離，保留原文並以文章 ID、網址與內容指紋合併重複／轉貼。
 - `/health` 健康檢查端點。
 - 所有網路要求具備 timeout、User-Agent、網域限速、有限重試與指數退避。
 - 日誌會遮蔽疑似密鑰；資料庫不保存 Token／Webhook。
@@ -114,6 +115,7 @@ Remove-Item Env:\FIXTURE_FRAME
 - `/events` 最近事件
 - `/catalog` Catalog 商品身分、多語別名、來源證據與未知詞彙審核
 - `/watchlist` Watchlist 規則、通知偏好、命中紀錄與官方來源首次掃描預覽
+- `/community` 非官方社群線索、原文、可信度、Watchlist 命中與來源過濾設定
 - `/review` 探索候選的核准、排除、稍後處理與批次操作
 - `/sources` 貼網址預覽、加入商店、連線測試、立即重查、啟用／停用與來源健康
 - `/health` JSON 健康檢查端點（回傳 `ok` 或 `degraded`）
@@ -142,6 +144,18 @@ Watchlist 支援精確、包含及進階 Regex，預設會使用 Catalog 已驗�
 Takara Tomy Mall 已登錄為第一個官方商店，但正式 Seed 與 Discovery 排程預設停用。`/watchlist`
 會先顯示商品候選上限、同站範圍、排除項目與請求預算；只有使用者確認後才允許日後掃描。
 `wovn` 只控制顯示語言，不參與 URL 或商品身份去重。
+
+`@bey_sokuhou` 已登錄為第一個非官方社群速報來源。`/community` 會把新品、抽選、預購、
+再入荷及商店連結標成「未驗證線索」，顯示作者、時間、語言、型號、取得方式和原文；這些內容
+不會建立官方公告、Offer、確定庫存事件或現貨通知。來源支援靜音、關鍵字排除、敏感／垃圾
+訊息過濾與 7–365 天保存政策，可選摘要一律標示為機器摘要。
+
+X 官方 API 於 2026-07-16 查核為每讀取一則貼文 US$0.005。來源狀態固定從
+`user_setup_required`、停用及專案月預算零開始，本專案不代付 X 費用。使用者點選「使用自己的
+X Developer 帳戶設定」後會先看到單價、每日 20／100 則的月費估算、價格變動、自動加值及
+spending limit 警告；勾選理解後才會開啟 X Developer Console，由使用者自行登入、建立 App、
+購買 credits 並管理帳單。只開啟 Console 不會啟用來源或呼叫 API，亦不以 HTML 抓取繞過登入
+或反自動化機制。每日 20 則不重複貼文的粗估費用約為 US$3／月。
 
 來源管理的「探索安全預算與 Recipe」可調整頁數、深度、時間、流量、24 小時預設探索間隔及
 網址包含／排除詞。失效 Recipe 會暫停自動探索，避免對網站盲目重試；調整設定後可手動再試。
@@ -216,7 +230,7 @@ Token／Webhook 只存在於 `.env`，**不會**寫入資料庫或日誌。
 
 ## 資料庫備份與還原
 
-資料庫預設在 `data\tracker.db`，新版程式 schema version 為 7。程式啟動正式 DB 前會先檢查
+資料庫預設在 `data\tracker.db`，新版程式 schema version 為 8。程式啟動正式 DB 前會先檢查
 `backups\`；預設每 24 小時建立一次交易一致的 `auto-*.db`，保留 30 天且最多 30 份。
 即使 SQLite 正使用 WAL，備份仍會包含已提交的 WAL 資料。
 
@@ -283,8 +297,9 @@ archive/demo/   已歸檔的歷史 Demo 資料
 `npm test` 涵蓋：文字/網址/價格/型號正規化、JSON-LD 與 CSS 解析、可購買判定與排除規則、
 商品合併、狀態轉換、去重與冷卻、來源隔離、密鑰不落地、通知彙整、migration、崩潰復原、
 設定 validation、Connector 契約、robots／Sitemap／Crawl Frontier、Review Queue，以及跨資料夾
-備份還原、獨立排程、jitter／backoff、freshness、stale／archived／恢復、穩定確認與手動重查冷卻。
-目前為 95 項 Node 測試；Web smoke test 涵蓋 11 條管理路由。
+備份還原、獨立排程、jitter／backoff、freshness、stale／archived／恢復、穩定確認、手動重查冷卻、
+社群貼文分類／去重／過濾／保存期限與官方／庫存隔離。
+目前為 105 項 Node 測試；Web smoke test 涵蓋 12 條管理路由。
 
 ## 明確不包含於第一版
 

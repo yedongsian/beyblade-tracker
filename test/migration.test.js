@@ -28,6 +28,10 @@ test('new database applies every migration and records schema version', () => {
     'watchlists', 'watchlist_matches', 'watchlist_alerts', 'watchlist_notification_preferences']) {
     assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [table]));
   }
+  for (const table of ['community_sources', 'community_posts', 'community_post_origins',
+    'community_post_links', 'community_post_matches', 'community_source_runs']) {
+    assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [table]));
+  }
   const offerColumns = db.all("PRAGMA table_info('offers')").map((row) => row.name);
   for (const column of ['last_attempted_at', 'last_successful_at', 'fresh_until', 'freshness_status', 'archived_at']) {
     assert.ok(offerColumns.includes(column));

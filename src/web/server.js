@@ -10,7 +10,7 @@ import {
 } from '../core/discovery.js';
 import { listCandidates, reviewCandidate, reviewCandidates } from '../core/review-queue.js';
 import { assertPublicUrl } from '../net/public-http.js';
-import { catalogScript, esc, layout, reviewQueueScript, sourcesScript, table, watchlistScript } from './ui.js';
+import { catalogScript, communityScript, esc, layout, reviewQueueScript, sourcesScript, table, watchlistScript } from './ui.js';
 import { createTranslator } from '../i18n.js';
 import {
   listCatalogProducts, listTerminologyReviews, reviewTerminology,
@@ -23,6 +23,9 @@ import {
 import {
   confirmOfficialPreview, listOfficialAnnouncements, listOfficialSources,
 } from '../core/official.js';
+import {
+  listCommunityPosts, listCommunitySources, updateCommunitySource,
+} from '../core/community.js';
 
 function stateBadge(state, t) {
   const kind = ['in_stock'].includes(state) ? 'good' :
@@ -59,6 +62,9 @@ export function healthData(db) {
     pendingCandidates: db.get("SELECT COUNT(*) c FROM product_candidates WHERE status='pending'").c,
     watchlists: db.get('SELECT COUNT(*) c FROM watchlists WHERE enabled=1').c,
     officialAnnouncements: db.get('SELECT COUNT(*) c FROM official_announcements').c,
+    communitySources: db.get('SELECT COUNT(*) c FROM community_sources').c,
+    communityPosts: db.get('SELECT COUNT(*) c FROM community_posts').c,
+    communitySourcesNeedingSetup: db.get("SELECT COUNT(*) c FROM community_sources WHERE access_state!='ready'").c,
   };
   return {
     status: unhealthy.length ? 'degraded' : 'ok',
@@ -248,6 +254,44 @@ function watchlistPage(db, base) {
   return layout({ ...page, title: t('watchlist.title'), current: '/watchlist', body, extraScript: watchlistScript(t) });
 }
 
+function communityPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const sources = listCommunitySources(db);
+  const posts = listCommunityPosts(db);
+  const sourceCards = sources.map((source) => {
+    const stateKey = source.access_state === 'ready' ? 'community.ready' :
+      source.access_state === 'unavailable' ? 'community.unavailable' : 'community.userSetupRequired';
+    const monthly20 = (Number(source.api_cost_per_post_usd || 0) * 20 * 30).toFixed(2);
+    return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill warn">${esc(t('community.social'))}</span> <span class="pill ${source.access_state === 'ready' ? 'good' : 'warn'}">${esc(t(stateKey))}</span></h3>
+      <div class="meta"><span>${esc(source.author_handle)}</span><span>${esc(source.acquisition_method)}</span><span>${esc(t('community.costPerPost', { value: source.api_cost_per_post_usd }))}</span><span>${esc(t('community.costExample', { value: monthly20 }))}</span><span>${esc(t('community.postsCount', { count: source.post_count }))}</span></div>
+      <p class="muted">${esc(source.last_error || t('community.noNetwork'))}</p><p><a href="${esc(source.profile_url)}" target="_blank" rel="noopener noreferrer">${esc(t('community.originalProfile'))}</a></p>
+      <form class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:.75rem" data-community-settings="${source.id}">
+        <label style="font-weight:400"><input style="width:auto" type="checkbox" name="muted"${source.muted ? ' checked' : ''}> ${esc(t('community.mute'))}</label>
+        <label style="font-weight:400"><input style="width:auto" type="checkbox" name="filterSensitive"${source.filter_sensitive ? ' checked' : ''}> ${esc(t('community.filterSensitive'))}</label>
+        <label style="font-weight:400"><input style="width:auto" type="checkbox" name="filterSpam"${source.filter_spam ? ' checked' : ''}> ${esc(t('community.filterSpam'))}</label>
+        <div><label for="community-exclude-${source.id}">${esc(t('community.excludes'))}</label><input id="community-exclude-${source.id}" name="excludeTerms" value="${esc(source.excludeTerms.join(', '))}"></div>
+        <div><label for="community-retention-${source.id}">${esc(t('community.retention'))}</label><input id="community-retention-${source.id}" name="retentionDays" type="number" min="7" max="365" value="${esc(source.retention_days)}"></div>
+        <div class="actions"><button class="btn secondary" type="submit">${esc(t('common.save'))}</button></div>
+      </form></div><div class="actions"><button class="btn" type="button" data-x-self-setup>${esc(t('community.selfSetup'))}</button></div></article>`;
+  }).join('');
+  const postCards = posts.map((post) => `<article class="card"><div class="section-head"><div><h3>${esc(post.author_handle || post.source_handle || post.source_name)}</h3><div class="meta"><span>${esc(post.published_at || post.fetched_at)}</span><span>${esc(post.locale)}</span>${post.detectedModels.map((model) => `<span class="pill">${esc(model)}</span>`).join('')}${post.leadTypes.map((kind) => `<span class="pill warn">${esc(t(`communityLead.${kind}`))}</span>`).join('')}<span class="pill warn">${esc(t('community.unverified'))}</span></div></div><a href="${esc(post.canonical_url)}" target="_blank" rel="noopener noreferrer">${esc(t('common.original'))}</a></div>
+    <p>${esc(post.content_text)}</p>${post.summary ? `<div class="notice warn"><strong>${esc(t('community.machineSummary'))}</strong><br>${esc(post.summary)}</div>` : ''}
+    <div class="meta"><span>${esc(t('community.acquiredBy', { value: post.acquisition_method }))}</span>${post.duplicate_count ? `<span>${esc(t('community.duplicates', { count: post.duplicate_count }))}</span>` : ''}${post.matches.map((match) => `<span>${esc(t('community.watchMatch', { name: match.watchlist_name }))}</span>`).join('')}</div></article>`).join('');
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('community.eyebrow'))}</p><h1>${esc(t('community.title'))}</h1><p>${esc(t('community.intro'))}</p></div></div>
+    <div class="notice warn"><strong>${esc(t('community.disclaimerTitle'))}</strong><br>${esc(t('community.disclaimer'))}</div>
+    <section><h2>${esc(t('community.sources'))}</h2><p id="community-status" class="status" role="status" aria-live="polite"></p><div class="source-list">${sourceCards}</div></section>
+    <section style="margin-top:1.5rem"><h2>${esc(t('community.feed'))}</h2><div class="source-list">${postCards || `<div class="card muted">${esc(t('community.empty'))}</div>`}</div></section>
+    <dialog id="x-cost-dialog" aria-labelledby="x-cost-title"><div class="dialog-body"><p class="eyebrow">X API</p><h2 id="x-cost-title">${esc(t('community.costWarningTitle'))}</h2>
+      <div class="notice warn"><strong>${esc(t('community.youPayTitle'))}</strong><br>${esc(t('community.youPayBody'))}</div>
+      <ul><li>${esc(t('community.costRate'))}</li><li>${esc(t('community.costEstimate'))}</li><li>${esc(t('community.costChanges'))}</li><li>${esc(t('community.autoRechargeWarning'))}</li><li>${esc(t('community.noActivation'))}</li></ul>
+      <p><a href="https://docs.x.com/x-api/getting-started/pricing" target="_blank" rel="noopener noreferrer">${esc(t('community.officialPricing'))}</a></p>
+      <label style="font-weight:400"><input id="x-cost-ack" style="width:auto" type="checkbox"> ${esc(t('community.costAcknowledge'))}</label>
+      <div class="dialog-actions"><button id="x-cost-cancel" class="btn secondary" type="button">${esc(t('community.cancel'))}</button><a id="x-console-link" class="btn" href="https://console.x.com" target="_blank" rel="noopener noreferrer" aria-disabled="true">${esc(t('community.openConsole'))}</a></div>
+    </div></dialog>`;
+  return layout({ ...page, title: t('community.title'), current: '/community', body, extraScript: communityScript(t) });
+}
+
 function sourcesPage(db, base) {
   const page = pageOptions(db, base);
   const { t } = page;
@@ -359,6 +403,7 @@ export function createWebServer(db, options = {}) {
       else if (req.method === 'GET' && url.pathname === '/events') out = response(eventsPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/catalog') out = response(catalogPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/watchlist') out = response(watchlistPage(db, base));
+      else if (req.method === 'GET' && url.pathname === '/community') out = response(communityPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/review') out = response(reviewPage(db, base, url.searchParams.get('status') || 'pending'));
       else if (req.method === 'GET' && url.pathname === '/sources') out = response(sourcesPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/health') out = json(healthData(db));
@@ -368,6 +413,7 @@ export function createWebServer(db, options = {}) {
       else if (req.method === 'GET' && url.pathname === '/api/terminology') out = json({ terms: listTerminologyReviews(db, { status: url.searchParams.get('status') || 'pending' }) });
       else if (req.method === 'GET' && url.pathname === '/api/watchlists') out = json({ watchlists: listWatchlists(db), alerts: listWatchlistAlerts(db) });
       else if (req.method === 'GET' && url.pathname === '/api/official-sources') out = json({ sources: listOfficialSources(db), announcements: listOfficialAnnouncements(db) });
+      else if (req.method === 'GET' && url.pathname === '/api/community') out = json({ sources: listCommunitySources(db), posts: listCommunityPosts(db) });
       else if (req.method === 'POST' && url.pathname === '/api/settings') {
         out = json({ settings: saveOnboardingSettings(db, await readJson(req)) });
       } else if (req.method === 'POST' && url.pathname === '/api/settings/language') {
@@ -398,7 +444,10 @@ export function createWebServer(db, options = {}) {
         const monitorMatch = url.pathname.match(/^\/api\/sources\/(\d+)\/check-now$/);
         const watchlistMatch = url.pathname.match(/^\/api\/watchlists\/(\d+)$/);
         const officialConfirmMatch = url.pathname.match(/^\/api\/official-sources\/(\d+)\/confirm$/);
-        if (officialConfirmMatch && req.method === 'POST') {
+        const communitySourceMatch = url.pathname.match(/^\/api\/community-sources\/(\d+)$/);
+        if (communitySourceMatch && req.method === 'PATCH') {
+          out = json({ source: updateCommunitySource(db, Number(communitySourceMatch[1]), await readJson(req)) });
+        } else if (officialConfirmMatch && req.method === 'POST') {
           out = json({ ...confirmOfficialPreview(db, Number(officialConfirmMatch[1])), message: requestT('api.officialConfirmed') });
         } else if (watchlistMatch && req.method === 'PATCH') {
           const body = await readJson(req);

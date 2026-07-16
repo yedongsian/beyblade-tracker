@@ -18,6 +18,7 @@ import { flushNotifications } from './notify/queue.js';
 import { recoverInterruptedDiscoveryRuns, runDueDiscoveries } from './core/discovery.js';
 import { backfillCatalog } from './core/catalog.js';
 import { registerDefaultOfficialSources } from './core/official.js';
+import { pruneExpiredCommunityPosts, registerDefaultCommunitySources } from './core/community.js';
 import { flushWatchlistAlerts } from './core/watchlist.js';
 import {
   ensureSourceMonitorSettings, finalizeFailedMonitor, finalizeSuccessfulMonitor,
@@ -33,6 +34,8 @@ export function createApp(overrides = {}) {
   }
   const db = openDatabase(config.dbPath);
   registerDefaultOfficialSources(db);
+  registerDefaultCommunitySources(db);
+  pruneExpiredCommunityPosts(db);
   backfillCatalog(db);
   const notifiers = buildNotifiers(config);
   return { db, config, notifiers };
@@ -147,13 +150,14 @@ export async function runOnce(app, {
 
   const notifyResult = await flushNotifications(app.db, app.notifiers);
   const watchlistNotify = await flushWatchlistAlerts(app.db, app.notifiers);
+  const communityPruned = pruneExpiredCommunityPosts(app.db, { at: new Date(nowMs).toISOString() });
   logger.info(
     `notifications: ${notifyResult.groups} groups, ${notifyResult.sent} sent, ` +
     `${notifyResult.skipped} skipped, ${notifyResult.failed || 0} failed`
   );
 
   cleanupRaw(app);
-  return { ...summary, discovery, notify: notifyResult, watchlistNotify };
+  return { ...summary, discovery, notify: notifyResult, watchlistNotify, communityPruned };
 }
 
 function parseSourceConfig(db, source) {

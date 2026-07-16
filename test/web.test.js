@@ -6,6 +6,7 @@ import { confirmSource, saveOnboardingSettings } from '../src/core/source-manage
 import { processListing } from '../src/core/pipeline.js';
 import { upsertSource } from '../src/core/store.js';
 import { importOfficialItem, registerDefaultOfficialSources } from '../src/core/official.js';
+import { importCommunityPost, registerDefaultCommunitySources } from '../src/core/community.js';
 
 async function withServer(fn, options = {}) {
   const db = new Database(':memory:');
@@ -62,6 +63,40 @@ test('Watchlist UI creates rules and official-source preview requires explicit c
     assert.match(catalog, /官方商品情報/);
     assert.match(catalog, /CX-99/);
     assert.match(catalog, /2400 JPY/);
+  });
+});
+
+test('community UI labels posts as unverified and updates source filters without enabling paid access', async () => {
+  await withServer(async ({ db, base }) => {
+    const source = registerDefaultCommunitySources(db);
+    importCommunityPost(db, source.key, {
+      id: 'web-1', url: 'https://x.com/bey_sokuhou/status/web-1',
+      text: 'CX-99 再入荷の目撃情報 https://store.example/cx-99',
+      created_at: '2026-07-16T03:00:00.000Z', author: 'bey_sokuhou',
+    }, { acquisitionMethod: 'fixture' });
+    const response = await fetch(`${base}/community`);
+    const page = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(page, /社群貼文不是庫存或官方事實/);
+    assert.match(page, /未驗證消息/);
+    assert.match(page, /CX-99/);
+    assert.match(page, /使用自己的 X Developer 帳戶設定/);
+    assert.match(page, /繼續前請確認 X API 費用/);
+    assert.match(page, /每天讀取 20 則不重複貼文/);
+    assert.match(page, /href="https:\/\/console\.x\.com"/);
+    assert.match(page, /id="x-console-link"[^>]+aria-disabled="true"/);
+    const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+    const updated = await fetch(`${base}/api/community-sources/${source.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+      body: JSON.stringify({ muted: true, excludeTerms: '交換', retentionDays: 45,
+        filterSensitive: true, filterSpam: true }),
+    });
+    assert.equal(updated.status, 200);
+    const row = db.get('SELECT * FROM community_sources WHERE id=?', [source.id]);
+    assert.equal(row.muted, 1);
+    assert.equal(row.retention_days, 45);
+    assert.equal(row.enabled, 0);
+    assert.equal(row.monthly_budget_usd, 0);
   });
 });
 

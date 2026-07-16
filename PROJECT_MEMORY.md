@@ -1,7 +1,7 @@
 # Beyblade Tracker 專案記憶與交接文件
 
 > 更新日期：2026-07-16（Asia/Taipei）
-> 專案階段：第一版 MVP 已可運行；Roadmap Phase 0 至 Phase 5 已完成實作
+> 專案階段：第一版 MVP 已可運行；Roadmap Phase 0 至 Phase 6 已完成實作
 > 專案位置：`C:\Users\yedon\OneDrive\桌面\Beyblade`
 
 ## 1. 這份文件的用途
@@ -26,6 +26,8 @@
 - Phase 3：三語 UI／狀態詞典、Catalog、多語別名、來源證據、零件關聯與未知詞彙審核。
 - Phase 4：獨立 Discovery／Offer 排程、Offer freshness、stale／archived／恢復、時間線、來源健康、穩定確認與手動重查冷卻。
 - Phase 5：Watchlist、官方來源 Registry、官方 Catalog／公告、匹配優先級、通知偏好與首次掃描預覽。
+- Phase 6：社群來源 Registry、未驗證線索、文章／轉貼去重、Watchlist 命中、來源過濾與保存政策。
+- Phase 3 至 Phase 5 完成基準 commit：`7b22537`（`feat: complete phases 3 through 5`）。
 - Git 初始完成基準：`689c181f94076a6146e1e1409e1c978dd6d6067b`（`feat: complete phase 0 and phase 1`）。
 - 正式資料庫已升級至 schema version 3，保留 3 個真實來源與既有 UX-20 歷史；完整性檢查通過且沒有 orphan foreign key。
 - 驗收結果：62/62 項 Node 測試、7/7 條 Web 路由煙霧測試均通過，真實 Yodobashi 預覽及來源測試成功。
@@ -33,7 +35,7 @@
 
 Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式背景服務後續已完成 schema 4，
 並在 Phase 3 升級至 schema 5。Takara Tomy Mall 實站驗收仍待 Queue-it 自然解除。除非出現可重現的
-回歸問題或使用者明確要求，後續工作不得重做 Phase 0 至 Phase 5。
+回歸問題或使用者明確要求，後續工作不得重做 Phase 0 至 Phase 6。
 
 ### 2026-07-16 Phase 2 正式重啟與實站測試
 
@@ -103,6 +105,29 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
   0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。
 - 正式服務 PID `220908` 以 schema version 7 在 `http://127.0.0.1:8787` 運行，`/health` 回傳 `ok`。
 
+### 2026-07-16 Phase 6 論壇與社群情報
+
+- Phase 6 已完成實作並正式升級至 schema version 8；升級前備份為
+  `backups/manual-20260716-102024Z.db`（schema 7），升級後備份為
+  `backups/manual-20260716-102105Z.db`（schema 8）。
+- `/community` 將社群線索與官方 Catalog／公告、商店 Offer／庫存事件分開顯示，所有內容標為
+  `unverified`，並保留作者、發表時間、原始連結、語言、型號及取得方式。
+- `@bey_sokuhou` 已登錄為第一個 `social`／非官方社群速報來源；可辨識新品、抽選、預購、
+  再入荷及商店連結，並以文章 ID、canonical URL、內容指紋合併重複讀取與轉貼。
+- 社群貼文可依型號／關鍵字命中 Watchlist，但不會建立官方公告、Offer、庫存事件或
+  Watchlist 現貨通知；離線 fixture 已驗證此隔離邊界。
+- 來源支援靜音、關鍵字排除、敏感內容、垃圾訊息過濾，以及每來源 7–365 天保存／到期刪除；
+  可選摘要必須標示為機器摘要且不宣稱真偽。
+- 2026-07-16 查核 X 官方 API 為按量付費，Post Read 每則 US$0.005；每日 20 則不重複貼文
+  粗估約 US$3／月。使用者決定本專案不代付 X 費用，所以來源保持 `user_setup_required`、
+  `enabled=0`、`monthly_budget_usd=0`。使用者點選自費設定會先看到費用、價格變動、自動加值與
+  spending limit 警告，勾選理解後才開啟 X Developer Console，以自己的帳戶、App 與 credits 設定。
+  開啟 Console 不會啟用來源或呼叫 API，也沒有使用 HTML 抓取繞過登入／反自動化。
+- 驗收結果：105/105 項 Node 測試、12 條 Web 路由煙霧測試通過；正式 DB 完整性 `ok`、
+  0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。
+- 正式服務 PID `374536` 以 schema version 8 在 `http://127.0.0.1:8787` 運行，`/health` 回傳 `ok`；
+  停用的社群來源不會讓三個商店來源或整體健康狀態降級。
+
 ## 2. 產品願景
 
 目標是製作一個一般人也能使用的 Beyblade 商品與情報追蹤 App：
@@ -153,11 +178,11 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
 - Local Web App：`http://127.0.0.1:8787`，可預覽、加入、測試、停用及重新啟用來源。
 - 來源首頁／分類頁可啟動受控探索；候選先進 `/review`，核准後才建立 Product／Offer 與監控網址。
 - `/health` 提供服務與來源健康資訊。
-- 目前為 95 項 Node 自動化測試，另有 11 條 Web 路由煙霧測試。
+- 目前為 105 項 Node 自動化測試，另有 12 條 Web 路由煙霧測試。
 
 ### Phase 0 已完成（2026-07-16）
 
-- SQLite schema version 目前為 7；`src/db/migrations/` 由 migration runner 依序升級並記錄校驗碼。
+- SQLite schema version 目前為 8；`src/db/migrations/` 由 migration runner 依序升級並記錄校驗碼。
 - 正式 DB 啟動前預設每 24 小時建立一致性自動備份，保留 30 天且最多 30 份。
 - `npm run db:backup` 可立即備份；`npm run db:restore` 會驗證完整性、拒絕覆蓋運行中的服務，
   並可還原到另一個測試資料夾。
@@ -269,9 +294,10 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
 可在新對話中貼上：
 
 > 請先完整閱讀 `C:\Users\yedon\OneDrive\桌面\Beyblade\PROJECT_MEMORY.md`、
-> `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0 至 Phase 5 已完成並驗收；不要重做已完成部分。
-> 正式服務使用 schema version 7，先確認備份、95 項測試、11 條 Web 路由與服務狀態。Takara
-> Tomy Mall 實站探索及 Review Queue 核准驗收待 Queue-it 自然解除後再執行。
+> `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0 至 Phase 6 已完成並驗收；不要重做已完成部分。
+> 正式服務使用 schema version 8，先確認備份、105 項測試、12 條 Web 路由與服務狀態。Takara
+> Tomy Mall 實站探索待 Queue-it 自然解除後再執行；X 由使用者以自己的 Developer Project 自費設定，
+> 本專案保持停用與零預算。
 
 ## 9. 已確認的未來架構決策
 
@@ -295,16 +321,18 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
 - Gmail 個人帳號約每日 500 封，不適合高頻事件，較適合作為每日摘要。
 - Windows 本機通知與 App 內紀錄沒有第三方訊息費用，但只能在該電腦上看到。
 - 已確認的預設組合是「App 內永久紀錄 + Telegram 私聊推播」，並保留事件彙整與防洗版。
-- X 官方 API 目前按量付費；`@bey_sokuhou` 的免費、穩定且符合平台規範的取得方式仍待評估。
+- X 官方 API 目前按量付費，Post Read 每則 US$0.005；`@bey_sokuhou` 已完成離線能力與 UI。
+  本專案不代付費用，使用者只能在費用警告後前往自己的 Developer Console 自費設定，且不以
+  其他方式繞過平台限制。
 
 ## 10. 本次執行狀態
 
-- Roadmap Phase 0 至 Phase 5 已完成實作與自動化驗收；Takara 實站驗收仍待 Queue-it 解除及使用者確認預覽。
+- Roadmap Phase 0 至 Phase 6 已完成實作與自動化驗收；Takara 實站驗收仍待 Queue-it 解除及使用者確認預覽。
 - 升級前後商品與事件未遺失；version 0 備份已在另一個測試資料夾成功還原並升級。
 - 正式 DB 已清除可明確識別的 Demo 資料，目前只保留三個真實商店與 UX-20 歷史。
 - 背景服務已在新版 Local Web App 下啟動，`/health` 回傳 `ok`。
-- Phase 2 至 Phase 4 曾完成 schema version 4／5／6 重啟驗收，後續已由 Phase 5 的 schema version 7 取代。
-- 正式背景服務目前使用 schema version 7，官方 Registry 已登錄但掃描停用，`/health` 正常，既有資料完整。
+- Phase 2 至 Phase 5 曾完成 schema version 4／5／6／7 重啟驗收，後續已由 Phase 6 的 schema version 8 取代。
+- 正式背景服務目前使用 schema version 8，官方 Registry 與社群 Registry 已登錄但實站取得停用，`/health` 正常，既有資料完整。
 - Takara Tomy Mall 實站探索目前受 Queue-it 等候室阻擋；不要繞過，待網站允許乾淨工作階段存取後重試。
-- 下一個可開發階段為 Phase 6；不必把外部網站暫時排隊視為程式回歸。
+- 下一個可開發階段為 Phase 7；不必把外部網站暫時排隊或 X API 未設定視為程式回歸。
 - 2026-07-16 已建立 Git repository 與初始 commit `689c181`；作者為 Darren Ye，使用 GitHub noreply Email。

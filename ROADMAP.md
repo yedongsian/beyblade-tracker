@@ -1,6 +1,6 @@
 # Beyblade Tracker 未來架構與 Roadmap（討論草案）
 
-> 狀態：Phase 0、Phase 1、Phase 2 已完成；待重啟正式服務進行 Phase 2 實站驗收
+> 狀態：Phase 0、Phase 1、Phase 2 已完成；正式服務已升級，Takara 實站驗收暫受 Queue-it 等候室阻擋
 > 更新日期：2026-07-16
 > 原則：先討論與縮小範圍；每一階段分開驗收，不一次重寫全部系統。
 
@@ -299,8 +299,8 @@ URL 正規化  Sitemap／搜尋／有限連結探索   已知 Offer 分級排程
 
 ## 8. 建議的下一次討論順序
 
-1. 重啟服務，確認正式 DB 由 schema version 3 安全升級至 4，並檢查 `/health`。
-2. 以 Takara Tomy Mall 分類頁執行一次正式探索，檢查 robots、預算與候選數量。
+1. **已完成：**重啟服務，正式 DB 由 schema version 3 安全升級至 4，`/health` 與資料完整性正常。
+2. 待 Queue-it 等候室解除後，以 Takara Tomy Mall 分類頁執行一次正式探索，檢查 robots、預算與候選數量。
 3. 在 Review Queue 核准一個候選，確認建立 Product／Offer 且只加入商品頁監控。
 4. 實站驗收完成後，再共同確認 Phase 3 多語言與辨識詞典的範圍。
 5. X `@bey_sokuhou` 仍屬 Phase 6，API 成本決策不影響目前驗收。

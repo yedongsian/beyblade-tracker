@@ -33,6 +33,17 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node �
 下一次共同重啟後再做正式 DB migration 與 Takara Tomy Mall 實站驗收。除非出現可重現的回歸問題
 或使用者明確要求，後續工作不得重做 Phase 0、Phase 1 或 Phase 2。
 
+### 2026-07-16 Phase 2 正式重啟與實站測試
+
+- Phase 2 已提交為 `de77719`（`feat: complete phase 2 discovery and review queue`），工作樹乾淨。
+- 正式服務已安全重啟，新版正式 DB 已由 schema version 3 升級至 4。
+- 正式 DB 完整性 `ok`、0 個 foreign key orphan；既有 1 Product／3 Offers／1 Event 均保留。
+- 正在執行的 `http://127.0.0.1:8787` 共 7 條管理／健康路由皆回傳 HTTP 200，`/health` 為 `ok`。
+- Takara Tomy Mall 真實分類頁在一般 HTTP 下 45 秒仍為 0 bytes；Headless Chrome 回傳 HTTP/2 protocol error；
+  螢幕外一般 Chrome 被導向 `takaratomy.queue-it.net` 的「網站混雑」等候室。
+- 依「不繞過排隊、CAPTCHA 或存取限制」原則，本次沒有把 Takara Tomy Mall 寫入正式來源、沒有建立候選，
+  也沒有使用既有瀏覽器 session 代替 Tracker 的乾淨工作階段。待網站不再導向 Queue-it 時再重試。
+
 ## 2. 產品願景
 
 目標是製作一個一般人也能使用的 Beyblade 商品與情報追蹤 App：
@@ -235,6 +246,7 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture、73 項 Node �
 - 升級前後商品與事件未遺失；version 0 備份已在另一個測試資料夾成功還原並升級。
 - 正式 DB 已清除可明確識別的 Demo 資料，目前只保留三個真實商店與 UX-20 歷史。
 - 背景服務已在新版 Local Web App 下啟動，`/health` 回傳 `ok`。
-- 正式背景服務尚未重啟，因此正式 DB 目前仍為 schema version 3；新版啟動時才會 migration 至 4。
-- 下一次先完成 Takara Tomy Mall 實站探索與 Review Queue 核准驗收，再討論 Phase 3。
+- 正式背景服務已重啟並使用 schema version 4，`/health` 正常，既有資料完整。
+- Takara Tomy Mall 實站探索目前受 Queue-it 等候室阻擋；不要繞過，待網站允許乾淨工作階段存取後重試。
+- Phase 3 可先討論，不必把外部網站暫時排隊視為 Phase 2 程式回歸。
 - 2026-07-16 已建立 Git repository 與初始 commit `689c181`；作者為 Darren Ye，使用 GitHub noreply Email。

@@ -149,8 +149,8 @@
 - [x] Takara Tomy Mall BEYBLADE X 離線 fixture 驗收通過。
 - [x] 正式 schema 3 備份的隔離副本成功升級至 schema 4，完整性 `ok` 且既有資料筆數不遺失。
 - [x] 73/73 項 Node 自動化測試與 8/8 條 Web 路由煙霧測試通過。
-- [ ] 重啟正式背景服務，驗證 schema version 3 → 4 migration 與正式 DB 完整性。
-- [ ] 使用 Takara Tomy Mall 真實分類頁完成探索及 Review Queue 核准驗收。
+- [x] 重啟正式背景服務，驗證 schema version 3 → 4 migration、正式 DB 完整性及 live 路由。
+- [ ] 使用 Takara Tomy Mall 真實分類頁完成探索及 Review Queue 核准驗收；2026-07-16 乾淨 Chrome 被導向 Queue-it 等候室，依政策不繞過，待網站恢復後重試。
 
 ## 明確不包含於第一版
 

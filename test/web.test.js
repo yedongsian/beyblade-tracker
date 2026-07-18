@@ -30,6 +30,95 @@ test('interactive Local Web App renders accessible source management', async () 
   });
 });
 
+test('Phase 7 settings UI stores privacy choices and never returns Telegram plaintext', async () => {
+  let saved = null;
+  const secretStore = {
+    status: () => ({ provider: 'windows-dpapi-current-user', telegram: { configured: true } }),
+    saveTelegram: (value) => { saved = value; return { telegram: { configured: true } }; },
+    clearTelegram: () => ({ telegram: { configured: false } }),
+    readNotifications: () => ({ telegram: { token: 'hidden-token', chatId: 'hidden-chat' } }),
+  };
+  await withServer(async ({ db, base }) => {
+    const pageResponse = await fetch(`${base}/settings`);
+    const page = await pageResponse.text();
+    assert.equal(pageResponse.status, 200);
+    assert.match(page, /Windows DPAPI/);
+    assert.doesNotMatch(page, /hidden-token|hidden-chat/);
+    const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+    const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
+    const stored = await fetch(`${base}/api/notifications/telegram`, {
+      method: 'POST', headers, body: JSON.stringify({ token: 'new-token', chatId: 'new-chat', test: false }),
+    });
+    assert.equal(stored.status, 200);
+    assert.equal(saved.token, 'new-token');
+    const privacy = await fetch(`${base}/api/privacy`, {
+      method: 'POST', headers, body: JSON.stringify({ privacyAccepted: true, sourcePolicyAccepted: true, diagnosticsConsent: false }),
+    });
+    assert.equal(privacy.status, 200);
+    assert.equal(db.get("SELECT value_json FROM user_settings WHERE key='privacyAccepted'").value_json, 'true');
+    assert.equal((await fetch(`${base}/privacy`)).status, 200);
+    assert.equal((await fetch(`${base}/source-policy`)).status, 200);
+  }, { secretStore, appConfig: { browser: { available: false, downloadUrl: 'https://www.google.com/chrome/' }, update: {} } });
+});
+
+test('manual identity, exclusion review, and network controls are available through the local UI', async () => {
+  await withServer(async ({ db, base }) => {
+    const sourceA = upsertSource(db, { key: 'manual-a', name: 'Manual A', connector: 'fixture' });
+    const sourceB = upsertSource(db, { key: 'manual-b', name: 'Manual B', connector: 'fixture' });
+    const opts = { preorderIsPurchasable: false, eventCooldownSeconds: 0, priceChangeThreshold: 0.05 };
+    const first = processListing(db, sourceA, { url: 'https://manual-a.example/bx-38',
+      title: 'Beyblade X BX-38', availabilityRaw: 'https://schema.org/InStock' }, opts);
+    processListing(db, sourceB, { url: 'https://manual-b.example/bx-38',
+      title: 'Beyblade X BX-38', availabilityRaw: 'https://schema.org/InStock' }, opts);
+    processListing(db, sourceA, { url: 'https://manual-a.example/used',
+      title: 'Used Beyblade X BX-39', availabilityRaw: 'https://schema.org/InStock' }, opts);
+
+    const detail = await (await fetch(`${base}/products/${first.productId}`)).text();
+    assert.match(detail, /id="split-product-form"/);
+    assert.match(detail, /id="merge-product-form"/);
+    const token = detail.match(/name="csrf-token" content="([^"]+)"/)[1];
+    const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
+    const secondOffer = db.get('SELECT id FROM offers WHERE source_id=?', [sourceB.id]);
+    const splitResponse = await fetch(`${base}/api/products/${first.productId}/split`, {
+      method: 'POST', headers, body: JSON.stringify({ offerIds: [secondOffer.id], name: 'Manual split' }),
+    });
+    assert.equal(splitResponse.status, 201);
+    const split = await splitResponse.json();
+    const splitId = split.created.product.id;
+    assert.equal(db.get('SELECT COUNT(*) count FROM products').count, 2);
+    const merged = await fetch(`${base}/api/products/merge`, {
+      method: 'POST', headers, body: JSON.stringify({ sourceProductId: splitId, targetProductId: first.productId }),
+    });
+    assert.equal(merged.status, 200);
+    assert.equal(db.get('SELECT COUNT(*) count FROM products').count, 1);
+
+    const exclusion = db.get('SELECT * FROM listing_exclusions');
+    const exclusionsPage = await (await fetch(`${base}/exclusions`)).text();
+    assert.match(exclusionsPage, /data-exclusion-action="allow"/);
+    const allowed = await fetch(`${base}/api/exclusions/${exclusion.id}`, {
+      method: 'POST', headers, body: JSON.stringify({ action: 'allow', note: 'manual verification' }),
+    });
+    assert.equal(allowed.status, 200);
+    assert.equal(db.get('SELECT review_status FROM listing_exclusions WHERE id=?', [exclusion.id]).review_status, 'allowed');
+
+    const paused = await fetch(`${base}/api/network`, {
+      method: 'PATCH', headers, body: JSON.stringify({ enabled: false, reason: 'operator pause' }),
+    });
+    assert.equal(paused.status, 200);
+    const health = await (await fetch(`${base}/health`)).json();
+    assert.equal(health.network.enabled, false);
+    const blocked = await fetch(`${base}/api/sources/preview`, {
+      method: 'POST', headers, body: JSON.stringify({ url: 'https://example.com' }),
+    });
+    assert.equal(blocked.status, 400);
+    const resumed = await fetch(`${base}/api/network`, {
+      method: 'PATCH', headers, body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(resumed.status, 200);
+    assert.equal((await resumed.json()).network.enabled, true);
+  });
+});
+
 test('Watchlist UI creates rules and official-source preview requires explicit confirmation', async () => {
   await withServer(async ({ db, base }) => {
     const registered = registerDefaultOfficialSources(db);

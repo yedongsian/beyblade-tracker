@@ -1,4 +1,4 @@
-import { normalizeBarcode } from './normalize.js';
+import { extractVariantKey, normalizeBarcode, normalizeSku } from './normalize.js';
 import { ensureSourceMonitorSettings } from './monitor.js';
 
 const now = () => new Date().toISOString();
@@ -146,25 +146,41 @@ export function finishCrawlRun(db, runId, patch) {
 
 /**
  * Find an existing product to merge into, or create a new one.
- * Merge priority: barcode > model. Title alone never forces a merge.
+ * Merge priority: barcode > normalized SKU > model with compatible variant
+ * evidence. Title alone never forces a merge.
  */
 export function findOrCreateProduct(db, listing) {
   const ts = now();
   const barcode = normalizeBarcode(listing.barcode);
+  const normalizedSku = normalizeSku(listing.sku);
   const model = listing.model || null;
+  const variantKey = listing.variantKey ?? extractVariantKey(listing.title, listing.rawText);
+
+  const brandCompatible = (candidate) => !listing.brand || !candidate.brand ||
+    candidate.brand.toLocaleLowerCase('en-US') === String(listing.brand).toLocaleLowerCase('en-US');
+  const modelCompatible = (candidate) => !model || !candidate.model || candidate.model === model;
+  const skuCompatible = (candidate) => !normalizedSku || !candidate.normalized_sku ||
+    candidate.normalized_sku === normalizedSku;
 
   let product = null;
   if (barcode) {
     product = db.get('SELECT * FROM products WHERE barcode = ?', [barcode]);
   }
+  if (!product && normalizedSku) {
+    const candidates = db.all('SELECT * FROM products WHERE normalized_sku = ?', [normalizedSku])
+      .filter((candidate) => modelCompatible(candidate) && brandCompatible(candidate));
+    if (candidates.length === 1) product = candidates[0];
+  }
   if (!product && model) {
-    // Model is a strong key. If a brand is known on both sides, require it to
-    // match to avoid cross-line collisions of identical numeric codes.
-    const candidates = db.all('SELECT * FROM products WHERE model = ?', [model]);
+    // Conflicting SKUs or explicit variants make a model-only merge unsafe.
+    const candidates = db.all('SELECT * FROM products WHERE model = ?', [model])
+      .filter((candidate) => (candidate.variant_key || null) === (variantKey || null))
+      .filter(skuCompatible);
     if (candidates.length === 1) {
-      product = candidates[0];
+      product = brandCompatible(candidates[0]) ? candidates[0] : null;
     } else if (candidates.length > 1 && listing.brand) {
-      product = candidates.find((c) => c.brand && c.brand.toLowerCase() === listing.brand.toLowerCase()) || null;
+      const branded = candidates.filter(brandCompatible);
+      if (branded.length === 1) product = branded[0];
     }
   }
 
@@ -173,6 +189,8 @@ export function findOrCreateProduct(db, listing) {
     const patch = {};
     if (!product.barcode && barcode) patch.barcode = barcode;
     if (!product.sku && listing.sku) patch.sku = String(listing.sku);
+    if (!product.normalized_sku && normalizedSku) patch.normalized_sku = normalizedSku;
+    if (!product.variant_key && variantKey) patch.variant_key = variantKey;
     if (!product.model && model) patch.model = model;
     if (!product.brand && listing.brand) patch.brand = listing.brand;
     if (!product.series && listing.series) patch.series = listing.series;
@@ -190,8 +208,10 @@ export function findOrCreateProduct(db, listing) {
   }
 
   const info = db.run(
-    `INSERT INTO products (name, brand, series, model, barcode, sku, release_date, image, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products
+      (name, brand, series, model, barcode, sku, normalized_sku, variant_key,
+       release_date, image, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       listing.title || model || barcode || 'Unknown product',
       listing.brand || null,
@@ -199,6 +219,8 @@ export function findOrCreateProduct(db, listing) {
       model,
       barcode,
       listing.sku || null,
+      normalizedSku,
+      variantKey,
       listing.releaseDate || null,
       listing.image || null,
       ts,
@@ -206,6 +228,30 @@ export function findOrCreateProduct(db, listing) {
     ]
   );
   return { product: db.get('SELECT * FROM products WHERE id = ?', [info.lastInsertRowid]), created: true };
+}
+
+export function recordListingExclusion(db, sourceId, listing, reason, crawlRunId = null) {
+  const ts = now();
+  const url = String(listing.url || '').slice(0, 2048);
+  const summary = JSON.stringify({
+    availabilityText: listing.availabilityText || null,
+    availabilityRaw: listing.availabilityRaw || null,
+    rawSummary: listing.rawSummary || null,
+  }).slice(0, 12000);
+  db.run(
+    `INSERT INTO listing_exclusions
+      (source_id,crawl_run_id,url,title,reason,raw_summary_json,occurrence_count,
+       first_seen_at,last_seen_at,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,1,?,?,?,?)
+     ON CONFLICT(source_id,url,reason) DO UPDATE SET
+       crawl_run_id=excluded.crawl_run_id,title=excluded.title,
+       raw_summary_json=excluded.raw_summary_json,
+       occurrence_count=listing_exclusions.occurrence_count+1,
+       last_seen_at=excluded.last_seen_at,updated_at=excluded.updated_at`,
+    [sourceId, crawlRunId, url, listing.title || null, reason, summary, ts, ts, ts, ts]
+  );
+  return db.get('SELECT * FROM listing_exclusions WHERE source_id=? AND url=? AND reason=?',
+    [sourceId, url, reason]);
 }
 
 // ---- offers --------------------------------------------------------------

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import { logger } from './util/logger.js';
 import { projectPaths } from './paths.js';
+import { detectSupportedBrowser } from './release/browser.js';
 
 const ROOT = process.cwd();
 const CONNECTOR_TYPES = new Set(['fixture', 'jsonld', 'browser']);
@@ -34,9 +35,11 @@ export function getConfig() {
   const paths = projectPaths(ROOT);
   const sourcesPath = resolvePath(
     process.env.SOURCES_FILE,
-    existsSync(join(ROOT, 'config', 'sources.json'))
-      ? 'config/sources.json'
-      : 'config/sources.example.json'
+    existsSync(paths.sourcesFile)
+      ? paths.sourcesFile
+      : existsSync(join(paths.appRoot, 'config', 'sources.json'))
+        ? join(paths.appRoot, 'config', 'sources.json')
+        : join(paths.appRoot, 'config', 'sources.example.json')
   );
 
   const webPort = numberSetting('WEB_PORT', 8787, { min: 1, max: 65535, integer: true }, issues);
@@ -50,14 +53,23 @@ export function getConfig() {
   const backupIntervalHours = numberSetting('BACKUP_INTERVAL_HOURS', 24, { min: 1 }, issues);
   const backupRetentionDays = numberSetting('BACKUP_RETENTION_DAYS', 30, { min: 1, integer: true }, issues);
   const backupRetentionCount = numberSetting('BACKUP_RETENTION_COUNT', 30, { min: 1, integer: true }, issues);
+  const networkEnabled = process.env.NETWORK_ENABLED !== '0';
 
   const host = process.env.WEB_HOST || '127.0.0.1';
   if (!host.trim()) issues.push('WEB_HOST 不可為空白。');
   if (issues.length) throw new ConfigValidationError(issues);
 
   return {
-    dbPath: resolvePath(process.env.DB_PATH, 'data/tracker.db'),
+    appRoot: paths.appRoot,
+    installRoot: paths.installRoot,
+    userRoot: paths.userRoot,
+    dbPath: process.env.DB_PATH ? resolvePath(process.env.DB_PATH, process.env.DB_PATH) : join(paths.dataDir, 'tracker.db'),
     sourcesPath,
+    userSourcesPath: paths.sourcesFile,
+    secretFile: paths.secretFile,
+    exportDir: paths.exportDir,
+    releaseDir: paths.releaseDir,
+    pendingImportFile: paths.pendingImportFile,
     runtimeDir: paths.runtimeDir,
     debugDir: paths.debugDir,
     debugHtml: process.env.DEBUG_HTML === '1',
@@ -74,6 +86,14 @@ export function getConfig() {
         'BeybladeTracker/0.1 (+personal-use; respects robots and rate limits)',
       perHostMinIntervalMs: hostInterval,
     },
+    network: { enabled: networkEnabled },
+    browser: detectSupportedBrowser(),
+    update: {
+      manifestUrl: process.env.UPDATE_MANIFEST_URL || '',
+      publicKey: process.env.UPDATE_PUBLIC_KEY || '',
+      currentFile: join(paths.installRoot, 'current.json'),
+      rollbackFile: paths.rollbackFile,
+    },
     backup: {
       enabled: process.env.AUTO_BACKUP !== '0',
       dir: paths.backupDir,
@@ -85,8 +105,10 @@ export function getConfig() {
       telegram: {
         token: process.env.TELEGRAM_BOT_TOKEN || '',
         chatId: process.env.TELEGRAM_CHAT_ID || '',
+        timeoutMs,
+        maxRetries,
       },
-      discord: { webhook: process.env.DISCORD_WEBHOOK_URL || '' },
+      discord: { webhook: process.env.DISCORD_WEBHOOK_URL || '', timeoutMs, maxRetries },
     },
   };
 }

@@ -97,3 +97,62 @@ test('failed configured channel retries without resending successful channels', 
   assert.equal(db.get('SELECT COUNT(*) c FROM events WHERE notified=0').c, 0);
   assert.equal(db.get("SELECT status FROM notifications WHERE channel='flaky'").status, 'sent');
 });
+
+test('Telegram honors Retry-After and retries a 429 response', async () => {
+  const delays = [];
+  let calls = 0;
+  const notifier = new TelegramNotifier({
+    token: '123456:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN', chatId: '42',
+    maxRetries: 2, timeoutMs: 100,
+    sleepFn: async (ms) => { delays.push(ms); }, randomFn: () => 0,
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      assert.ok(options.signal);
+      return calls === 1
+        ? { ok: false, status: 429, headers: { get: (name) => name === 'retry-after' ? '2' : null } }
+        : { ok: true, status: 200, headers: { get: () => null } };
+    },
+  });
+  const result = await notifier.send({ title: 'Restock', body: 'BX-38' });
+  assert.equal(result.status, 'sent');
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [2000]);
+});
+
+test('Discord retries transient server errors but not permanent 4xx', async () => {
+  let transientCalls = 0;
+  const transient = new DiscordNotifier({
+    webhook: 'https://discord.com/api/webhooks/1/example', maxRetries: 1,
+    sleepFn: async () => {}, randomFn: () => 0,
+    fetchImpl: async () => ({
+      ok: ++transientCalls > 1, status: transientCalls > 1 ? 204 : 503,
+      headers: { get: () => null },
+    }),
+  });
+  assert.equal((await transient.send({ title: 'A', body: 'B' })).status, 'sent');
+  assert.equal(transientCalls, 2);
+
+  let permanentCalls = 0;
+  const permanent = new DiscordNotifier({
+    webhook: 'https://discord.com/api/webhooks/1/example', maxRetries: 3,
+    sleepFn: async () => {},
+    fetchImpl: async () => {
+      permanentCalls += 1;
+      return { ok: false, status: 400, headers: { get: () => null } };
+    },
+  });
+  assert.equal((await permanent.send({ title: 'A', body: 'B' })).status, 'failed');
+  assert.equal(permanentCalls, 1);
+});
+
+test('notification timeout aborts a stalled request', async () => {
+  const notifier = new DiscordNotifier({
+    webhook: 'https://discord.com/api/webhooks/1/example', timeoutMs: 5, maxRetries: 0,
+    fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    }),
+  });
+  const result = await notifier.send({ title: 'A', body: 'B' });
+  assert.equal(result.status, 'failed');
+  assert.match(result.detail, /aborted/);
+});

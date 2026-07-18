@@ -4,7 +4,7 @@ import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 
 const app = createApp();
-const server = await startWebServer(app.db, { ...app.config.web, appConfig: app.config });
+const server = await startWebServer(app.db, { ...app.config.web, appConfig: app.config, secretStore: app.secretStore });
 
 let stopping = false;
 function shutdown(signal) {

@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { copyFileSync, mkdirSync, existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { openDatabase } from './db/database.js';
 import { getConfig, loadSourcesResult } from './config.js';
@@ -24,21 +24,70 @@ import {
   ensureSourceMonitorSettings, finalizeFailedMonitor, finalizeSuccessfulMonitor,
   listDueMonitorSources, refreshOfferFreshness, startMonitorRequests,
 } from './core/monitor.js';
+import { getNetworkState } from './core/network-control.js';
+import { projectPaths } from './paths.js';
+import { createSecretStore } from './security/secret-store.js';
+import { applyPendingTransfer } from './maintenance/transfer.js';
 
 export function createApp(overrides = {}) {
-  loadEnv();
-  const config = { ...getConfig(), ...overrides };
+  const { secretStore: providedSecretStore, ...configOverrides } = overrides;
+  const initialPaths = projectPaths();
+  loadEnv(initialPaths.userRoot);
+  const config = { ...getConfig(), ...configOverrides };
+  ensureUserLayout(config);
   mkdirSync(dirname(config.dbPath), { recursive: true });
   if (config.dbPath !== ':memory:' && config.backup) {
     createAutomaticBackupIfDue(config.dbPath, config.backup.dir, config.backup);
   }
+  const secretStore = providedSecretStore || createSecretStore(config.secretFile);
+  applyNotificationSecrets(config, secretStore);
+  config.appliedTransfer = applyPendingTransfer(config, { pidFile: initialPaths.pidFile });
   const db = openDatabase(config.dbPath);
   registerDefaultOfficialSources(db);
   registerDefaultCommunitySources(db);
   pruneExpiredCommunityPosts(db);
   backfillCatalog(db);
   const notifiers = buildNotifiers(config);
-  return { db, config, notifiers };
+  return { db, config, notifiers, secretStore };
+}
+
+function applyNotificationSecrets(config, secretStore) {
+  const stored = secretStore.readNotifications();
+  config.notify = config.notify || {};
+  config.notify.telegram = {
+    ...(config.notify.telegram || {}),
+    token: config.notify.telegram?.token || stored.telegram.token,
+    chatId: config.notify.telegram?.chatId || stored.telegram.chatId,
+  };
+  config.notify.discord = {
+    ...(config.notify.discord || {}),
+    webhook: config.notify.discord?.webhook || stored.discord.webhook,
+  };
+}
+
+export function refreshNotificationConfiguration(app) {
+  const stored = app.secretStore.readNotifications();
+  app.config.notify.telegram.token = stored.telegram.token;
+  app.config.notify.telegram.chatId = stored.telegram.chatId;
+  app.config.notify.discord.webhook = stored.discord.webhook;
+  app.notifiers = buildNotifiers(app.config);
+  return app.secretStore.status();
+}
+
+function ensureUserLayout(config) {
+  for (const dir of [dirname(config.dbPath), dirname(config.userSourcesPath || config.sourcesPath),
+    config.backup?.dir, config.exportDir, config.releaseDir, config.runtimeDir]) {
+    if (dir) mkdirSync(dir, { recursive: true });
+  }
+  if (config.userSourcesPath && !existsSync(config.userSourcesPath)) {
+    const template = [
+      config.sourcesPath,
+      join(config.appRoot || process.cwd(), 'config', 'sources.json'),
+      join(config.appRoot || process.cwd(), 'config', 'sources.example.json'),
+    ].find((candidate) => candidate && existsSync(candidate));
+    if (template) copyFileSync(template, config.userSourcesPath);
+  }
+  if (config.userSourcesPath && existsSync(config.userSourcesPath)) config.sourcesPath = config.userSourcesPath;
 }
 
 // Pipeline options derived from config.
@@ -81,6 +130,10 @@ export async function runOfferMonitors(app, {
   onlyKey, force = false, nowMs = Date.now(), random = Math.random,
 } = {}) {
   const { db, config } = app;
+  const network = getNetworkState(db, config);
+  if (!network.enabled) {
+    return { sources: 0, ok: 0, failed: 0, itemsSeen: 0, eventsCreated: 0, paused: true, reason: network.reason };
+  }
   refreshOfferFreshness(db, { now: new Date(nowMs).toISOString() });
   const sources = listDueMonitorSources(db, {
     onlyKey, force, now: new Date(nowMs).toISOString(),
@@ -89,8 +142,17 @@ export async function runOfferMonitors(app, {
   const summary = { sources: 0, ok: 0, failed: 0, itemsSeen: 0, eventsCreated: 0 };
 
   for (const source of sources) {
+    if (!getNetworkState(db, config).enabled) {
+      summary.paused = true;
+      summary.reason = getNetworkState(db, config).reason;
+      break;
+    }
     summary.sources += 1;
-    const source2 = { ...source, config: parseSourceConfig(db, source) };
+    const sourceConfig = parseSourceConfig(db, source);
+    if (source.connector === 'browser' && !sourceConfig.executablePath && config.browser?.path) {
+      sourceConfig.executablePath = config.browser.path;
+    }
+    const source2 = { ...source, config: sourceConfig };
     const runId = startCrawlRun(db, source);
     startMonitorRequests(db, source.id, new Date(nowMs).toISOString());
     try {
@@ -131,6 +193,7 @@ export async function runOfferMonitors(app, {
 }
 
 export async function runDiscoveryScheduler(app, { nowMs = Date.now() } = {}) {
+  if (!getNetworkState(app.db, app.config).enabled) return [];
   return runDueDiscoveries(app.db, {
     userAgent: app.config.http?.userAgent,
     now: new Date(nowMs).toISOString(),
@@ -142,14 +205,30 @@ export async function runOnce(app, {
   onlyKey, dueOnly = false, nowMs = Date.now(), random = Math.random,
 } = {}) {
   syncSources(app);
+  const network = getNetworkState(app.db, app.config);
+  if (!network.enabled) {
+    refreshOfferFreshness(app.db, { now: new Date(nowMs).toISOString() });
+    cleanupRaw(app);
+    return {
+      sources: 0, ok: 0, failed: 0, itemsSeen: 0, eventsCreated: 0,
+      paused: true, pauseReason: network.reason, discovery: [],
+      notify: { groups: 0, sent: 0, skipped: 0, failed: 0, paused: true },
+      watchlistNotify: { sent: 0, skipped: 0, failed: 0, paused: true }, communityPruned: 0,
+    };
+  }
   const summary = await runOfferMonitors(app, {
     onlyKey, force: !dueOnly, nowMs, random,
   });
 
   const discovery = await runDiscoveryScheduler(app, { nowMs });
 
-  const notifyResult = await flushNotifications(app.db, app.notifiers);
-  const watchlistNotify = await flushWatchlistAlerts(app.db, app.notifiers);
+  const mayNotify = getNetworkState(app.db, app.config).enabled;
+  const notifyResult = mayNotify
+    ? await flushNotifications(app.db, app.notifiers)
+    : { groups: 0, sent: 0, skipped: 0, failed: 0, paused: true };
+  const watchlistNotify = mayNotify
+    ? await flushWatchlistAlerts(app.db, app.notifiers)
+    : { sent: 0, skipped: 0, failed: 0, paused: true };
   const communityPruned = pruneExpiredCommunityPosts(app.db, { at: new Date(nowMs).toISOString() });
   logger.info(
     `notifications: ${notifyResult.groups} groups, ${notifyResult.sent} sent, ` +

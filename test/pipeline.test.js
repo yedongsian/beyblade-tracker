@@ -61,6 +61,40 @@ test('same model in two stores merges into one product with two offers', () => {
   assert.equal(db.get('SELECT COUNT(*) c FROM offers').c, 2);
 });
 
+test('same normalized SKU merges listings even when no model is available', () => {
+  const { db, sourceA, sourceB } = setup();
+  processListing(db, sourceA, {
+    url: 'https://a.example/p/item', title: 'Beyblade special item', sku: ' shop－777 ',
+    availabilityRaw: 'https://schema.org/InStock',
+  }, OPTS);
+  processListing(db, sourceB, {
+    url: 'https://b.example/p/item', title: 'Special Beyblade item', sku: 'SHOP-777',
+    availabilityRaw: 'https://schema.org/OutOfStock',
+  }, OPTS);
+  assert.equal(db.get('SELECT COUNT(*) c FROM products').c, 1);
+  assert.equal(db.get('SELECT normalized_sku FROM products').normalized_sku, 'SHOP-777');
+});
+
+test('conflicting SKUs keep same-model variants separate', () => {
+  const { db, sourceA, sourceB } = setup();
+  const base = { title: 'Beyblade X BX-38 Starter', availabilityRaw: 'https://schema.org/InStock' };
+  processListing(db, sourceA, { ...base, url: 'https://a.example/p/red', sku: 'BX38-RED' }, OPTS);
+  processListing(db, sourceB, { ...base, url: 'https://b.example/p/blue', sku: 'BX38-BLUE' }, OPTS);
+  assert.equal(db.get('SELECT COUNT(*) c FROM products').c, 2);
+});
+
+test('explicit colors keep same-model variants separate without SKU', () => {
+  const { db, sourceA, sourceB } = setup();
+  processListing(db, sourceA, {
+    url: 'https://a.example/p/red', title: 'Beyblade X BX-38 Red', availabilityRaw: 'https://schema.org/InStock',
+  }, OPTS);
+  processListing(db, sourceB, {
+    url: 'https://b.example/p/blue', title: 'Beyblade X BX-38 Blue', availabilityRaw: 'https://schema.org/InStock',
+  }, OPTS);
+  assert.equal(db.get('SELECT COUNT(*) c FROM products').c, 2);
+  assert.deepEqual(db.all('SELECT variant_key FROM products ORDER BY variant_key').map((row) => row.variant_key), ['blue', 'red']);
+});
+
 test('same title but different model is not merged', () => {
   const { db, sourceA } = setup();
   processListing(db, sourceA, {
@@ -85,6 +119,21 @@ test('excluded used items are skipped', () => {
   assert.equal(r.excluded, true);
   assert.equal(r.reason, 'used');
   assert.equal(db.get('SELECT COUNT(*) c FROM products').c, 0);
+  const audit = db.get('SELECT * FROM listing_exclusions');
+  assert.equal(audit.reason, 'used');
+  assert.equal(audit.occurrence_count, 1);
+  processListing(db, sourceA, { ...BX38, title: 'BX-38 中古 used', availabilityRaw: 'https://schema.org/InStock' }, OPTS);
+  assert.equal(db.get('SELECT occurrence_count FROM listing_exclusions').occurrence_count, 2);
+});
+
+test('explicit unrelated product families are excluded conservatively', () => {
+  const { db, sourceA } = setup();
+  const result = processListing(db, sourceA, {
+    url: 'https://a.example/p/cards', title: 'Pokemon Cards Booster Pack',
+    availabilityRaw: 'https://schema.org/InStock',
+  }, OPTS);
+  assert.equal(result.reason, 'non_target_product');
+  assert.equal(db.get('SELECT reason FROM listing_exclusions').reason, 'non_target_product');
 });
 
 test('event cooldown suppresses flapping duplicates', () => {

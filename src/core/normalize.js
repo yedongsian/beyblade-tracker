@@ -137,6 +137,50 @@ export function normalizeBarcode(raw) {
   return digits;
 }
 
+export function normalizeSku(raw) {
+  if (raw == null) return null;
+  const value = normalizeUnicode(String(raw))
+    .toLocaleUpperCase('en-US')
+    .replace(/\s+/g, '')
+    .replace(/[^\p{L}\p{N}-]+/gu, '');
+  return value || null;
+}
+
+const EDITION_TERMS = [
+  ['limited', /(?:限定|limited(?: edition)?|exclusive|イベント限定|會場限定|会場限定)/iu],
+  ['rare-color', /(?:レアカラー|rare color|稀有色)/iu],
+];
+
+const COLOR_TERMS = [
+  ['clear', /(?:\bclear\b|クリア|透明)/iu],
+  ['red', /(?:\bred\b|レッド|紅色|赤色?)/iu],
+  ['blue', /(?:\bblue\b|ブルー|藍色|青色?)/iu],
+  ['black', /(?:\bblack\b|ブラック|黑色|黒色?)/iu],
+  ['white', /(?:\bwhite\b|ホワイト|白色?)/iu],
+  ['gold', /(?:\bgold\b|ゴールド|金色)/iu],
+  ['silver', /(?:\bsilver\b|シルバー|銀色)/iu],
+  ['green', /(?:\bgreen\b|グリーン|綠色|緑色?)/iu],
+  ['purple', /(?:\bpurple\b|パープル|紫色?)/iu],
+  ['pink', /(?:\bpink\b|ピンク|粉紅色|桃色)/iu],
+];
+
+/**
+ * Extract only explicit edition/color markers. A null key means the listing
+ * did not provide enough evidence to identify a distinct variant.
+ */
+export function extractVariantKey(...values) {
+  const text = normalizeUnicode(values.filter(Boolean).join(' '));
+  if (!text) return null;
+  const matched = EDITION_TERMS.filter(([, pattern]) => pattern.test(text)).map(([key]) => key);
+  const hasVariantContext = matched.length > 0 || /(?:color|colour|カラー|色違い|異色|配色)/iu.test(text);
+  for (const [key, pattern] of COLOR_TERMS) {
+    if (!pattern.test(text)) continue;
+    const terminal = new RegExp(`(?:${pattern.source})(?:\\s|[）)\\]】])*$`, pattern.flags).test(text);
+    if (hasVariantContext || terminal) matched.push(key);
+  }
+  return matched.length ? [...new Set(matched)].sort().join('|') : null;
+}
+
 export function detectTaxInclusion(...values) {
   const text = normalizeUnicode(values.filter(Boolean).join(' ')).toLocaleLowerCase('en-US');
   if (/(税込|含稅|含税|tax included|including tax|inc\.? vat)/i.test(text)) return true;

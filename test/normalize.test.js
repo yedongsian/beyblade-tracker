@@ -4,6 +4,7 @@ import {
   normalizeUrl, normalizeWhitespace, toHalfWidth, normalizePrice,
   normalizeCurrency, extractModel, normalizeBarcode,
   detectTaxInclusion, normalizeDateTime, normalizeReleaseDate,
+  extractVariantKey, normalizeSku,
 } from '../src/core/normalize.js';
 
 test('toHalfWidth converts full-width ascii and spaces', () => {
@@ -48,6 +49,13 @@ test('normalizeCurrency maps symbols and codes', () => {
 test('normalizeBarcode keeps valid gtins only', () => {
   assert.equal(normalizeBarcode('4570118488384'), '4570118488384');
   assert.equal(normalizeBarcode('12'), null);
+});
+
+test('SKU and explicit edition/color markers normalize deterministically', () => {
+  assert.equal(normalizeSku(' ux－20 jp '), 'UX-20JP');
+  assert.equal(extractVariantKey('BX-38 Limited Edition Red'), 'limited|red');
+  assert.equal(extractVariantKey('BX-35 Black Shell 4-60D'), null);
+  assert.equal(extractVariantKey('BX-38 通常版'), null);
 });
 
 test('tax, release date and timezone values normalize across store formats', () => {

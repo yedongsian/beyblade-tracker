@@ -36,6 +36,18 @@ test('new database applies every migration and records schema version', () => {
   for (const column of ['last_attempted_at', 'last_successful_at', 'fresh_until', 'freshness_status', 'archived_at']) {
     assert.ok(offerColumns.includes(column));
   }
+  const productColumns = db.all("PRAGMA table_info('products')").map((row) => row.name);
+  assert.ok(productColumns.includes('normalized_sku'));
+  assert.ok(productColumns.includes('variant_key'));
+  assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='listing_exclusions'"));
+  for (const table of ['product_identity_audit', 'listing_exclusion_overrides', 'network_control']) {
+    assert.ok(db.get("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [table]));
+  }
+  const exclusionColumns = db.all("PRAGMA table_info('listing_exclusions')").map((row) => row.name);
+  for (const column of ['review_status', 'review_note', 'reviewed_at']) {
+    assert.ok(exclusionColumns.includes(column));
+  }
+  assert.equal(db.get('SELECT enabled FROM network_control WHERE id=1').enabled, 1);
   db.close();
 });
 

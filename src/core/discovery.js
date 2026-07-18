@@ -414,6 +414,7 @@ export async function runSiteDiscovery(db, siteId, options = {}) {
           timeoutMs: Math.min(30000, budget.maxSeconds * 1000), maxRedirects: 3,
           maxBytes: Math.min(2 * 1024 * 1024, budget.maxBytes - counters.bytes),
           userAgent: options.userAgent, lookupFn: options.lookupFn, fetchImpl: options.fetchImpl,
+          maxRetries: options.maxRetries ?? 2, perHostMinIntervalMs: 0,
         });
         if (!sameSite(fetched.url || item.canonical_url, site.registrable_domain)) {
           throw new Error('網站重新導向到探索範圍以外，已停止該頁。');

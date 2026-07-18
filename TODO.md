@@ -15,8 +15,8 @@
 - [x] 每個來源實作統一 Connector 介面，單一來源失敗不可中斷其他來源。
 - [x] 具備 Fixture Connector，可完全離線重現新品、現貨、缺貨及補貨流程。
 - [x] 具備通用 JSON-LD／HTML 商品頁 Connector，可由設定檔加入公開商品頁。
-- [ ] 優先以條碼、SKU／型號合併商品；不確定時不可強行合併。
-- [ ] 可辨識 `discovered`、`coming_soon`、`preorder`、`in_stock`、`out_of_stock`、`unknown`。（目前首次發現以事件表示，Offer 不會進入 `discovered` 狀態。）
+- [x] 優先以條碼、正規化 SKU／型號合併商品；SKU 衝突或限定版／顏色特徵不同時不強行合併。
+- [x] 可辨識 `coming_soon`、`preorder`、`in_stock`、`out_of_stock`、`unknown`；首次發現固定以 `product_discovered` 事件表示，Offer 不另存瞬時 `discovered` 狀態。
 - [x] 只有狀態轉換或重要資料變化才建立事件，重複掃描不得重複通知。
 - [x] 通知需先進入彙整佇列，同商品的多商店結果可合併成一則摘要。
 - [x] 實作 Console 通知器，並提供可選的 Telegram Bot 與 Discord Webhook 通知器。
@@ -24,7 +24,7 @@
 - [x] 提供一次性掃描命令及持續排程命令。
 - [x] 提供簡單的唯讀 Web 管理頁面，能查看商品、可購買刊登、來源健康狀態及最近事件。
 - [x] 提供健康檢查端點，例如 `/health`。
-- [ ] 所有網路要求具備 timeout、User-Agent、網域限速、有限次重試與指數退避。
+- [x] HTTP、安全預覽與外部通知要求具備 timeout、User-Agent／瀏覽器身分、網域／排程限速、有限次重試、`Retry-After` 與指數退避；回應下載大小受限。
 - [x] 保存錯誤摘要及來源最後成功／失敗時間，不保存敏感 Token。
 - [x] 提供 `.env.example`、來源設定範例和 Windows 啟動說明。
 - [x] 提供自動化測試，至少涵蓋解析、商品合併、狀態轉換、去重與通知彙整。
@@ -47,7 +47,7 @@
 - [x] 支援設定 CSS selector 作為 JSON-LD 缺失時的備援。
 - [x] 正規化網址、空白、全半形文字、幣別、價格及戰鬥陀螺型號。
 - [x] 從中、英、日文標題辨識常見型號，例如 `BX-38`、`CX-00`、`UX-00`。
-- [ ] 排除明確的二手、零件拆售或無法判定為目標商品的項目，並保留排除原因。
+- [x] 排除明確的二手、零件拆售與明確非目標商品，持久化來源、網址、原因、首次／最後出現及累計次數。
 - [x] 原始 HTML 只在除錯模式或解析失敗時落盤，並設定保存期限。
 
 ## 可購買狀態與事件
@@ -82,12 +82,36 @@
 - [x] 未設定外部通知憑證：Console 正常、外部通知跳過。
 - [x] Web 頁面與 `/health` 能在本機開啟。
 
-## 第一版尚待完成
+## 第一版技術債清理（2026-07-18 完成）
 
-- 將 `sku` 納入商品合併鍵，並處理同型號的限定版／顏色版本。
-- 將排除原因持久化，並更可靠地判定「不是戰鬥陀螺商品」的頁面。
-- 讓 Telegram／Discord 通知請求也使用明確 timeout 與退避重試。
-- 決定是否保留 Offer 的 `discovered` 狀態；目前首次發現由事件表示。
+- [x] schema version 9：加入 `normalized_sku`、`variant_key` 與 `listing_exclusions` 稽核資料。
+- [x] 商品合併採條碼 → 正規化 SKU → 相容型號；SKU 衝突及限定版／顏色特徵不同時分開保存。
+- [x] 排除原因持久化，明確非目標商品使用保守白名單規則，不因缺少 Beyblade 關鍵字就直接排除。
+- [x] Telegram／Discord 加入明確 timeout、429／5xx 有限重試、`Retry-After`、指數退避及 jitter。
+- [x] 一般 HTTP／安全預覽補齊 `Retry-After`、下載上限與可測試的有限退避重試。
+- [x] 確認 Offer 不保留 `discovered` 狀態；首次發現以永久事件表示，避免同一概念保存兩份狀態。
+- [x] 118/118 項 Node 自動化測試通過。
+
+## 人工修正與維運控制（2026-07-18 完成）
+
+- [x] schema version 10：加入商品身分稽核、排除審核／覆寫及全域網路控制資料。
+- [x] 商品詳情頁可選取 Offer 拆成新 Product，或把 Product 重併至另一商品；移動關聯事件與 Watchlist 資料並保存前後快照。
+- [x] 既有 Offer 的人工身分決策優先於自動匹配，重新掃描不會把人工拆分結果自動合回。
+- [x] 排除紀錄可確認、放行或重新檢視，完整保留原始理由、證據摘要、出現次數、審核註記與時間。
+- [x] 來源管理頁提供外部網路總開關；停用後停止抓取、探索與通知，但保留資料及待送佇列，`NETWORK_ENABLED=0` 可作為環境層上限鎖。
+- [x] 125/125 項 Node 自動化測試與 13 條 Web 路由煙霧測試通過。
+
+## Roadmap Phase 7：Windows 發佈、移機與隱私（2026-07-18 完成）
+
+- [x] 版本提升至 1.0.0，建立內含 Node runtime 的 per-user Windows 安裝器、開始功能表捷徑、登入後自動啟動與保留資料的解除安裝流程。
+- [x] 偵測系統 Chrome，不強制打包大型瀏覽器；缺少 Chrome 時提供官方下載入口，HTTP-only 來源仍可使用。
+- [x] 建立 HTTPS、SHA-256 與 Ed25519 驗證的更新機制，以及更新前資料庫備份、版本指標與回滾。
+- [x] 建立單一 `.beyblade-transfer` 匯出／匯入流程，驗證每個檔案雜湊並排除密鑰、PID、log、raw HTML 與 debug 資料。
+- [x] Telegram Token／Chat ID 改用 Windows DPAPI CurrentUser 保護，設定頁提供 BotFather、Start、儲存與測試引導。
+- [x] 建立隱私說明、來源政策、需明確同意的去識別診斷匯出，以及繁中／日文／英文設定介面。
+- [x] Windows 隔離安裝驗收完成：安裝、封裝版健康檢查、解除安裝及使用者資料保留均通過。
+- [x] 133/133 項 Node 自動化測試與 16 條 Web 路由煙霧測試通過。
+- [ ] 公開發佈閘門：取得 Authenticode 憑證與 HTTPS 發佈站後，簽署安裝器／manifest，並在全新 Windows 測試機驗證線上更新及 SmartScreen。這是發佈憑證與基礎設施工作，不是未完成的 Phase 7 程式功能。
 
 ## 第二階段：實際商店與快速控制（2026-07-15）
 

@@ -6,16 +6,30 @@ function absolute(root, value, fallback) {
 }
 
 export function projectPaths(root = process.cwd(), env = process.env) {
-  const runtimeDir = absolute(root, env.RUNTIME_DIR, 'runtime');
+  const appRoot = absolute(root, env.BEYBLADE_APP_ROOT, '.');
+  const installRoot = absolute(appRoot, env.BEYBLADE_INSTALL_ROOT, '.');
+  const userRoot = absolute(root, env.BEYBLADE_USER_ROOT, '.');
+  const runtimeDir = absolute(userRoot, env.RUNTIME_DIR, 'runtime');
+  const configDir = absolute(userRoot, env.CONFIG_DIR, 'config');
   return {
-    root,
-    dataDir: absolute(root, env.DATA_DIR, 'data'),
+    root: appRoot,
+    appRoot,
+    installRoot,
+    userRoot,
+    dataDir: absolute(userRoot, env.DATA_DIR, 'data'),
+    configDir,
     runtimeDir,
-    backupDir: absolute(root, env.BACKUP_DIR, 'backups'),
-    logDir: absolute(root, env.LOG_DIR, 'logs'),
+    backupDir: absolute(userRoot, env.BACKUP_DIR, 'backups'),
+    exportDir: absolute(userRoot, env.EXPORT_DIR, 'exports'),
+    releaseDir: absolute(userRoot, env.RELEASE_DIR, 'releases'),
+    logDir: absolute(userRoot, env.LOG_DIR, 'logs'),
+    secretFile: absolute(configDir, env.SECRET_FILE, 'secrets.json'),
+    sourcesFile: absolute(configDir, env.SOURCES_FILE, 'sources.json'),
+    pendingImportFile: join(runtimeDir, 'pending-import.beyblade-transfer'),
+    rollbackFile: join(runtimeDir, 'rollback.json'),
     pidFile: join(runtimeDir, 'tracker.pid'),
     statusFile: join(runtimeDir, 'tracker-status.json'),
     stopFile: join(runtimeDir, 'stop.request'),
-    debugDir: absolute(root, env.DEBUG_HTML_DIR, join('runtime', 'debug')),
+    debugDir: absolute(userRoot, env.DEBUG_HTML_DIR, join('runtime', 'debug')),
   };
 }

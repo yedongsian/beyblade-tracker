@@ -68,6 +68,9 @@ const EXCLUSION_RULES = [
   { reason: 'used', re: /(\bused\b|中古|二手|中古品|ジャンク)/i },
   { reason: 'parts_only', re: /(parts only|拆售|拆賣|單賣零件|バラ売り|パーツのみ)/i },
   { reason: 'accessory', re: /(replacement part|spare parts|收納|display case|stand only)/i },
+  // Only explicit unrelated product families are rejected here. Absence of a
+  // Beyblade keyword is not enough evidence to exclude a page automatically.
+  { reason: 'non_target_product', re: /(ポケモンカード|寶可夢卡|宝可梦卡|pokemon cards?|遊戯王|one piece card|\blego\b|レゴ|bakugan|爆丸)/i },
 ];
 
 /**

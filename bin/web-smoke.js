@@ -5,7 +5,7 @@ import { startWebServer } from '../src/web/server.js';
 
 const app = createApp();
 const port = app.config.web.port + 2;
-const server = await startWebServer(app.db, { host: '127.0.0.1', port, appConfig: app.config });
+const server = await startWebServer(app.db, { host: '127.0.0.1', port, appConfig: app.config, secretStore: app.secretStore });
 const base = `http://127.0.0.1:${port}`;
 
 const checks = [
@@ -17,7 +17,11 @@ const checks = [
   ['/watchlist', 200, /Watchlist/],
   ['/community', 200, /社群情報/],
   ['/review', 200, /候選商品審核/],
+  ['/exclusions', 200, /排除紀錄/],
   ['/sources', 200, /來源管理/],
+  ['/settings', 200, /設定與移機/],
+  ['/privacy', 200, /隱私說明/],
+  ['/source-policy', 200, /來源政策/],
   ['/health', 200, /"status"/],
   ['/nope', 404, /找不到頁面/],
 ];

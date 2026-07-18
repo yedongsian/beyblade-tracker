@@ -15,11 +15,14 @@
 - **統一 Connector 介面**，單一來源失敗不會中斷其他來源。
 - **完全離線的 Fixture Connector**，可重現 新品 → 缺貨 → 補貨 流程。
 - **通用 JSON-LD / HTML Connector**，可由設定檔加入公開商品頁（含 CSS selector 備援）。
-- 以**條碼、SKU／型號**合併商品，不確定時不強行合併。
+- 以**條碼、正規化 SKU／型號**合併商品；SKU 衝突或限定版／顏色不同時不強行合併。
+- **人工商品修正**：可把誤合併的 Offer 拆出，或將 Product 重併，並保存完整前後快照與稽核紀錄。
+- **排除稽核**保存二手、拆售與明確非目標商品的來源、理由及重複出現次數，並可確認、放行或重開。
 - 事件只在**狀態轉換**時建立，重複掃描不會重複通知；具備冷卻時間避免洗版。
 - 通知先進入**彙整佇列**，同商品多商店結果合併成一則摘要。
-- **Console 通知器**永遠可用；**Telegram / Discord** 為可選，未設定憑證時安靜跳過、不崩潰。
+- **Console 通知器**永遠可用；**Telegram / Discord** 為可選，未設定憑證時安靜跳過，並具 timeout、`Retry-After` 與有限退避重試。
 - **可操作的 Local Web App**：首次導覽、網址預覽、來源新增、連線測試與安全停用。
+- **外部網路總開關**：一鍵暫停抓取、探索與通知，保留既有資料及待送佇列。
 - **受控站內探索**：遵守 robots、同網域與資源預算，優先 Sitemap／公開搜尋，再有限追蹤相關連結。
 - **Review Queue**：候選商品先顯示信心與列入原因，人工核准後才建立 Product／Offer 和持續監控。
 - **三語介面與狀態辨識**：繁中、日文、英文可即時切換，並保留商店原始庫存文字。
@@ -33,6 +36,8 @@
 - `/health` 健康檢查端點。
 - 所有網路要求具備 timeout、User-Agent、網域限速、有限重試與指數退避。
 - 日誌會遮蔽疑似密鑰；資料庫不保存 Token／Webhook。
+- **Windows 一般使用者版本**：per-user 安裝器、開始功能表捷徑、登入後自動啟動、版本回滾、移機檔與解除安裝資料保留選項。
+- Telegram 憑證以目前 Windows 使用者的 DPAPI 加密；移機檔與手動診斷匯出都不包含憑證。
 
 ## 需求
 
@@ -40,6 +45,8 @@
 - Windows / macOS / Linux 皆可（開發環境為 Windows 11 + PowerShell）。
 
 ## 安裝
+
+一般 Windows 使用者可直接執行發佈的 `BeybladeTracker-1.0.0-Setup.exe`，不需另裝 Node.js。安裝、移機與故障排除請參閱 [INSTALL.md](INSTALL.md) 與 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。以下步驟供原始碼開發使用：
 
 ```powershell
 npm install
@@ -110,15 +117,16 @@ Remove-Item Env:\FIXTURE_FRAME
 
 - `/` 總覽（各項統計與健康狀態）
 - `/products` 商品清單
-- `/products/:id` 商品的來源健康、價格與庫存時間線
+- `/products/:id` 商品的來源健康、價格與庫存時間線，以及人工 Offer 拆分／Product 重併
 - `/offers` 全部刊登及最新／過期／封存狀態（最新可購買項目優先）
 - `/events` 最近事件
 - `/catalog` Catalog 商品身分、多語別名、來源證據與未知詞彙審核
 - `/watchlist` Watchlist 規則、通知偏好、命中紀錄與官方來源首次掃描預覽
 - `/community` 非官方社群線索、原文、可信度、Watchlist 命中與來源過濾設定
 - `/review` 探索候選的核准、排除、稍後處理與批次操作
-- `/sources` 貼網址預覽、加入商店、連線測試、立即重查、啟用／停用與來源健康
-- `/health` JSON 健康檢查端點（回傳 `ok` 或 `degraded`）
+- `/exclusions` 歷史排除原因、證據與出現次數，可確認、放行或重新檢視
+- `/sources` 貼網址預覽、加入商店、連線測試、立即重查、啟用／停用、來源健康與外部網路總開關
+- `/health` JSON 健康檢查端點（回傳 `ok` 或 `degraded`，並包含網路開關狀態）
 
 首次開啟會引導選擇語言、通知方式、掃描頻率與資料保存。加入網址時會先顯示標準網址、
 registrable domain、既有商店警告、單頁候選商品及請求預算；只有按下「確認加入」才會寫入
@@ -230,7 +238,7 @@ Token／Webhook 只存在於 `.env`，**不會**寫入資料庫或日誌。
 
 ## 資料庫備份與還原
 
-資料庫預設在 `data\tracker.db`，新版程式 schema version 為 8。程式啟動正式 DB 前會先檢查
+資料庫預設在 `data\tracker.db`，新版程式 schema version 為 10。程式啟動正式 DB 前會先檢查
 `backups\`；預設每 24 小時建立一次交易一致的 `auto-*.db`，保留 30 天且最多 30 份。
 即使 SQLite 正使用 WAL，備份仍會包含已提交的 WAL 資料。
 
@@ -285,7 +293,8 @@ archive/demo/   已歸檔的歷史 Demo 資料
 
 ## 狀態與事件
 
-狀態：`discovered`、`coming_soon`、`preorder`、`in_stock`、`out_of_stock`、`unknown`。
+Offer 狀態：`coming_soon`、`preorder`、`in_stock`、`out_of_stock`、`unknown`。
+首次發現不保存為瞬時 Offer 狀態，而是建立永久的 `product_discovered` 事件。
 
 事件：`product_discovered`、`coming_soon`、`preorder_open`、`became_available`、
 `back_in_stock`、`out_of_stock`、`price_change`。
@@ -298,8 +307,10 @@ archive/demo/   已歸檔的歷史 Demo 資料
 商品合併、狀態轉換、去重與冷卻、來源隔離、密鑰不落地、通知彙整、migration、崩潰復原、
 設定 validation、Connector 契約、robots／Sitemap／Crawl Frontier、Review Queue，以及跨資料夾
 備份還原、獨立排程、jitter／backoff、freshness、stale／archived／恢復、穩定確認、手動重查冷卻、
-社群貼文分類／去重／過濾／保存期限與官方／庫存隔離。
-目前為 105 項 Node 測試；Web smoke test 涵蓋 12 條管理路由。
+社群貼文分類／去重／過濾／保存期限與官方／庫存隔離，以及 SKU／異色版安全合併、排除稽核、
+HTTP／Telegram／Discord timeout、`Retry-After`、下載上限與有限退避重試；另涵蓋人工商品拆分／重併、
+排除紀錄確認／放行／重開，以及網路總開關下的抓取與通知暫停。
+目前為 133 項 Node 測試；Web smoke test 涵蓋 16 條管理路由。資料庫 schema version 為 10。
 
 ## 明確不包含於第一版
 

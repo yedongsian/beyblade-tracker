@@ -5,7 +5,7 @@ import { startWebServer } from '../src/web/server.js';
 
 const app = createApp();
 const port = app.config.web.port + 1; // avoid clashing with a running web server
-const server = await startWebServer(app.db, { host: '127.0.0.1', port, appConfig: app.config });
+const server = await startWebServer(app.db, { host: '127.0.0.1', port, appConfig: app.config, secretStore: app.secretStore });
 
 let code = 0;
 try {

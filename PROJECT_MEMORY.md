@@ -1,7 +1,7 @@
 # Beyblade Tracker 專案記憶與交接文件
 
-> 更新日期：2026-07-16（Asia/Taipei）
-> 專案階段：第一版 MVP 已可運行；Roadmap Phase 0 至 Phase 6 已完成實作
+> 更新日期：2026-07-18（Asia/Taipei）
+> 專案階段：版本 1.0.0；Roadmap Phase 0 至 Phase 7 與既有技術債清理已完成
 > 專案位置：`C:\Users\yedon\OneDrive\桌面\Beyblade`
 
 ## 1. 這份文件的用途
@@ -125,8 +125,43 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
   開啟 Console 不會啟用來源或呼叫 API，也沒有使用 HTML 抓取繞過登入／反自動化。
 - 驗收結果：105/105 項 Node 測試、12 條 Web 路由煙霧測試通過；正式 DB 完整性 `ok`、
   0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。
-- 正式服務 PID `374536` 以 schema version 8 在 `http://127.0.0.1:8787` 運行，`/health` 回傳 `ok`；
-  停用的社群來源不會讓三個商店來源或整體健康狀態降級。
+- 當時正式服務 PID `374536` 以 schema version 8 在 `http://127.0.0.1:8787` 運行；這是 Phase 6
+  的歷史驗收紀錄，不可當成目前 PID 或服務狀態。
+
+### 2026-07-18 技術債清理基線
+
+- schema version 9 新增 `products.normalized_sku`、`products.variant_key` 與 `listing_exclusions`。
+- 商品合併順序為條碼 → 正規化 SKU → SKU／限定版／顏色特徵相容的型號；不確定時建立不同 Product。
+- 二手、拆售與明確非目標商品的排除原因會保存來源、URL、首次／最後出現及累計次數；不會只寫 debug log。
+- 一般 HTTP、安全預覽、Telegram 與 Discord 已具 timeout、下載上限、429／5xx 有限重試、
+  `Retry-After`、指數退避及 jitter；永久 4xx 不重試。
+- Offer 不保存瞬時 `discovered` 狀態；首次發現固定建立 `product_discovered` 永久事件。
+- `npm test` 為 118/118 通過；設定檢查仍為 3 個有效來源。
+- 2026-07-18 檢查時正式背景服務為「已停止」。`npm run health` 的 `ok` 是在 8788 臨時啟動的
+  健康煙霧測試，不代表 8787 正式背景服務正在執行。
+
+### 2026-07-18 人工修正與維運控制基線
+
+- schema version 10 新增 `product_identity_audit`、`listing_exclusion_overrides`、`network_control`，並為 `listing_exclusions` 加入審核狀態、註記與時間。
+- 商品詳情頁可人工拆分 Offer 或重併 Product；操作會同步移動關聯事件、候選資料與 Watchlist 關聯，保存前後快照及 Offer ID 稽核資料。
+- 既有 Offer 對 Product 的連結視為人工／既有身分決策，後續重掃優先沿用，不再由自動型號匹配覆蓋。
+- `/exclusions` 可確認排除、放行單一來源 URL 或重新檢視；原始排除理由、證據摘要與累計次數不會被覆寫成只有最終結論。
+- 來源管理頁提供外部網路總開關；停用後不啟動抓取、探索或外部通知，既有資料及待送通知保留。環境變數 `NETWORK_ENABLED=0` 可禁止 UI 重新開啟。
+- `npm test` 為 125/125 通過；設定檢查為 3 個有效來源，Web smoke 為 13/13 路由。
+- 正式 DB 已由 schema 9 升級至 10；升級前備份為 `backups/manual-20260718-090924Z.db`，升級後完整性 `ok`、0 個 foreign key orphan，1 Product／3 Offers／1 Event 均保留。
+- 正式背景服務仍為停止狀態；資料庫網路開關預設為啟用，但不代表服務正在執行。
+
+### 2026-07-18 Phase 7 Windows 發佈基線
+
+- 版本為 `1.0.0`；per-user Inno Setup 安裝器內含 Node.js runtime，一般使用者不需另裝開發工具。
+- 系統 Chrome 採偵測而非打包；缺少 Chrome 時提供官方下載入口，不影響 HTTP-only 來源。
+- 更新 manifest 強制 HTTPS、SHA-256 與 Ed25519 簽章；更新前建立一致性資料庫備份，並保存版本指標與回滾紀錄。
+- `.beyblade-transfer` 單檔移機包含資料庫與來源設定，逐檔驗證 SHA-256，排除 DPAPI 憑證、PID、log、raw HTML 與 debug 資料。
+- Telegram Token／Chat ID 使用 Windows DPAPI CurrentUser 保護；設定頁提供 BotFather、Start、儲存、測試與清除流程。
+- 隱私說明、來源政策與診斷資料同意已完成；診斷檔只可由使用者主動匯出，不會自動上傳。
+- 修正版 Windows E2E 已驗證安裝、封裝 runtime 健康檢查、解除安裝、程式檔清除與使用者資料保留。
+- 最終 release candidate：`dist/windows/installer/BeybladeTracker-1.0.0-Setup.exe`，27,449,237 bytes，SHA-256 `39edcaee697eaed7c9a1fb2d16ffca04c61930b7a28b5977f16a1b85e497e9c3`。
+- `release-manifest.json` 雜湊與安裝器相符；因尚未設定 HTTPS 發佈 URL、Ed25519 私鑰與 Authenticode 憑證，`publishReady=false`，不得視為已公開上線。
 
 ## 2. 產品願景
 
@@ -175,14 +210,15 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
 - 只有狀態轉換或重要資料變化才建立事件，並有冷卻與通知去重。
 - 單一來源失敗不會中止其他來源。
 - Console 通知永遠可用；Telegram Bot 與 Discord Webhook 為選用。
-- Local Web App：`http://127.0.0.1:8787`，可預覽、加入、測試、停用及重新啟用來源。
+- Local Web App：`http://127.0.0.1:8787`，可預覽、加入、測試、停用及重新啟用來源，並控制外部網路總開關。
 - 來源首頁／分類頁可啟動受控探索；候選先進 `/review`，核准後才建立 Product／Offer 與監控網址。
-- `/health` 提供服務與來源健康資訊。
-- 目前為 105 項 Node 自動化測試，另有 12 條 Web 路由煙霧測試。
+- `/products/:id` 可人工拆分／重併商品；`/exclusions` 可審核及修正歷史排除判斷。
+- `/health` 提供服務、來源健康與外部網路開關資訊。
+- 目前為 133 項 Node 自動化測試，另有 16 條 Web 路由煙霧測試。
 
 ### Phase 0 已完成（2026-07-16）
 
-- SQLite schema version 目前為 8；`src/db/migrations/` 由 migration runner 依序升級並記錄校驗碼。
+- SQLite schema version 目前為 10；`src/db/migrations/` 由 migration runner 依序升級並記錄校驗碼。
 - 正式 DB 啟動前預設每 24 小時建立一致性自動備份，保留 30 天且最多 30 份。
 - `npm run db:backup` 可立即備份；`npm run db:restore` 會驗證完整性、拒絕覆蓋運行中的服務，
   並可還原到另一個測試資料夾。
@@ -253,29 +289,26 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
 ## 5. 目前尚未具備
 
 - 尚未提供 Recipe selector 的一般使用者進階編輯介面。
-- 不會從任一商品頁自動搜尋整個主網站。
-- 不會自動發現全新的商品網址或官方公告。
-- 沒有完整的介面國際化與多語解析字典管理。
-- 沒有 Watchlist／預期商品功能。
-- 沒有論壇、RSS、社群或官方情報彙整。
-- 沒有安裝程式、自動更新、跨裝置同步或多使用者帳號。
+- 受控站內探索、官方公告、Watchlist、三語介面與社群 Registry 已具備；Takara Tomy Mall
+  真實分類頁仍待 Queue-it 自然解除後完成正式探索／Review Queue 驗收。
+- X `@bey_sokuhou` 只有離線能力與 UI；未取得使用者自費 API 設定前維持停用與零預算。
+- Windows 安裝程式、更新／回滾、移機與 OS 安全憑證儲存已完成；公開通路仍需 Authenticode 憑證、HTTPS 發佈站與乾淨 Windows 驗收。
+- 尚未提供完整營運指標與條件式 HTTP 快取；全域網路開關、一般使用者商品拆分／重併及歷史排除修正介面已完成。
+- 尚未提供跨裝置同步或多使用者帳號；單機版穩定發佈前不排入近期工作。
 - 不會自動購買、登入商店、操作購物車或繞過反自動化措施。
 
 ## 6. 移交到其他裝置
 
-目前最容易移交到另一台 Windows 電腦。新電腦需要 Node.js 22+、Google Chrome 與網路。
+一般使用者可用安裝器與單一 `.beyblade-transfer` 檔移交到另一台 Windows 電腦，不需安裝 Node.js。需要瀏覽器來源時建議安裝 Google Chrome。
 
 建議流程：
 
-1. 在舊電腦先執行 `stop_tracker.cmd`。
-2. 複製整個專案；可排除 `node_modules`、`logs` 與 `runtime`。
-3. 若要保留歷史資料，保留正常關閉後的 `data\tracker.db`。
-4. 不要複製 `runtime`；新電腦會自行建立 PID、status 與 stop 檔。
-5. 在新電腦執行 `npm.cmd install` 與 `npm.cmd test`。
-6. 執行 `start_tracker.cmd`，再檢查管理頁與 `/health`。
+1. 在舊電腦的「設定與移機」頁匯出 `.beyblade-transfer`。
+2. 在新電腦安裝相同或更新版本的 Beyblade Tracker。
+3. 從設定頁匯入移機檔；程式會先保留現有資料庫，再於重新啟動時套用。
+4. 檢查管理頁、來源設定與 `/health`；Telegram 憑證受原 Windows 使用者 DPAPI 保護，必須在新電腦重新設定。
 
-`.env` 可能含 Telegram／Discord 憑證，必須以安全方式移交。不要讓兩台電腦透過 OneDrive
-同時執行同一份 SQLite 資料庫；這會有同步衝突、資料損壞或重複通知風險。
+不要手動移交 `.env` 或加密憑證檔，也不要讓兩台電腦透過 OneDrive 同時執行同一份 SQLite 資料庫；這會有同步衝突、資料損壞或重複通知風險。
 
 ## 7. 重要設計原則與限制
 
@@ -294,8 +327,9 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
 可在新對話中貼上：
 
 > 請先完整閱讀 `C:\Users\yedon\OneDrive\桌面\Beyblade\PROJECT_MEMORY.md`、
-> `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0 至 Phase 6 已完成並驗收；不要重做已完成部分。
-> 正式服務使用 schema version 8，先確認備份、105 項測試、12 條 Web 路由與服務狀態。Takara
+> `ROADMAP.md`、`README.md` 與 `TODO.md`。Phase 0 至 Phase 7 已完成並驗收；不要重做已完成部分。
+> 目前程式版本 1.0.0、schema version 10；先確認備份、133 項測試、16 條 Web 路由與服務狀態；不要假設
+> 舊 PID 仍在執行。Takara
 > Tomy Mall 實站探索待 Queue-it 自然解除後再執行；X 由使用者以自己的 Developer Project 自費設定，
 > 本專案保持停用與零預算。
 
@@ -327,12 +361,15 @@ Phase 2 程式已完成，離線 Takara Tomy Mall 驗收 fixture 通過；正式
 
 ## 10. 本次執行狀態
 
-- Roadmap Phase 0 至 Phase 6 已完成實作與自動化驗收；Takara 實站驗收仍待 Queue-it 解除及使用者確認預覽。
+- Roadmap Phase 0 至 Phase 7 已完成工程實作與自動化驗收；Takara 實站驗收仍待 Queue-it 解除及使用者確認預覽。
 - 升級前後商品與事件未遺失；version 0 備份已在另一個測試資料夾成功還原並升級。
 - 正式 DB 已清除可明確識別的 Demo 資料，目前只保留三個真實商店與 UX-20 歷史。
-- 背景服務已在新版 Local Web App 下啟動，`/health` 回傳 `ok`。
-- Phase 2 至 Phase 5 曾完成 schema version 4／5／6／7 重啟驗收，後續已由 Phase 6 的 schema version 8 取代。
-- 正式背景服務目前使用 schema version 8，官方 Registry 與社群 Registry 已登錄但實站取得停用，`/health` 正常，既有資料完整。
+- Phase 2 至 Phase 6 曾完成 schema version 4／5／6／7／8 正式重啟驗收；2026-07-18 技術債與人工修正工作把目前程式提升至 schema version 10。
+- 133/133 項 Node 測試、設定檢查與 16 條 Web smoke 通過；正式 DB 已由 schema 9 升級至 10，
+  完整性 `ok`、0 個 foreign key orphan，既有 1 Product／3 Offers／1 Event 均保留。最新手動備份為
+  `backups/manual-20260718-101724Z.db`；schema 10 升級前備份 `backups/manual-20260718-090924Z.db` 亦保留。
+- 正式背景服務目前為停止狀態；是否重新啟動應由使用者工作流程決定，不把臨時 health smoke 視為背景服務已啟動。
+- 官方 Registry 與社群 Registry 已登錄，但 Takara 實站取得及 X 付費 API 均保持停用。
 - Takara Tomy Mall 實站探索目前受 Queue-it 等候室阻擋；不要繞過，待網站允許乾淨工作階段存取後重試。
-- 下一個可開發階段為 Phase 7；不必把外部網站暫時排隊或 X API 未設定視為程式回歸。
+- Phase 7 Windows 發佈、更新／回滾、移機、DPAPI 憑證、Telegram 精靈、政策與診斷同意已完成；公開發佈憑證／站台屬外部閘門。
 - 2026-07-16 已建立 Git repository 與初始 commit `689c181`；作者為 Darren Ye，使用 GitHub noreply Email。

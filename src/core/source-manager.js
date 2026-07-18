@@ -144,6 +144,8 @@ export async function previewSourceUrl(db, input, options = {}) {
       maxRedirects: 3,
       maxBytes: 2 * 1024 * 1024,
       userAgent: existingConfig.http?.userAgent || options.userAgent,
+      maxRetries: options.maxRetries,
+      perHostMinIntervalMs: options.perHostMinIntervalMs,
       lookupFn: options.lookupFn,
       fetchImpl: options.fetchImpl,
     });
@@ -300,4 +302,21 @@ export function saveLanguageSetting(db, language) {
     [JSON.stringify(chosen), now()]
   );
   return chosen;
+}
+
+export function savePrivacySettings(db, settings) {
+  const values = {
+    privacyAccepted: settings.privacyAccepted === true,
+    sourcePolicyAccepted: settings.sourcePolicyAccepted === true,
+    diagnosticsConsent: settings.diagnosticsConsent === true,
+    privacyUpdatedAt: now(),
+  };
+  for (const [key, value] of Object.entries(values)) {
+    db.run(
+      `INSERT INTO user_settings (key,value_json,updated_at) VALUES (?,?,?)
+       ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`,
+      [key, JSON.stringify(value), values.privacyUpdatedAt]
+    );
+  }
+  return values;
 }

@@ -6,13 +6,14 @@ import { computeAvailability, exclusionReason, isPurchasable, STATES } from './c
 import { computeOfferEvents } from './events.js';
 import {
   findOrCreateProduct, findOffer, insertOffer, updateOffer,
-  insertObservation, createEvent,
+  insertObservation, createEvent, recordListingExclusion,
 } from './store.js';
 import { logger } from '../util/logger.js';
 import {
   linkProductToCatalog, matchAvailabilityOverride, queueTerminologyReview,
 } from './catalog.js';
 import { evaluateWatchlistsForProduct } from './watchlist.js';
+import { isExclusionAllowed } from './exclusion-review.js';
 
 function normalizeModel(listing) {
   if (listing.model) {
@@ -68,8 +69,9 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
     rawListing.price, rawListing.priceText, rawListing.rawText
   );
 
-  const reason = exclusionReason(listing);
+  const reason = isExclusionAllowed(db, source.id, url) ? null : exclusionReason(listing);
   if (reason) {
+    recordListingExclusion(db, source.id, listing, reason, crawlRunId);
     logger.debug(`excluded (${reason}): ${title || url}`);
     return { excluded: true, reason };
   }
@@ -89,10 +91,14 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
     });
   }
 
-  const { product, created: productCreated } = findOrCreateProduct(db, listing);
+  // An existing Offer is an explicit identity decision (including manual
+  // split/merge), so it must win over automatic product matching on rescans.
+  const prevOffer = findOffer(db, source.id, url);
+  const existingProduct = prevOffer ? db.get('SELECT * FROM products WHERE id=?', [prevOffer.product_id]) : null;
+  const matched = existingProduct ? { product: existingProduct, created: false } : findOrCreateProduct(db, listing);
+  const { product, created: productCreated } = matched;
   const catalog = linkProductToCatalog(db, product, listing, source);
 
-  const prevOffer = findOffer(db, source.id, url);
   const stable = stableAvailability(prevOffer, observedState, Number(opts.stabilityConfirmations || 1));
   const state = stable.state;
   const purchasable = isPurchasable(state, opts);

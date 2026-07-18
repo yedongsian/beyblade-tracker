@@ -1,5 +1,5 @@
 import {
-  detectTextLocale, extractModel, normalizeAlias, normalizeBarcode, normalizeWhitespace,
+  detectTextLocale, extractModel, normalizeAlias, normalizeBarcode, normalizeSku, normalizeWhitespace,
 } from './normalize.js';
 import { STATES } from './classify.js';
 
@@ -168,8 +168,9 @@ export function linkProductToCatalog(db, product, listing, source) {
          ELSE excluded.verification_status END,updated_at=excluded.updated_at`,
     [product.id, catalog.id, verificationStatus, ts, ts]
   );
-  db.run('UPDATE products SET catalog_product_id=?,sku=COALESCE(sku,?),updated_at=? WHERE id=?',
-    [catalog.id, listing.sku || null, ts, product.id]);
+  db.run(`UPDATE products SET catalog_product_id=?,sku=COALESCE(sku,?),
+    normalized_sku=COALESCE(normalized_sku,?),updated_at=? WHERE id=?`,
+    [catalog.id, listing.sku || null, normalizeSku(listing.sku), ts, product.id]);
   return db.get('SELECT * FROM catalog_products WHERE id=?', [catalog.id]);
 }
 

@@ -4,11 +4,13 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createApp, recoverInterruptedWork, runOnce, syncSources } from '../src/app.js';
+import { spawn } from 'node:child_process';
+import { createApp, recoverInterruptedWork, refreshNotificationConfiguration, runOnce, syncSources } from '../src/app.js';
 import { schedulerDelaySeconds } from '../src/core/monitor.js';
 import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 import { projectPaths } from '../src/paths.js';
+import { getNetworkState } from '../src/core/network-control.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(ROOT);
@@ -74,7 +76,7 @@ function requestStop(reason) {
 
 function scheduleNext() {
   if (stopping) return;
-  const seconds = schedulerDelaySeconds(app.db);
+  const seconds = getNetworkState(app.db, app.config).enabled ? schedulerDelaySeconds(app.db) : 60;
   logger.info(`next crawl in ${seconds}s`);
   writeStatus({ status: 'running', nextCrawlAt: new Date(Date.now() + seconds * 1000).toISOString() });
   nextTimer = setTimeout(tick, seconds * 1000);
@@ -84,6 +86,15 @@ function wakeMonitor() {
   if (stopping || tickInProgress) return;
   if (nextTimer) clearTimeout(nextTimer);
   nextTimer = setTimeout(tick, 25);
+}
+
+function requestRestart(reason) {
+  logger.info(`service restart requested: ${reason}`);
+  const control = join(ROOT, 'scripts', 'service-control.js');
+  const child = spawn(process.execPath, ['--no-warnings', control, 'restart'], {
+    cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: process.env,
+  });
+  child.unref();
 }
 
 async function tick() {
@@ -117,7 +128,10 @@ async function main() {
     if (recovered) logger.warn(`已復原 ${recovered} 個上次未完成的掃描工作。`);
     syncSources(app);
     server = await startWebServer(app.db, {
-      ...app.config.web, appConfig: app.config, onMonitorRequested: wakeMonitor,
+      ...app.config.web, appConfig: app.config, secretStore: app.secretStore,
+      onMonitorRequested: wakeMonitor,
+      onNotificationSettingsChanged: () => refreshNotificationConfiguration(app),
+      onRestartRequested: requestRestart,
     });
     writeStatus({ status: 'running', webUrl: `http://${app.config.web.host}:${app.config.web.port}` });
     stopPoll = setInterval(() => {

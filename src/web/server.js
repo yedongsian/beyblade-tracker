@@ -3,14 +3,17 @@ import { randomBytes } from 'node:crypto';
 import { logger } from '../util/logger.js';
 import {
   confirmSource, listManagedSources, previewSourceUrl, readSettings,
-  saveLanguageSetting, saveOnboardingSettings, setSourceEnabled, testManagedSource,
+  saveLanguageSetting, saveOnboardingSettings, savePrivacySettings, setSourceEnabled, testManagedSource,
 } from '../core/source-manager.js';
 import {
   listDiscoverySites, runSiteDiscovery, updateDiscoveryConfiguration,
 } from '../core/discovery.js';
 import { listCandidates, reviewCandidate, reviewCandidates } from '../core/review-queue.js';
 import { assertPublicUrl } from '../net/public-http.js';
-import { catalogScript, communityScript, esc, layout, reviewQueueScript, sourcesScript, table, watchlistScript } from './ui.js';
+import {
+  catalogScript, communityScript, esc, exclusionScript, identityScript, layout,
+  reviewQueueScript, settingsScript, sourcesScript, table, watchlistScript,
+} from './ui.js';
 import { createTranslator } from '../i18n.js';
 import {
   listCatalogProducts, listTerminologyReviews, reviewTerminology,
@@ -26,6 +29,14 @@ import {
 import {
   listCommunityPosts, listCommunitySources, updateCommunitySource,
 } from '../core/community.js';
+import { mergeProducts, splitProduct } from '../core/identity-review.js';
+import { listExclusions, reviewExclusion } from '../core/exclusion-review.js';
+import { assertNetworkEnabled, getNetworkState, setNetworkEnabled } from '../core/network-control.js';
+import { TelegramNotifier } from '../notify/telegram.js';
+import { createTransferBundle, stageTransferImport } from '../maintenance/transfer.js';
+import { checkForUpdate, launchPreparedUpdate, prepareUpdate } from '../release/update.js';
+import { releaseInfo } from '../release/version.js';
+import { createDiagnosticsBundle } from '../maintenance/diagnostics.js';
 
 function stateBadge(state, t) {
   const kind = ['in_stock'].includes(state) ? 'good' :
@@ -43,7 +54,7 @@ function currentOfferBadge(offer, t) {
   return stateBadge(offer.availability, t);
 }
 
-export function healthData(db) {
+export function healthData(db, config = {}) {
   refreshOfferFreshness(db);
   const sources = db.all(`SELECT s.*,ms.next_run_at AS monitor_next_run_at,
     ms.consecutive_failures AS monitor_failures FROM sources s
@@ -68,6 +79,9 @@ export function healthData(db) {
   };
   return {
     status: unhealthy.length ? 'degraded' : 'ok',
+    network: getNetworkState(db, config),
+    release: releaseInfo(config),
+    browser: config.browser || null,
     time: new Date().toISOString(), counts,
     sources: sources.map((source) => ({
       key: source.key, name: source.name, enabled: Boolean(source.enabled),
@@ -89,7 +103,7 @@ function pageOptions(db, base) {
 function overviewPage(db, base) {
   const page = pageOptions(db, base);
   const { t } = page;
-  const health = healthData(db);
+  const health = healthData(db, base.appConfig);
   const counts = health.counts;
   const body = `<section class="hero"><p class="eyebrow">${esc(t('overview.eyebrow'))}</p><h1>${esc(t('overview.title'))}</h1><p>${esc(t('overview.intro'))}</p><p><a class="btn" href="/sources">${esc(t('overview.manage'))}</a></p></section>
   <section class="grid stats" aria-label="${esc(t('overview.summary'))}">
@@ -131,7 +145,9 @@ function productDetailPage(db, base, productId) {
   const observations = db.all(`SELECT ob.*,s.name sname,o.url FROM observations ob
     JOIN offers o ON o.id=ob.offer_id JOIN sources s ON s.id=o.source_id
     WHERE o.product_id=? ORDER BY ob.observed_at DESC LIMIT 300`, [productId]);
+  const otherProducts = db.all('SELECT id,name,model FROM products WHERE id<>? ORDER BY name LIMIT 200', [productId]);
   const offerRows = offers.map((row) => [
+    `<input name="splitOffer" type="checkbox" value="${row.id}" aria-label="${esc(t('identity.chooseOffer', { store: row.sname }))}">`,
     esc(row.sname), currentOfferBadge(row, t), esc(t(`freshness.${row.freshness_status}`)),
     row.price == null ? '—' : esc(`${row.price} ${row.currency || ''}`),
     esc(row.last_successful_at || t('common.never')),
@@ -141,9 +157,45 @@ function productDetailPage(db, base, productId) {
     row.price == null ? '—' : esc(`${row.price} ${row.currency || ''}`),
   ]);
   const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('productDetail.eyebrow'))}</p><h1>${esc(product.name)}</h1><p>${esc([product.model, product.brand, product.release_date].filter(Boolean).join(' · '))}</p></div><a class="btn secondary" href="/products">${esc(t('productDetail.back'))}</a></div>
-    <section class="card"><h2>${esc(t('productDetail.offers'))}</h2>${table([t('table.store'),t('table.status'),t('table.freshness'),t('table.price'),t('table.lastSuccess')],offerRows,t)}</section>
+    <section class="card"><h2>${esc(t('productDetail.offers'))}</h2><form id="split-product-form" data-product-id="${product.id}">${table([t('identity.select'),t('table.store'),t('table.status'),t('table.freshness'),t('table.price'),t('table.lastSuccess')],offerRows,t)}<div class="inline-form" style="margin-top:1rem"><div><label for="split-name">${esc(t('identity.newName'))}</label><input id="split-name" name="name" placeholder="${esc(product.name)}"></div><button class="btn secondary" type="submit">${esc(t('identity.split'))}</button></div></form></section>
+    <section class="card" style="margin-top:1rem"><h2>${esc(t('identity.mergeTitle'))}</h2><p class="muted">${esc(t('identity.mergeHint'))}</p><form id="merge-product-form" data-product-id="${product.id}" class="inline-form"><div><label for="merge-target">${esc(t('identity.mergeTarget'))}</label><select id="merge-target" name="targetProductId" required><option value="">${esc(t('identity.chooseTarget'))}</option>${otherProducts.map((item) => `<option value="${item.id}">${esc(item.name)}${item.model ? ` (${esc(item.model)})` : ''}</option>`).join('')}</select></div><button class="btn danger" type="submit"${otherProducts.length ? '' : ' disabled'}>${esc(t('identity.merge'))}</button></form><p id="identity-status" class="status" role="status" aria-live="polite"></p></section>
     <section class="card" style="margin-top:1rem"><h2>${esc(t('productDetail.timeline'))}</h2><p class="muted">${esc(t('productDetail.timelineHint'))}</p>${table([t('table.time'),t('table.store'),t('table.status'),t('table.price')],timelineRows,t)}</section>`;
-  return layout({ ...page, title: product.name, current: '/products', body });
+  return layout({ ...page, title: product.name, current: '/products', body, extraScript: identityScript(t) });
+}
+
+function exclusionsPage(db, base, status = 'all') {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const rows = listExclusions(db, { status }).map((row) => [
+    esc(row.last_seen_at), `${esc(row.source_name)}<br><a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">${esc(row.title || row.url)}</a>`,
+    esc(t(`exclusionReason.${row.reason}`)), esc(row.occurrence_count), esc(t(`exclusionStatus.${row.review_status}`)),
+    `<div class="actions"><button class="btn secondary" data-exclusion-action="confirm" data-exclusion-id="${row.id}">${esc(t('exclusions.confirm'))}</button><button class="btn" data-exclusion-action="allow" data-exclusion-id="${row.id}">${esc(t('exclusions.allow'))}</button><button class="btn secondary" data-exclusion-action="reopen" data-exclusion-id="${row.id}">${esc(t('exclusions.reopen'))}</button></div>`,
+  ]);
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('exclusions.eyebrow'))}</p><h1>${esc(t('exclusions.title'))}</h1><p>${esc(t('exclusions.intro'))}</p></div></div><div class="actions" style="justify-content:flex-start;margin-bottom:1rem"><a href="/exclusions?status=all">${esc(t('exclusions.all'))}</a><a href="/exclusions?status=pending">${esc(t('exclusions.pending'))}</a><a href="/exclusions?status=confirmed">${esc(t('exclusions.confirmed'))}</a><a href="/exclusions?status=allowed">${esc(t('exclusions.allowed'))}</a></div><p id="exclusion-status" class="status" role="status" aria-live="polite"></p><section class="card">${table([t('table.time'),t('exclusions.sourceItem'),t('exclusions.reason'),t('exclusions.count'),t('table.status'),t('review.action')],rows,t)}</section>`;
+  return layout({ ...page, title: t('exclusions.title'), current: '/exclusions', body, extraScript: exclusionScript(t) });
+}
+
+function settingsPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const settings = readSettings(db);
+  const secrets = base.secretStore?.status?.() || { provider: 'unavailable', telegram: { configured: false } };
+  const release = releaseInfo(base.appConfig);
+  const browser = base.appConfig.browser || { available: false, downloadUrl: 'https://www.google.com/chrome/' };
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('settings.eyebrow'))}</p><h1>${esc(t('settings.title'))}</h1><p>${esc(t('settings.intro'))}</p></div></div><p id="settings-status" class="status" role="status" aria-live="polite"></p>
+  <div class="grid two-col"><section class="card"><h2>${esc(t('settings.releaseTitle'))}</h2><p>${esc(t('settings.version'))}：${esc(release.version)} · ${esc(release.channel)}</p><p>${esc(t('settings.browser'))}：${esc(browser.available ? browser.name : t('settings.browserMissing'))}</p>${browser.available ? '' : `<p><a href="${esc(browser.downloadUrl)}" target="_blank" rel="noopener noreferrer">${esc(t('settings.downloadChrome'))}</a></p>`}<div class="actions" style="justify-content:flex-start"><button id="update-check" class="btn secondary" type="button"${release.updateManifestUrl ? '' : ' disabled'}>${esc(t('settings.checkUpdate'))}</button><button id="update-apply" class="btn" type="button" hidden>${esc(t('settings.applyUpdate'))}</button></div></section>
+  <section class="card"><h2>${esc(t('settings.telegramTitle'))}</h2><p>${esc(t('settings.telegramSteps'))} <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">BotFather</a></p><p><span class="pill ${secrets.telegram.configured ? 'good' : 'warn'}">${esc(t(secrets.telegram.configured ? 'settings.configured' : 'settings.notConfigured'))}</span> · ${esc(secrets.provider)}</p><form id="telegram-form"><div class="field"><label for="telegram-token">${esc(t('settings.botToken'))}</label><input id="telegram-token" name="token" type="password" autocomplete="off" required></div><div class="field"><label for="telegram-chat-id">${esc(t('settings.chatId'))}</label><input id="telegram-chat-id" name="chatId" autocomplete="off" required></div><div class="actions" style="justify-content:flex-start"><button class="btn" type="submit">${esc(t('settings.saveAndTest'))}</button><button id="telegram-test" class="btn secondary" type="button"${secrets.telegram.configured ? '' : ' disabled'}>${esc(t('settings.test'))}</button><button id="telegram-clear" class="btn danger" type="button"${secrets.telegram.configured ? '' : ' disabled'}>${esc(t('settings.clear'))}</button></div></form></section></div>
+  <div class="grid two-col" style="margin-top:1rem"><section class="card"><h2>${esc(t('settings.transferTitle'))}</h2><p>${esc(t('settings.transferHint'))}</p><div class="actions" style="justify-content:flex-start"><button id="transfer-export" class="btn" type="button">${esc(t('settings.export'))}</button><label class="btn secondary" for="transfer-import">${esc(t('settings.import'))}</label><input id="transfer-import" type="file" accept=".beyblade-transfer" hidden></div></section>
+  <section class="card"><h2>${esc(t('settings.privacyTitle'))}</h2><p><a href="/privacy">${esc(t('settings.privacyLink'))}</a> · <a href="/source-policy">${esc(t('settings.sourcePolicyLink'))}</a></p><form id="privacy-form"><label style="font-weight:400"><input style="width:auto" type="checkbox" name="privacyAccepted"${settings.privacyAccepted ? ' checked' : ''}> ${esc(t('settings.acceptPrivacy'))}</label><label style="font-weight:400"><input style="width:auto" type="checkbox" name="sourcePolicyAccepted"${settings.sourcePolicyAccepted ? ' checked' : ''}> ${esc(t('settings.acceptSourcePolicy'))}</label><label style="font-weight:400"><input style="width:auto" type="checkbox" name="diagnosticsConsent"${settings.diagnosticsConsent ? ' checked' : ''}> ${esc(t('settings.diagnosticsConsent'))}</label><div class="actions" style="justify-content:flex-start"><button class="btn secondary" type="submit">${esc(t('common.save'))}</button><button id="diagnostics-export" class="btn secondary" type="button"${settings.diagnosticsConsent ? '' : ' disabled'}>${esc(t('settings.exportDiagnostics'))}</button></div></form></section></div>`;
+  return layout({ ...page, title: t('settings.title'), current: '/settings', body, extraScript: settingsScript(t) });
+}
+
+function policyPage(db, base, kind) {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const privacy = kind === 'privacy';
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('settings.eyebrow'))}</p><h1>${esc(t(privacy ? 'policy.privacyTitle' : 'policy.sourceTitle'))}</h1></div><a class="btn secondary" href="/settings">${esc(t('nav.settings'))}</a></div><section class="card"><p>${esc(t(privacy ? 'policy.privacyBody1' : 'policy.sourceBody1'))}</p><p>${esc(t(privacy ? 'policy.privacyBody2' : 'policy.sourceBody2'))}</p><p>${esc(t(privacy ? 'policy.privacyBody3' : 'policy.sourceBody3'))}</p></section>`;
+  return layout({ ...page, title: t(privacy ? 'policy.privacyTitle' : 'policy.sourceTitle'), current: '/settings', body });
 }
 
 function offersPage(db, base) {
@@ -296,6 +348,7 @@ function sourcesPage(db, base) {
   const page = pageOptions(db, base);
   const { t } = page;
   const rows = listManagedSources(db);
+  const network = getNetworkState(db, base.appConfig);
   const discoverySites = new Map(listDiscoverySites(db).map((site) => [Number(site.id), site]));
   const cards = rows.map((source) => {
     const discovery = discoverySites.get(Number(source.site_id));
@@ -321,7 +374,8 @@ function sourcesPage(db, base) {
     ${canMonitor ? `<button class="btn secondary" type="button" data-source-action="check-now" data-source-id="${source.id}">${esc(t('sources.checkNow'))}</button><button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">${esc(t('sources.test'))}</button>
     <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${esc(t(source.enabled ? 'sources.disable' : 'sources.enable'))}</button>` : ''}</div></article>`;
   }).join('');
-  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('sources.eyebrow'))}</p><h1>${esc(t('sources.title'))}</h1><p>${esc(t('sources.intro'))}</p></div></div><div class="grid two-col"><section class="card"><h2>${esc(t('sources.paste'))}</h2>
+  const networkCard = `<section class="card ${network.enabled ? '' : 'notice warn'}" style="margin-bottom:1rem"><div class="section-head"><div><h2>${esc(t('network.title'))}</h2><p>${esc(t(network.enabled ? 'network.enabledHint' : 'network.disabledHint'))}${network.reason ? `：${esc(network.reason)}` : ''}</p></div><button id="network-toggle" class="btn ${network.enabled ? 'danger' : ''}" data-enable="${network.enabled ? 'false' : 'true'}" type="button">${esc(t(network.enabled ? 'network.pause' : 'network.resume'))}</button></div></section>`;
+  const body = `${networkCard}<div class="section-head"><div><p class="eyebrow">${esc(t('sources.eyebrow'))}</p><h1>${esc(t('sources.title'))}</h1><p>${esc(t('sources.intro'))}</p></div></div><div class="grid two-col"><section class="card"><h2>${esc(t('sources.paste'))}</h2>
     <form id="add-source-form" class="inline-form"><div><label for="source-url">${esc(t('sources.url'))}</label><input id="source-url" name="url" type="url" inputmode="url" autocomplete="url" required placeholder="https://store.example/product"><p class="hint">${esc(t('sources.urlHint'))}</p></div><button class="btn" type="submit">${esc(t('sources.preview'))}</button></form>
     <p id="source-status" class="status" role="status" aria-live="polite"></p><div id="source-preview" class="preview" hidden></div></section>
     <aside class="card"><h2>${esc(t('sources.flow'))}</h2><ol><li>${esc(t('sources.flow1'))}</li><li>${esc(t('sources.flow2'))}</li><li>${esc(t('sources.flow3'))}</li><li>${esc(t('sources.flow4'))}</li></ol><div class="notice">${esc(t('sources.defaultBudget'))}</div></aside></div>
@@ -350,8 +404,8 @@ function reviewPage(db, base, status = 'pending') {
   return layout({ ...page, title: t('nav.review'), current: '/review', body, extraScript: reviewQueueScript(t) });
 }
 
-function response(body, type = 'text/html; charset=utf-8', status = 200) {
-  return { status, type, body };
+function response(body, type = 'text/html; charset=utf-8', status = 200, headers = {}) {
+  return { status, type, body, headers };
 }
 function json(value, status = 200) {
   return response(JSON.stringify(value, null, 2), 'application/json; charset=utf-8', status);
@@ -384,8 +438,8 @@ function validateLocalRequest(req, csrfToken, t) {
 export function createWebServer(db, options = {}) {
   const csrfToken = randomBytes(24).toString('base64url');
   const nonce = randomBytes(16).toString('base64url');
-  const base = { csrfToken, nonce };
   const appConfig = options.appConfig || {};
+  const base = { csrfToken, nonce, appConfig, secretStore: options.secretStore };
   return createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const requestT = createTranslator(readSettings(db).language || 'zh-TW');
@@ -405,8 +459,12 @@ export function createWebServer(db, options = {}) {
       else if (req.method === 'GET' && url.pathname === '/watchlist') out = response(watchlistPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/community') out = response(communityPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/review') out = response(reviewPage(db, base, url.searchParams.get('status') || 'pending'));
+      else if (req.method === 'GET' && url.pathname === '/exclusions') out = response(exclusionsPage(db, base, url.searchParams.get('status') || 'all'));
       else if (req.method === 'GET' && url.pathname === '/sources') out = response(sourcesPage(db, base));
-      else if (req.method === 'GET' && url.pathname === '/health') out = json(healthData(db));
+      else if (req.method === 'GET' && url.pathname === '/settings') out = response(settingsPage(db, base));
+      else if (req.method === 'GET' && url.pathname === '/privacy') out = response(policyPage(db, base, 'privacy'));
+      else if (req.method === 'GET' && url.pathname === '/source-policy') out = response(policyPage(db, base, 'source'));
+      else if (req.method === 'GET' && url.pathname === '/health') out = json(healthData(db, appConfig));
       else if (req.method === 'GET' && url.pathname === '/api/sources') out = json({ sources: listManagedSources(db) });
       else if (req.method === 'GET' && url.pathname === '/api/settings') out = json(readSettings(db));
       else if (req.method === 'GET' && url.pathname === '/api/candidates') out = json({ candidates: listCandidates(db, { status: url.searchParams.get('status') || 'pending' }) });
@@ -418,13 +476,65 @@ export function createWebServer(db, options = {}) {
         out = json({ settings: saveOnboardingSettings(db, await readJson(req)) });
       } else if (req.method === 'POST' && url.pathname === '/api/settings/language') {
         out = json({ language: saveLanguageSetting(db, (await readJson(req)).language) });
+      } else if (req.method === 'POST' && url.pathname === '/api/privacy') {
+        out = json({ settings: savePrivacySettings(db, await readJson(req)) });
+      } else if (req.method === 'POST' && url.pathname === '/api/notifications/telegram') {
+        if (!options.secretStore) throw new Error('此執行模式未啟用 Windows 憑證儲存。');
+        const body = await readJson(req);
+        const status = options.secretStore.saveTelegram(body);
+        options.onNotificationSettingsChanged?.();
+        let test = null;
+        if (body.test === true) {
+          assertNetworkEnabled(db, appConfig);
+          const notifier = new TelegramNotifier({ ...body, timeoutMs: appConfig.http?.timeoutMs, maxRetries: appConfig.http?.maxRetries });
+          test = await notifier.send({ title: 'Beyblade Tracker', body: 'Telegram 通知設定成功。' });
+          if (test.status !== 'sent') throw new Error(test.detail);
+        }
+        out = json({ status, test });
+      } else if (req.method === 'POST' && url.pathname === '/api/notifications/telegram/test') {
+        assertNetworkEnabled(db, appConfig);
+        if (!options.secretStore) throw new Error('此執行模式未啟用 Windows 憑證儲存。');
+        const credentials = options.secretStore.readNotifications().telegram;
+        const notifier = new TelegramNotifier({ ...credentials, timeoutMs: appConfig.http?.timeoutMs, maxRetries: appConfig.http?.maxRetries });
+        const test = await notifier.send({ title: 'Beyblade Tracker', body: 'Telegram 測試通知。' });
+        if (test.status !== 'sent') throw new Error(test.detail);
+        out = json({ test });
+      } else if (req.method === 'DELETE' && url.pathname === '/api/notifications/telegram') {
+        if (!options.secretStore) throw new Error('此執行模式未啟用 Windows 憑證儲存。');
+        out = json({ status: options.secretStore.clearTelegram() });
+        options.onNotificationSettingsChanged?.();
+      } else if (req.method === 'POST' && url.pathname === '/api/transfer/export') {
+        const bundle = createTransferBundle(appConfig);
+        const name = `beyblade-transfer-${new Date().toISOString().slice(0, 10)}.beyblade-transfer`;
+        out = response(bundle, 'application/gzip', 200, { 'Content-Disposition': `attachment; filename="${name}"` });
+      } else if (req.method === 'POST' && url.pathname === '/api/transfer/import') {
+        const body = await readJson(req, 160 * 1024 * 1024);
+        const staged = stageTransferImport(Buffer.from(body.data || '', 'base64'), appConfig);
+        out = json({ staged, restartRequired: true }, 202);
+        setTimeout(() => options.onRestartRequested?.('transfer-import'), 300);
+      } else if (req.method === 'POST' && url.pathname === '/api/diagnostics/export') {
+        const bundle = createDiagnosticsBundle(db, appConfig);
+        out = response(bundle, 'application/gzip', 200, { 'Content-Disposition': 'attachment; filename="beyblade-diagnostics.json.gz"' });
+      } else if (req.method === 'GET' && url.pathname === '/api/update') {
+        assertNetworkEnabled(db, appConfig);
+        out = json(await checkForUpdate(appConfig));
+      } else if (req.method === 'POST' && url.pathname === '/api/update/apply') {
+        assertNetworkEnabled(db, appConfig);
+        const update = await checkForUpdate(appConfig);
+        if (!update.updateAvailable) throw new Error('目前已是最新版本。');
+        const prepared = await prepareUpdate(appConfig, update.manifest);
+        out = json(launchPreparedUpdate(prepared), 202);
       } else if (req.method === 'POST' && url.pathname === '/api/sources/preview') {
+        assertNetworkEnabled(db, appConfig);
         const body = await readJson(req);
         out = json(await previewSourceUrl(db, body.url, {
           timeoutMs: appConfig.http?.timeoutMs,
           userAgent: appConfig.http?.userAgent,
+          maxRetries: appConfig.http?.maxRetries,
+          perHostMinIntervalMs: appConfig.http?.perHostMinIntervalMs,
         }));
       } else if (req.method === 'POST' && url.pathname === '/api/sources') {
+        assertNetworkEnabled(db, appConfig);
         const body = await readJson(req);
         const previewUrl = new URL(body.url);
         await assertPublicUrl(previewUrl);
@@ -436,6 +546,12 @@ export function createWebServer(db, options = {}) {
         out = json({ ...result, message }, 201);
       } else if (req.method === 'POST' && url.pathname === '/api/watchlists') {
         out = json({ watchlist: createWatchlist(db, await readJson(req)), message: requestT('api.watchlistAdded') }, 201);
+      } else if (req.method === 'POST' && url.pathname === '/api/products/merge') {
+        const body = await readJson(req);
+        out = json(mergeProducts(db, body.sourceProductId, body.targetProductId, { note: body.note }));
+      } else if (req.method === 'PATCH' && url.pathname === '/api/network') {
+        const body = await readJson(req);
+        out = json({ network: setNetworkEnabled(db, body.enabled === true, { reason: body.reason, config: appConfig }) });
       } else {
         const discoveryMatch = url.pathname.match(/^\/api\/sites\/(\d+)\/discover$/);
         const discoverySettingsMatch = url.pathname.match(/^\/api\/sites\/(\d+)\/discovery-settings$/);
@@ -445,7 +561,14 @@ export function createWebServer(db, options = {}) {
         const watchlistMatch = url.pathname.match(/^\/api\/watchlists\/(\d+)$/);
         const officialConfirmMatch = url.pathname.match(/^\/api\/official-sources\/(\d+)\/confirm$/);
         const communitySourceMatch = url.pathname.match(/^\/api\/community-sources\/(\d+)$/);
-        if (communitySourceMatch && req.method === 'PATCH') {
+        const productSplitMatch = url.pathname.match(/^\/api\/products\/(\d+)\/split$/);
+        const exclusionMatch = url.pathname.match(/^\/api\/exclusions\/(\d+)$/);
+        if (productSplitMatch && req.method === 'POST') {
+          const body = await readJson(req);
+          out = json(splitProduct(db, Number(productSplitMatch[1]), body.offerIds, { name: body.name, note: body.note }), 201);
+        } else if (exclusionMatch && req.method === 'POST') {
+          out = json({ exclusion: reviewExclusion(db, Number(exclusionMatch[1]), await readJson(req)) });
+        } else if (communitySourceMatch && req.method === 'PATCH') {
           out = json({ source: updateCommunitySource(db, Number(communitySourceMatch[1]), await readJson(req)) });
         } else if (officialConfirmMatch && req.method === 'POST') {
           out = json({ ...confirmOfficialPreview(db, Number(officialConfirmMatch[1])), message: requestT('api.officialConfirmed') });
@@ -455,10 +578,12 @@ export function createWebServer(db, options = {}) {
         } else if (watchlistMatch && req.method === 'DELETE') {
           out = json(deleteWatchlist(db, Number(watchlistMatch[1])));
         } else if (monitorMatch && req.method === 'POST') {
+          assertNetworkEnabled(db, appConfig);
           const request = requestImmediateMonitor(db, Number(monitorMatch[1]));
           options.onMonitorRequested?.(Number(monitorMatch[1]));
           out = json({ request, message: requestT('api.monitorQueued') }, 202);
         } else if (discoveryMatch && req.method === 'POST') {
+          assertNetworkEnabled(db, appConfig);
           const body = await readJson(req);
           const run = await runSiteDiscovery(db, Number(discoveryMatch[1]), {
             budget: body.budget || {}, userAgent: appConfig.http?.userAgent,
@@ -489,6 +614,7 @@ export function createWebServer(db, options = {}) {
         } else {
           const match = url.pathname.match(/^\/api\/sources\/(\d+)(?:\/(test))?$/);
           if (match && req.method === 'POST' && match[2] === 'test') {
+          assertNetworkEnabled(db, appConfig);
           out = json(await testManagedSource(db, Number(match[1]), {
             httpDeps: {
               http: appConfig.http || {},
@@ -509,6 +635,7 @@ export function createWebServer(db, options = {}) {
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'same-origin',
         'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data: https:; frame-ancestors 'none'`,
+        ...(out.headers || {}),
       });
       res.end(out.body);
     } catch (err) {

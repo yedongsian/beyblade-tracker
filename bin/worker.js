@@ -2,6 +2,7 @@
 import { createApp, recoverInterruptedWork, runOnce, syncSources } from '../src/app.js';
 import { logger } from '../src/util/logger.js';
 import { schedulerDelaySeconds } from '../src/core/monitor.js';
+import { getNetworkState } from '../src/core/network-control.js';
 
 const app = createApp();
 const dev = process.argv.includes('--dev');
@@ -19,7 +20,7 @@ async function tick() {
     logger.error(`worker tick failed: ${err.message}`);
   }
   if (stopping) return;
-  const seconds = dev ? 30 : schedulerDelaySeconds(app.db);
+  const seconds = dev ? 30 : (getNetworkState(app.db, app.config).enabled ? schedulerDelaySeconds(app.db) : 60);
   logger.info(`next crawl in ${seconds}s`);
   timer = setTimeout(tick, seconds * 1000);
 }

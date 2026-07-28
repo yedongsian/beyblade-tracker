@@ -1,8 +1,8 @@
 # GitHub Support and Issue Intake
 
 > 決策：使用與程式碼相同的公開 GitHub repository，啟用 Issues 與繁中 Issue Form
-> 狀態：Approved design；repository remote／URL 與表單尚待建立
-> 最後更新：2026-07-28
+> 狀態：In implementation；repository 與表單已建立，通知及 end-to-end 驗收待完成
+> 最後更新：2026-07-29
 
 ## 1. 使用者體驗
 
@@ -17,7 +17,7 @@ Repository 公開後，Issue 內容也會公開。表單必須在上方提醒：
 
 ## 2. Repository owner 設定
 
-1. 建立公開 GitHub repository 並 push 專案；目前 local repository 尚未設定 remote。
+1. 公開 repository：[yedongsian/beyblade-tracker](https://github.com/yedongsian/beyblade-tracker)。
 2. 到 `Settings → General → Features` 啟用 Issues，且不要限制為 Collaborators only。
 3. 建立 `.github/ISSUE_TEMPLATE/bug_report.yml` 繁中 Issue Form。
 4. 建立 `.github/ISSUE_TEMPLATE/config.yml`，建議關閉 blank issue，減少缺少資訊的回報。
@@ -68,8 +68,8 @@ Form 自動加上 `bug`、`needs-triage` labels。Title 可要求使用者以 `[
 
 ## 6. 發布前必填
 
-- Public repository URL：`TBD`
-- Issues URL：`TBD`
-- Release URL：`TBD`
-- Repository owner／triage owner：`TBD`
+- Public repository URL：<https://github.com/yedongsian/beyblade-tracker>
+- Issues URL：<https://github.com/yedongsian/beyblade-tracker/issues>
+- Release URL：<https://github.com/yedongsian/beyblade-tracker/releases>
+- Repository owner／triage owner：`yedongsian`（待確認日常 triage owner 是否相同）
 - Verified notification email：只記錄「已驗證」，不要把私人 Email 寫入 repository。

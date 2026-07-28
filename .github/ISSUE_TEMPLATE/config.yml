@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用教學
+    url: https://github.com/yedongsian/beyblade-tracker/blob/main/docs/USER_GUIDE.md
+    about: 先查看安裝、操作、更新與問題回報方式
+  - name: 錯誤代碼目錄
+    url: https://github.com/yedongsian/beyblade-tracker/blob/main/docs/ERROR_CODES.md
+    about: 查詢錯誤代碼的意義與安全處理方式

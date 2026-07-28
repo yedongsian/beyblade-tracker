@@ -29,7 +29,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
 | BT-UX-002 | P0 | Ready | 建立可見且穩定的使用者錯誤代碼 | 無 |
 | BT-UPD-001 | P0 | Ready | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel |
-| BT-SUP-001 | P1 | Ready | 建立公開 GitHub Issues 與繁中問題回報表單 | GitHub remote／URL |
+| BT-SUP-001 | P1 | In Progress | 建立公開 GitHub Issues 與繁中問題回報表單 | 通知設定與雙帳號驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | Support／Release URL 待填 |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
 | BT-P2-002 | P2 | Proposed | Chrome browser pool 與 concurrency control | 效能基準 |
@@ -174,7 +174,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 說明主要功能、雙擊安裝、首次啟動、Watchlist、通知、更新同意、備份／移機與問題回報。
   - Error codes 有 meaning、safe recovery 與 privacy guidance。
   - Support spec 有 GitHub Form fields、notification setup、triage 與 end-to-end acceptance。
-  - Public repo／Issues／Release URL 建立後補齊所有 `TBD`，並確認文件進入 release payload。
+  - Public repo／Issues／Release URL 已補齊；發布前確認文件進入 release payload。
 
 ### BT-P2-001 — HTTP conditional request 與 bounded cache
 

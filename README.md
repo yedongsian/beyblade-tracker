@@ -4,6 +4,8 @@ Beyblade Tracker 是一個 Windows 優先的本機商品追蹤工具，定期讀
 
 目前版本：`1.0.0`；SQLite schema：`10`。
 
+> **非官方專案聲明：** 本專案是獨立開發的非官方工具，與 Takara Tomy、Hasbro 或其他 Beyblade 品牌權利人沒有隸屬、授權或代言關係。Beyblade 及相關商標屬各自權利人所有。
+
 ## 產品邊界
 
 - 只讀公開頁面，不登入、不自動購買。
@@ -115,6 +117,8 @@ Repository 的產品、工程與執行團隊文件入口是 [docs/README.md](doc
 - [CHANGELOG](docs/CHANGELOG.md)
 
 Windows release package 另保留 `INSTALL.md`、`PRIVACY.md`、`SOURCE_POLICY.md`、`SOURCE_DEVELOPMENT.md`、`TROUBLESHOOTING.md`、`RELEASE_GUIDE.md` 作為隨產品交付的使用者文件。
+
+問題回報請使用 [GitHub Issues 繁中表單](https://github.com/yedongsian/beyblade-tracker/issues/new/choose)。Issue 內容會公開，請勿上傳 Token、Webhook、`.env`、資料庫、移機檔、完整 log、private URL 或個人資料。
 
 ## 當前已知狀態
 

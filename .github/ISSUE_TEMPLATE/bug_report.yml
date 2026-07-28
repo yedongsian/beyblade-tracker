@@ -1,0 +1,105 @@
+name: 問題回報
+description: 回報安裝、啟動、更新、來源、通知或資料相關問題
+title: "[問題回報] "
+labels:
+  - bug
+  - needs-triage
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝協助改善 Beyblade Tracker。這是公開 Issue，請勿貼上 Token、Webhook、`.env`、完整資料庫、移機檔、完整 log、private source URL 或個人資料。
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 問題類型
+      options:
+        - 安裝
+        - 啟動
+        - 更新
+        - 來源或商品資料
+        - Telegram／Discord 通知
+        - 備份、還原或移機
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: error_code
+    attributes:
+      label: 錯誤代碼
+      description: 如果畫面沒有顯示錯誤代碼，請填「未顯示」。
+      placeholder: BT-LCH-003 或未顯示
+
+  - type: input
+    id: app_version
+    attributes:
+      label: App 版本
+      description: 可從設定頁或錯誤對話框查看。
+      placeholder: 例如 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows 版本
+      placeholder: 例如 Windows 11 24H2
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 發生步驟
+      description: 請依順序描述你做了哪些操作。
+      placeholder: |
+        1. 開啟……
+        2. 點選……
+        3. 出現……
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 預期結果
+      description: 原本預期會發生什麼？
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 實際結果
+      description: 實際看到了什麼？可以附不含敏感資料的截圖。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: 是否可以再次發生
+      options:
+        - 每次都會
+        - 有時會
+        - 只發生一次
+        - 尚未重試
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 安全診斷資料（選填）
+      description: 只貼上 App 匯出的低敏感度 diagnostics 摘要；不要上傳原始 log 或資料庫。
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 公開與隱私確認
+      options:
+        - label: 我了解此 Issue 會公開，且已確認內容不含密碼、Token、Webhook、個人資料或其他敏感資訊。
+          required: true

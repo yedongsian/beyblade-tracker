@@ -186,7 +186,7 @@ Installer、Launcher、Update、Database、Network、Browser、Source 與 Notifi
 | 消費者安裝 | Installer candidate 已存在 | Clean Windows GUI install／launch／upgrade 成功率 100% |
 | 錯誤可處理性 | 現況為純文字、部分隱藏 | 發布閘門涵蓋的 failure 100% 顯示 catalogued code |
 | 更新同意 | 有安全 update foundation | 0 次未確認下載／安裝；成功與 rollback 路徑皆通過 |
-| Support intake | 尚無 remote／Issues URL | Issue Form end-to-end 通知測試通過 |
+| Support intake | 公開 repository 與繁中 Issue Form 已建立 | Labels、通知設定與雙帳號 end-to-end 測試通過 |
 
 ## 9. 依賴與限制
 
@@ -199,7 +199,7 @@ Installer、Launcher、Update、Database、Network、Browser、Source 與 Notifi
 
 ## 10. 開放決策
 
-- 公開 GitHub repository 名稱／URL、Release URL、triage owner，以及誰持有簽章憑證與 Ed25519 離線私鑰。
+- 日常 triage owner，以及誰持有簽章憑證與 Ed25519 離線私鑰。
 - 可觀測性要只留本機，或提供明確 opt-in 的外部監控。
 - 是否需要跨裝置同步；若需要，必須先完成 threat model 與資料所有權設計。
 - 是否開放一般使用者編輯進階 Recipe selector。

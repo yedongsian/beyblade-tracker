@@ -2,8 +2,8 @@
 
 > 對象：不具開發經驗的一般 Windows 使用者
 > 文件狀態：Draft for next public release
-> 適用基線：1.0.0；公開下載網址與正式 Support URL 尚待建立
-> 最後更新：2026-07-28
+> 適用基線：1.0.0；正式安裝檔尚待 GitHub Release 發布
+> 最後更新：2026-07-29
 
 ## 1. 這個程式可以做什麼
 
@@ -26,7 +26,7 @@ Beyblade Tracker 會定期檢查你核准的公開商店頁面，整理同一 Be
 
 正式公開版本的預期操作：
 
-1. 從專案的 GitHub Releases 頁面下載 `BeybladeTracker-<版本>-Setup.exe`。
+1. 從專案的 [GitHub Releases](https://github.com/yedongsian/beyblade-tracker/releases) 頁面下載 `BeybladeTracker-<版本>-Setup.exe`。
 2. 對安裝檔點兩下。
 3. 依安裝畫面選擇安裝位置及是否在登入 Windows 後自動啟動。
 4. 安裝完成後勾選「啟動 Beyblade Tracker」。
@@ -116,10 +116,10 @@ Watchlist 可使用商品、零件、商品號、型號、條碼、關鍵字、�
 
 ## 10. 聯絡與問題回報
 
-正式 Support URL 尚待公開 repository 建立後填入。預定流程：
+正式問題回報入口為 [GitHub Issues 繁中表單](https://github.com/yedongsian/beyblade-tracker/issues/new/choose)：
 
 1. 使用者登入免費 GitHub 帳號。
-2. 開啟專案公開 repository 的 Issues。
+2. 開啟 [Beyblade Tracker Issues](https://github.com/yedongsian/beyblade-tracker/issues)。
 3. 選擇繁中「問題回報」。
 4. 填入錯誤代碼、版本、Windows、操作步驟、預期與實際結果。
 5. Developer 會在同一 Issue 回覆；使用者可在 GitHub 或 Email 收到後續通知。

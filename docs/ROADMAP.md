@@ -17,7 +17,7 @@ Phase 0–7 與既有技術債清理已完成。2026-07-28 已核准「一般使
 | Phase 3–5 | 2026-07-16 | 三語 UI、Catalog、詞彙審核、freshness scheduler、Watchlist、官方 Registry／公告 | `7b22537`；schema 5–7 |
 | Phase 6 | 2026-07-16 | 社群來源 Registry、未驗證線索、去重、Watchlist match、過濾與 retention | `b709f0e`；schema 8 |
 | Phase 7 | 2026-07-18 | SKU／variant hardening、排除與身分 audit、network control、HTTP／通知 resilience、Windows 安裝／更新／rollback／transfer／diagnostics | `51652dc`；schema 9–10；歷史基線 133 Node tests、16 Web routes |
-| Launcher encoding fix | 2026-07-28 | Windows PowerShell 5.1 Launcher 改為 UTF-8 with BOM，新增 byte-level regression test | `BT-P1-003`；待與目前工作樹一併 commit |
+| Launcher encoding fix | 2026-07-28 | Windows PowerShell 5.1 Launcher 改為 UTF-8 with BOM，新增 byte-level regression test | `BT-P1-003`；commit `d23319d` |
 
 ### 不可誤標為完成的項目
 

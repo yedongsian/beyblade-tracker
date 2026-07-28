@@ -89,4 +89,4 @@ UI 不顯示 stack trace、Token、完整 URL、DB row、private path 或 signin
 
 回報 Issue 時提供：錯誤代碼、App version、Windows version、發生時間、操作步驟、是否可重現、預期／實際結果。可以附由程式產生的低敏感度 diagnostics；不要附 `.env`、Token、Webhook、DB、transfer bundle、完整 log 或 private source URL。
 
-Support URL 尚待公開 GitHub repository 建立後填入。
+問題仍未解決時，使用 [GitHub Issues 繁中表單](https://github.com/yedongsian/beyblade-tracker/issues/new/choose) 回報。

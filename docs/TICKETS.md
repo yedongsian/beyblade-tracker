@@ -25,6 +25,12 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P0-001 | P0 | Blocked | 完成 Windows 公開發佈閘門 | 憑證、hosting、key owner、clean VM |
 | BT-P1-001 | P1 | Ready | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Proposed | 建立 local-first 可觀測性 | 產品指標與 UI scope 決策 |
+| BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
+| BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
+| BT-UX-002 | P0 | Ready | 建立可見且穩定的使用者錯誤代碼 | 無 |
+| BT-UPD-001 | P0 | Ready | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel |
+| BT-SUP-001 | P1 | Ready | 建立公開 GitHub Issues 與繁中問題回報表單 | GitHub remote／URL |
+| BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | Support／Release URL 待填 |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
 | BT-P2-002 | P2 | Proposed | Chrome browser pool 與 concurrency control | 效能基準 |
 | BT-P2-003 | P2 | Proposed | Queue backpressure、priority 與效能基準 | BT-P1-002 |
@@ -82,6 +88,93 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - UI 可查最後成功、連續失敗、parse failure、queue、stale／archived counts。
   - Runbook 能以這些資料完成三個演練：source parser failure、notification failure、stale data。
   - Diagnostics 仍不含 credentials、full URLs、logs 或 product history。
+
+### BT-P1-003 — 修正 Windows PowerShell 5.1 Launcher 編碼
+
+- Priority：P1
+- Status：Done
+- Owner：Engineering
+- 背景：`release/windows/launcher.ps1` 含繁中文案，但原檔為無 BOM 的 UTF-8。Windows PowerShell 5.1 依系統 ANSI code page 解析無 BOM 腳本，導致例外訊息、狀態提示與匯入／匯出對話框標籤顯示亂碼。
+- Root cause：Windows PowerShell 5.1 不會把無 BOM 的腳本穩定辨識為 UTF-8；Launcher 缺少明確的檔案編碼標記，既有 Phase 7 測試也只檢查 installer 宣告，未驗證 Launcher bytes。
+- Scope：將 Launcher 保存為 UTF-8 with BOM；新增 byte-level regression test；把 PowerShell 5.1 編碼檢查加入 Windows release procedure。
+- Acceptance criteria：
+  - Launcher 前三個 bytes 為 UTF-8 BOM `EF BB BF`。
+  - Windows PowerShell 5.1 能正確解析繁中錯誤、狀態與移機對話框文案。
+  - Phase 7 targeted test 與完整 Node test suite 通過。
+- Evidence：Windows PowerShell 5.1 實際錯誤路徑正確顯示繁中；`test/phase7.test.js` 8/8；proxy-free child process 完整測試 134/134。一般環境仍有 `BT-P1-001` 已記錄的 11 項 localhost proxy 失敗，與本修正無關。
+
+### BT-UX-001 — 完成一般使用者雙擊安裝與單一入口驗收
+
+- Priority：P0
+- Status：Ready
+- Owner：待指定 Windows Release Engineer
+- 背景：Inno Setup installer candidate、bundled runtime、Start Menu shortcuts 與 auto-start 已存在，但仍需以一般使用者體驗及正式簽章 artifact 完成驗收。
+- Scope：單一 Setup.exe、double-click install、per-user permissions、finish-page launch、捷徑、reinstall／upgrade／uninstall、Chrome prompt、SmartScreen。
+- Out of scope：要求一般使用者安裝 Node、執行 PowerShell 或手動設定工作排程器。
+- Acceptance criteria：
+  - Clean Windows 10／11 標準帳號由下載到首次管理頁全程使用 GUI。
+  - 安裝、重裝、升級與解除安裝均保留／刪除資料符合使用者選擇。
+  - 正式 installer 顯示 verified publisher；無不必要 admin prompt。
+  - 安裝失敗顯示 `BT-INS-*` 代碼與 recovery。
+  - 使用者教學與錯誤代碼可由開始功能表或 App 開啟。
+- Evidence：錄影／screenshots、installer log 摘要、clean VM matrix、DB／settings preservation。
+
+### BT-UX-002 — 建立可見且穩定的使用者錯誤代碼
+
+- Priority：P0
+- Status：Ready
+- Owner：待指定
+- 背景：目前 Launcher 由 hidden VBS／PowerShell 執行，exception 可能無聲消失；其他元件也多回傳純文字，沒有可查詢的穩定代碼。
+- Scope：中央 registry、`BT-<AREA>-<NNN>`、native／Web error dialog、copy／report、safe support reference、log correlation、catalog docs。
+- Acceptance criteria：
+  - [Error Code Catalog](ERROR_CODES.md) 所列發布 gate error 都有 deterministic trigger 與 automated test。
+  - Hidden Launcher 的 current version missing、runtime missing、service failure、timeout 均顯示 dialog。
+  - UI 文案為繁中、可鍵盤操作、可複製；不洩漏 secret、stack、private URL／path。
+  - Error code 與 App version 可預填 Issue Form，但使用者送出前能檢視。
+  - 未知 internal error 使用保留的 generic code，不把 exception message 當公開契約。
+
+### BT-UPD-001 — 實作使用者確認後的自動更新 UX
+
+- Priority：P0
+- Status：Ready
+- Owner：待指定
+- 背景：現有 manifest／HTTPS／SHA-256／Ed25519／backup／rollback foundation 已存在，但缺少正式 channel 與 consumer consent flow。
+- Scope：startup delay、24h cadence、stable channel、version／release notes UI、defer、explicit confirmation、download progress、backup、install、post-health、rollback。
+- Constraints：禁止 silent forced update；check 不等於 download consent；confirmation 只適用指定 target version／manifest digest。
+- Acceptance criteria：
+  - 無新版、offline、network paused、defer、成功更新、signature failure、hash mismatch、install failure、health failure、rollback 全部有測試。
+  - 未按「下載並安裝」前沒有 installer download 或 process launch。
+  - 更新前 consistent backup；使用者資料及 settings 保留。
+  - 只接受 HTTPS、valid manifest／hash／publisher；failure 顯示 `BT-UPD-*`。
+  - Clean VM 由 1.0.0 升至測試版並可 rollback。
+
+### BT-SUP-001 — 建立公開 GitHub Issues 與繁中問題回報表單
+
+- Priority：P1
+- Status：Ready
+- Owner：Repository Owner
+- 決策：程式碼 repository 可公開，使用同一 repository 的 Issues；不另建 support-only repo。
+- Scope：GitHub remote、public visibility、Issues、Issue Form、labels、privacy warning、watching／Email notifications、App／docs URLs。
+- Acceptance criteria：
+  - Repository 公開且 Issues 對一般 read access 使用者開放。
+  - 繁中 form 包含問題類型、錯誤代碼、版本、Windows、步驟、預期／實際、重現性與 privacy checkbox。
+  - Form 禁止或警告上傳 secrets、DB、transfer、full logs／URLs；blank issues 預設關閉。
+  - Owner 設定 `Watch → Custom → Issues`，GitHub 與 Email notification 都啟用。
+  - 第二帳號建立 Issue 後，owner 收到通知；owner 回覆後，reporter 收到通知。
+  - `SUPPORT.md`、User Guide 與 App 填入正式 Issues URL。
+
+### BT-DOC-002 — 建立一般使用者教學與錯誤代碼目錄
+
+- Priority：P1
+- Status：In Review
+- Owner：PM／Documentation Owner
+- Scope：`USER_GUIDE.md`、`ERROR_CODES.md`、`SUPPORT.md`，以及 PRD、Roadmap、Tech／API Spec、Runbook、README、Troubleshooting、CHANGELOG 交叉更新。
+- Acceptance criteria：
+  - 清楚區分 1.0.0 as-built 與下一版 Proposed，未把錯誤代碼／自動更新誤標為已實作。
+  - 說明主要功能、雙擊安裝、首次啟動、Watchlist、通知、更新同意、備份／移機與問題回報。
+  - Error codes 有 meaning、safe recovery 與 privacy guidance。
+  - Support spec 有 GitHub Form fields、notification setup、triage 與 end-to-end acceptance。
+  - Public repo／Issues／Release URL 建立後補齊所有 `TBD`，並確認文件進入 release payload。
 
 ### BT-P2-001 — HTTP conditional request 與 bounded cache
 

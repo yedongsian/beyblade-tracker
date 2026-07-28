@@ -1,4 +1,4 @@
-param([ValidateSet('open','start','restart','stop','status','export','import','update','rollback')][string]$Action='open')
+﻿param([ValidateSet('open','start','restart','stop','status','export','import','update','rollback')][string]$Action='open')
 $ErrorActionPreference = 'Stop'
 $installRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $currentPath = Join-Path $installRoot 'current.json'

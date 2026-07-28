@@ -4,12 +4,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 修正 Windows PowerShell 5.1 將無 BOM UTF-8 `launcher.ps1` 當成 ANSI 解碼，造成繁中錯誤訊息、狀態提示與移機對話框標籤亂碼；新增 Launcher BOM 防回歸測試（`BT-P1-003`）。
+
 ### Documentation
 
 - 建立 canonical `docs/` 文件中心與治理規則。
 - 新增 PRD、Tech Spec、API Spec、Data Schema、Runbook、Ticket backlog、Post-mortem 制度及 PR template。
 - 合併 Phase 0–7 歷史與 Phase 7 後暫停／代辦順序。
 - 記錄 2026-07-28 ambient proxy 導致 11 項 Local Web tests 無法連線 localhost，建立 `BT-P1-001`。
+- 核准一般使用者易用性方向：雙擊安裝、可見錯誤代碼、使用者確認後更新與公開 GitHub Support。
+- 新增 `USER_GUIDE.md`、`ERROR_CODES.md` 與 `SUPPORT.md`；錯誤代碼及完整 update UX 明確標為下一版 Proposed，不誤列為 1.0.0 已完成。
+- 新增 `BT-UX-001`、`BT-UX-002`、`BT-UPD-001`、`BT-SUP-001` 與 `BT-DOC-002` 的範圍、依賴及驗收條件。
 
 ## [1.0.0] — 2026-07-18
 

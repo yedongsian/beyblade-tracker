@@ -156,7 +156,74 @@ flowchart LR
 | Migration checksum mismatch | 拒絕繼續升級。 |
 | Network disabled | 暫停 acquisition／outbound notification，不消耗 queued work。 |
 
-## 10. 測試策略
+## 10. Proposed consumer UX architecture
+
+本節是下一公開版本的已核准設計方向，不代表 1.0.0 已完成。
+
+### 10.1 Installer／Launcher
+
+- 發布單一 Authenticode-signed Setup.exe，per-user 安裝並內含 Node runtime。
+- 安裝器寫入 versioned payload 與 `current.json`，建立開始功能表入口，可選登入後自動啟動。
+- `launcher.vbs` 可繼續隱藏 PowerShell console，但 `launcher.ps1` 最外層必須攔截 exception，將原因映射到中央 error registry，顯示 native dialog。
+- Launcher error dialog 提供「再試一次」、「服務狀態」、「複製錯誤資訊」、「問題回報」；不顯示 stack trace 或 secret。
+- `launcher.ps1` 必須保持 UTF-8 with BOM；byte-level test 防止 Windows PowerShell 5.1 繁中文字串回歸。
+
+### 10.2 Error contract
+
+所有 user-facing error 使用 `BT-<AREA>-<NNN>`。中央 registry 是 code、localized title、message、recovery actions、severity、support safety policy 的唯一來源。
+
+建議 error envelope：
+
+```json
+{
+  "code": "BT-LCH-003",
+  "title": "背景服務啟動失敗",
+  "message": "Beyblade Tracker 無法完成啟動。",
+  "recovery": ["查看服務狀態", "稍後再試"],
+  "appVersion": "1.1.0",
+  "timestamp": "2026-07-28T00:00:00.000Z",
+  "supportRef": "safe-correlation-id"
+}
+```
+
+Log 可保存 safe correlation ID 與 internal error class，但 UI／Issue Form 不自動帶入 full path、URL、request body、stack 或 credentials。公開代碼與 recovery 必須同步 [Error Code Catalog](ERROR_CODES.md)。
+
+### 10.3 Consent-based update state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Checking: startup delay / 24h due
+    Checking --> Idle: no update / network unavailable
+    Checking --> Available: signed newer manifest
+    Available --> Deferred: user chooses later
+    Available --> Downloading: user confirms download and install
+    Downloading --> Verifying
+    Verifying --> Ready: HTTPS + hash + signatures valid
+    Verifying --> Failed: verification error
+    Ready --> Installing: backup complete and user confirmed
+    Installing --> Healthy: post-update health passes
+    Installing --> RollbackOffered: install or health fails
+    RollbackOffered --> RollingBack: user confirms rollback
+    RollingBack --> Healthy
+```
+
+- Check 可自動，download／install 不可在沒有明確 confirmation 的情況下開始。
+- Stable channel 預設在啟動後延遲檢查，最多每 24 小時一次；manual check 不受此顯示頻率限制。
+- Update card 顯示 current／target version、release notes、download size、publisher 與稍後／安裝選項。
+- Confirmation 綁定 manifest digest／target version，避免 manifest 在確認後被替換。
+- 開始安裝前建立 consistent DB backup；post-update 執行 schema、health、integrity check；失敗時提供 rollback。
+- `NETWORK_ENABLED=0` 時不檢查、不下載；使用者選擇稍後不視為同意。
+
+### 10.4 GitHub support integration
+
+- 公開 repository 啟用 Issues，使用 Issue Form 取代 blank text report。
+- App 的「問題回報」只開啟預填的 HTTPS Issue URL，不在背景上傳資料。
+- 預填欄位只包含 error code、App version 與可公開 support reference；使用者在送出前可檢視及刪除。
+- Diagnostics 必須由使用者明確匯出／附加；不得自動上傳。
+- Maintainer 必須 watch `Issues` 並啟用 GitHub／Email notifications；發布前以第二帳號驗證通知閉環。
+
+## 11. 測試策略
 
 - Unit／component：normalize、classify、connector parser、event、schedule、HTTP／notification resilience。
 - Integration：pipeline、migration、backup／restore、transfer、identity／exclusion audit、network control。
@@ -164,9 +231,9 @@ flowchart LR
 - Release：Windows payload／installer declarations、manifest、rollback、diagnostics 與 isolated E2E。
 - Fixture acceptance：產品生命週期、Takara Discovery、community intelligence。
 
-2026-07-28 在目前 shell 執行 `npm test` 得到 122/133；11 個 `test/web.test.js` 測試因 proxy 對 localhost tunneling 回傳 403 而失敗。這是環境相依性風險，追蹤於 `BT-P1-001`。
+2026-07-28 Launcher regression test 加入後完整 suite 為 134 項；proxy-free child process 通過 134/134。一般 shell 仍有 11 個 `test/web.test.js` 測試因 proxy 對 localhost tunneling 回傳 403 而失敗。這是環境相依性風險，追蹤於 `BT-P1-001`。
 
-## 11. 變更規則
+## 12. 變更規則
 
 - 不直接修改已套用 migration；新增下一個連續 migration 並保留 checksum。
 - Connector contract 變更需 bump connector version、提供 migration／compatibility 說明及契約測試。

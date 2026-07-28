@@ -1,5 +1,6 @@
 # 故障排除
 
+- Launcher 顯示繁中亂碼：確認安裝來源中的 `launcher.ps1` 為 UTF-8 with BOM（開頭 bytes `EF BB BF`），再重新建置／安裝。Windows PowerShell 5.1 會把無 BOM UTF-8 腳本依系統 ANSI code page 解碼。
 - 管理頁無法開啟：從開始功能表執行「服務狀態」，再查看 `%LOCALAPPDATA%\BeybladeTracker\logs\tracker.log`。
 - 瀏覽器來源失敗：確認 Google Chrome 已安裝；Tracker 不使用登入狀態，也不處理 CAPTCHA。
 - Telegram 測試失敗：確認已在 Bot 私人聊天按 Start、Token／Chat ID 正確，且外部網路總開關已開啟。

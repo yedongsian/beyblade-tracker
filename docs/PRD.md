@@ -42,6 +42,8 @@ Beyblade 商品資訊分散在官方公告、零售商商品頁與社群線索�
 4. **不繞過限制。** 不登入、不解 CAPTCHA、不繞過 Queue-it、付費牆或反自動化控制。
 5. **資料可攜且憑證不隨資料外流。** SQLite、來源設定可移機；Token、Webhook、日誌及原始除錯資料不得進入移機包。
 6. **可解釋的自動化。** 商品合併以條碼、正規化 SKU／型號與 variant 規則為主，不使用不可解釋的 AI 自動合併。
+7. **一般使用者不需開發工具。** 正式版本以雙擊安裝、單一啟動入口、可見錯誤與圖形化復原為標準，不要求 PowerShell。
+8. **更新必須取得同意。** 可自動檢查新版，但只有使用者明確確認後才可下載及啟動更新，不做 silent forced update。
 
 ## 5. 產品範圍
 
@@ -60,6 +62,15 @@ Beyblade 商品資訊分散在官方公告、零售商商品頁與社群線索�
 - 全域 network kill switch、本機健康檢查、備份／還原、資料移機、診斷匯出。
 - Windows per-user 安裝、自動啟動、更新驗證與回滾基礎能力。
 
+### 下一個公開版本已核准需求
+
+- 對正式簽章的 Setup.exe 點兩下即可完成安裝，不要求 Node.js、PowerShell 指令或手動解壓。
+- 開始功能表／桌面入口啟動失敗時顯示固定錯誤代碼、可操作說明及問題回報入口。
+- 啟動後及每 24 小時最多檢查一次 stable update channel；先顯示版本與 release notes，由使用者選擇稍後或下載安裝。
+- 更新前備份，下載與安裝前驗證 manifest、hash 與 publisher；失敗時顯示代碼及 rollback 指引。
+- 隨產品提供繁中使用教學、錯誤代碼目錄及公開 GitHub Issue Form。
+- 公開 repository 的 Support URL、Release URL 與 maintainer notification 必須在發布前完成設定。
+
 ### 明確不包含（v1）
 
 - 自動下單、付款或搶購。
@@ -69,6 +80,7 @@ Beyblade 商品資訊分散在官方公告、零售商商品頁與社群線索�
 - 將社群貼文直接視為官方公告、確定庫存或現貨事件。
 - 未經使用者接受費用及自行設定的 X API 存取。
 - 預設外部遙測或上傳本機使用資料。
+- 未經使用者確認的背景下載、silent install 或 forced update。
 
 ## 6. 核心使用流程與需求
 
@@ -120,6 +132,30 @@ Catalog 保存官方或零售商證據、多語別名與零件；Watchlist 可�
 
 驗收重點：migration 連續且具 checksum；較新 schema 不可由舊程式開啟；還原前驗證完整性並保留還原前 DB；移機包排除憑證與診斷敏感資料。
 
+### FR-09 消費者安裝與啟動
+
+一般使用者從正式 GitHub Release 下載單一 Setup.exe，點兩下後以 per-user 權限完成安裝。安裝器內含 runtime、建立清楚捷徑並可在完成頁直接啟動；正常流程不得要求 command line。
+
+驗收重點：clean Windows 10／11、標準使用者帳號、全新安裝、覆蓋升級與保留資料重裝均由 GUI 完成；SmartScreen 顯示已驗證 publisher。
+
+### FR-10 可操作的錯誤代碼
+
+Installer、Launcher、Update、Database、Network、Browser、Source 與 Notification 的主要失敗必須映射至穩定的 `BT-<AREA>-<NNN>` 代碼。錯誤視窗顯示繁中說明、自助步驟、copy action、App version、UTC time 與安全 support reference。
+
+驗收重點：隱藏的 launcher process 不得讓錯誤無聲消失；UI 不顯示 stack trace、secret 或 private data；每個公開代碼在 [Error Code Catalog](ERROR_CODES.md) 有相同語意與 recovery。
+
+### FR-11 使用者確認的版本更新
+
+程式可在啟動後與每 24 小時檢查 stable channel，但只顯示通知，不直接更新。使用者查看版本、release notes、檔案大小與 publisher 後，可選擇稍後或「下載並安裝」。只有明確確認才可下載／啟動 installer。
+
+驗收重點：拒絕 unsigned／hash mismatch／non-HTTPS artifact；更新前 backup；下載中斷可安全重試；失敗可 rollback；關閉 network 或選稍後時不消耗使用者同意。
+
+### FR-12 使用教學與 Support
+
+正式安裝包、repository 與 App 都能找到繁中使用教學、錯誤代碼及問題回報入口。問題回報使用公開 GitHub Issue Form，引導非技術使用者填入錯誤代碼、版本、Windows 與重現步驟。
+
+驗收重點：Issue Form 不要求 Git knowledge；明確警告內容為公開且不得上傳敏感資料；maintainer 已設定 Issues watching 與 Email notification，並完成雙帳號 end-to-end 測試。
+
 ## 7. 非功能需求
 
 | ID | 領域 | 需求 |
@@ -132,6 +168,8 @@ Catalog 保存官方或零售商證據、多語別名與零件；Watchlist 可�
 | NFR-06 | Maintainability | Connector 有 semantic version 與契約測試；schema 只透過連續 migration 演進。 |
 | NFR-07 | Portability | 原始碼可在 Windows／macOS／Linux 執行；正式一般使用者交付以 Windows 為主。 |
 | NFR-08 | Compliance | 尊重來源 Terms、robots 與授權；不繞過技術限制。 |
+| NFR-09 | Usability | 正常安裝、啟動、更新與問題回報不要求 PowerShell、Git 或程式開發知識。 |
+| NFR-10 | Supportability | 公開錯誤代碼語意穩定、可複製、可連到文件與 Issue Form，且不洩漏敏感資料。 |
 
 ## 8. 成功指標
 
@@ -139,12 +177,16 @@ Catalog 保存官方或零售商證據、多語別名與零件；Watchlist 可�
 
 | 指標 | v1 驗收基準 | 後續目標 |
 |---|---|---|
-| 自動化測試 | 歷史基線 133/133；當前環境需排除 proxy 後重驗 | Main branch 100% 通過 |
+| 自動化測試 | Phase 7 歷史基線 133；Launcher test 加入後 proxy-free 134/134 | Main branch 及一般 release 環境 100% 通過 |
 | 來源隔離 | 測試證明單一來源失敗不影響其他來源 | 每來源成功率與連續失敗可查 |
 | 重複通知 | 相同事件具 cooldown／dedup 測試 | 重複通知率可量測且趨近 0 |
 | 資料完整性 | SQLite integrity `ok`、0 FK orphan 為發布閘門 | 每次 release 與 restore 自動記錄證據 |
 | 資料新鮮度 | fresh／stale／archived 行為有測試 | UI 顯示各來源 freshness SLO |
 | 恢復能力 | 備份、還原、rollback、transfer 有自動化測試 | 定期 restore drill 有紀錄 |
+| 消費者安裝 | Installer candidate 已存在 | Clean Windows GUI install／launch／upgrade 成功率 100% |
+| 錯誤可處理性 | 現況為純文字、部分隱藏 | 發布閘門涵蓋的 failure 100% 顯示 catalogued code |
+| 更新同意 | 有安全 update foundation | 0 次未確認下載／安裝；成功與 rollback 路徑皆通過 |
+| Support intake | 尚無 remote／Issues URL | Issue Form end-to-end 通知測試通過 |
 
 ## 9. 依賴與限制
 
@@ -157,7 +199,7 @@ Catalog 保存官方或零售商證據、多語別名與零件；Watchlist 可�
 
 ## 10. 開放決策
 
-- 是否投入公開發佈，並由誰持有簽章憑證與 Ed25519 離線私鑰。
+- 公開 GitHub repository 名稱／URL、Release URL、triage owner，以及誰持有簽章憑證與 Ed25519 離線私鑰。
 - 可觀測性要只留本機，或提供明確 opt-in 的外部監控。
 - 是否需要跨裝置同步；若需要，必須先完成 threat model 與資料所有權設計。
 - 是否開放一般使用者編輯進階 Recipe selector。

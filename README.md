@@ -106,6 +106,9 @@ Repository 的產品、工程與執行團隊文件入口是 [docs/README.md](doc
 - [API Spec](docs/API_SPEC.md)
 - [Data Schema](docs/DATA_SCHEMA.md)
 - [Runbook](docs/RUNBOOK.md)
+- [使用教學](docs/USER_GUIDE.md)
+- [錯誤代碼](docs/ERROR_CODES.md)
+- [GitHub Support 設定](docs/SUPPORT.md)
 - [Tickets](docs/TICKETS.md)
 - [Post-mortem](docs/POST_MORTEM.md)
 - [PR Description](docs/PR_DESCRIPTION.md)
@@ -119,4 +122,5 @@ Windows release package 另保留 `INSTALL.md`、`PRIVACY.md`、`SOURCE_POLICY.m
 - Takara Tomy Mall 真實 Discovery 仍等待 Queue-it 自然解除。
 - X community source 預設 disabled／zero budget，未經使用者明確費用同意不啟用。
 - 2026-07-28 設定檢查通過（3 sources），service 為 stopped。
-- 同日測試為 122/133；11 個 Local Web tests 被 ambient proxy 對 localhost 的 403 阻擋，追蹤於 `BT-P1-001`，需排除環境因素後重驗 133/133。
+- Launcher test 加入後完整 suite 為 134 項；proxy-free child process 已通過 134/134。一般 shell 的 11 個 Local Web tests 仍被 ambient proxy 對 localhost 的 403 阻擋，追蹤於 `BT-P1-001`。
+- 下一公開版本已核准雙擊安裝驗收、固定錯誤代碼、使用者確認後更新及公開 GitHub Issue Form；目前仍是待實作／驗收項目。

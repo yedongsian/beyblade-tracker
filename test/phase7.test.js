@@ -132,6 +132,15 @@ test('Windows installer declares per-user install, startup task, shortcuts, and 
   assert.match(installer, /google\.com\/chrome/);
 });
 
+test('Windows PowerShell 5.1 launcher uses a UTF-8 BOM for localized text', () => {
+  const launcher = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url));
+  assert.deepEqual([...launcher.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  const source = launcher.subarray(3).toString('utf8');
+  assert.match(source, /找不到目前安裝版本/);
+  assert.match(source, /按 Enter 關閉/);
+  assert.match(source, /移機檔/);
+});
+
 test('diagnostics require consent and exclude credentials, URLs, logs, and product history', () => {
   const db = new Database(':memory:');
   assert.throws(() => createDiagnosticsBundle(db, {}), /同意/);

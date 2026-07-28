@@ -12,6 +12,7 @@
 
 | 角色／情境 | 建議先讀 |
 |---|---|
+| 一般安裝使用者 | [使用教學](USER_GUIDE.md) → [錯誤代碼](ERROR_CODES.md) |
 | 新加入的產品或工程成員 | [PRD](PRD.md) → [Roadmap](ROADMAP.md) → [Tech Spec](TECH_SPEC.md) |
 | 要接手開發 | [Tech Spec](TECH_SPEC.md) → [API Spec](API_SPEC.md) → [Data Schema](DATA_SCHEMA.md) → [Tickets](TICKETS.md) |
 | 要部署、維運或排障 | [Runbook](RUNBOOK.md) → [Post-mortem](POST_MORTEM.md) |
@@ -28,6 +29,9 @@
 | [API Spec](API_SPEC.md) | Local Web API 契約 | 路由、request、response 或安全規則改變時 |
 | [Data Schema](DATA_SCHEMA.md) | SQLite schema、關聯、狀態與 migration 規則 | migration 或資料生命週期改變時 |
 | [Runbook](RUNBOOK.md) | 安裝、啟停、備份、還原、發布與故障處理 | 操作程序或告警條件改變時 |
+| [使用教學](USER_GUIDE.md) | 一般使用者的安裝、主要功能、更新與問題回報 | 使用流程或公開發布資訊改變時 |
+| [錯誤代碼](ERROR_CODES.md) | 穩定 user-facing error code contract 與自助處理 | 新增或調整錯誤處理時 |
+| [Support Spec](SUPPORT.md) | GitHub Issue Form、通知與維護者 triage | Support channel 或表單改變時 |
 | [Tickets](TICKETS.md) | 唯一正式 backlog 與驗收條件 | 工作建立、執行、阻塞或驗收時 |
 | [Post-mortem](POST_MORTEM.md) | 事故制度、索引與模板 | 事故結案後五個工作日內 |
 | [PR Description](PR_DESCRIPTION.md) | PR 描述與驗收交接模板 | 模板欄位或交付流程改變時 |
@@ -54,4 +58,4 @@ Windows release builder 目前會把 `README.md`、`INSTALL.md`、`PRIVACY.md`�
 - 工作樹在本次文件整理前已有一項使用者修改：`ROADMAP.md` 新增 Phase 7 後暫停點；已合併至新 Roadmap，不視為本次新產品決策。
 - `npm run config:check`：2026-07-28 通過，3 個來源。
 - `npm run status:tracker`：2026-07-28 顯示服務已停止。
-- `npm test`：2026-07-28 為 122/133 通過；11 項 Local Web 測試受到環境 HTTP Proxy 對 localhost 回傳 403 影響。此結果列入 Ticket，未直接判定為產品功能回歸。
+- `npm test`：Launcher regression test 加入後完整 suite 為 134 項；proxy-free child process 已通過 134/134。一般 shell 仍有 11 項 Local Web 測試受環境 HTTP Proxy 對 localhost 回傳 403 影響，追蹤於 `BT-P1-001`。

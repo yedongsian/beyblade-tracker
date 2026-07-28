@@ -197,10 +197,10 @@ npm run db:restore -- --from backups\manual-YYYYMMDD-HHMMSSZ.db --to C:\test\dat
 
 1. 只讀檢查目前 shell 的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 與 npm proxy 設定；不要把含帳密的 proxy URL 貼進文件。
 2. 確認 `NO_PROXY` 包含 `127.0.0.1,localhost,::1`，或在隔離的測試 process 明確 bypass loopback proxy。
-3. 重跑 `npm test`；必須取得 133/133 才可判定 Web regression 已排除。
+3. 重跑 `npm test`；目前完整 suite 為 134 項，必須取得 134/134 才可判定 Web regression 已排除。
 4. 若移除環境影響後仍失敗，才依第一個 application stack／assertion 建立 Bug Ticket。
 
-此問題追蹤於 `BT-P1-001`；未經重驗不可把 2026-07-28 的 122/133 寫成產品通過。
+此問題追蹤於 `BT-P1-001`；一般環境仍有 11 項 localhost proxy failure，proxy-free child process 已取得 134/134。未排除 ambient proxy 前不可把一般 shell 結果寫成通過。
 
 ## 13. Windows release procedure
 
@@ -213,13 +213,20 @@ npm run release:windows
 npm run test:release:windows
 ```
 
+Windows Launcher 含繁中文案，`release/windows/launcher.ps1` 必須保持為 UTF-8 with BOM，讓系統內建的 Windows PowerShell 5.1 正確解析。Build／review 時確認檔案開頭 bytes 為 `EF BB BF`；不得由 formatter 或 editor 移除 BOM。
+
 ### Release gate
 
 - Version、schema、CHANGELOG 一致。
 - Test 100% 通過；DB integrity `ok`、0 FK orphan。
 - Installer payload 含 bundled Node 與必要發佈文件。
+- Windows PowerShell 5.1 執行 Launcher 時，繁中錯誤、狀態提示及匯入／匯出對話框文字無亂碼。
 - HTTPS installer URL、SHA-256、Ed25519 signature 驗證成功，`publishReady=true`。
 - Setup.exe 已 Authenticode sign 且 signature 可驗證。
+- 一般使用者由雙擊 Setup.exe 到首次開啟管理頁不需 PowerShell 或開發工具。
+- Installer／Launcher／Update failure 顯示 [Error Code Catalog](ERROR_CODES.md) 中的固定代碼與 recovery。
+- Update check 不會自動下載；只有使用者確認指定版本與 manifest 後才開始下載及安裝。
+- User Guide、Error Code Catalog 與正式 GitHub Issues URL 已納入 release payload／App。
 - Clean Windows VM 完成 install、first run、startup、update、migration、rollback、transfer、uninstall、data retention、SmartScreen。
 - Release owner 與 rollback owner 確認 Go。
 
@@ -235,7 +242,28 @@ npm run update:rollback
 
 驗證 current version pointer、pre-update DB restore、schema compatibility、health、source counts 與 UI。若新 migration 不可逆，必須使用 release 前 DB backup，不可只切換 binary。
 
-## 15. Incident handling
+## 15. GitHub Support operations
+
+公開 repository 建立後，Repository Owner 執行：
+
+1. 啟用 Issues，加入繁中 Issue Form 與 privacy checkbox，關閉 blank issues。
+2. 設定 labels 與 triage owner。
+3. 在 repository 右上選 `Watch → Custom → Issues`。
+4. 在 GitHub `Settings → Notifications` 啟用 `On GitHub` 與 `Email`，確認接收信箱已驗證。
+5. 使用第二個一般帳號送出測試 Issue，驗證 owner 收到通知；owner 回覆後再驗證 reporter 收到通知。
+6. 把 repository、Issues、Releases URL 填入 [Support Spec](SUPPORT.md)、[User Guide](USER_GUIDE.md) 與 App 設定。
+
+日常 triage：
+
+- 一個工作日內確認收到。
+- 先判斷 data loss、secret exposure、unauthorized network 或 update integrity；符合條件時升級 Incident。
+- 以 error code、App／Windows version、safe support reference 與使用者步驟重現。
+- 不在 public Issue 要求 `.env`、Token、Webhook、DB、transfer bundle、full logs 或 private URLs。
+- 可重現問題連結正式 `BT-*` Ticket；修復發布後回覆 fixed version 與 verification 再關閉。
+
+GitHub 是否寄 Email 由個人 notification delivery 設定決定；只建立 repository 或 Issue Form 不足以保證寄信。
+
+## 16. Incident handling
 
 符合以下任一條件即開 incident：資料遺失／損壞、秘密外洩、未授權外部請求、重複大量通知、全部來源長時間失效、更新導致無法啟動或錯誤顯示 stale stock 為 fresh purchasable。
 
@@ -247,7 +275,7 @@ npm run update:rollback
 4. 恢復最小安全服務。
 5. 建立 Ticket，並依 [Post-mortem](POST_MORTEM.md) 在五個工作日內完成檢討。
 
-## 16. 日常維護週期
+## 17. 日常維護週期
 
 | 頻率 | 工作 |
 |---|---|

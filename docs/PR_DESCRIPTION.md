@@ -24,6 +24,8 @@
 - 根目錄 planning docs 改為導向 canonical docs；保留 release builder 所需的使用者發佈文件。
 - 保留並合併使用者原先在 `ROADMAP.md` 新增的 Phase 7 後暫停點。
 - 記錄 2026-07-28 config／service／test evidence；將 proxy 造成的 Web test failure 建立 Ticket，不誤判為已通過或 production incident。
+- 納入下一公開版本的一般使用者體驗需求：雙擊安裝、固定錯誤代碼、使用者確認後更新，以及公開 GitHub Issue Form。
+- 新增使用教學、錯誤代碼目錄與 GitHub Support／通知設定；正式 repository、Issues、Releases URL 建立後再補齊 `TBD`。
 
 ### Scope／risk
 
@@ -44,6 +46,11 @@
 - `BT-P0-001` Windows 公開發佈閘門。
 - `BT-P1-001` Local Web tests ambient proxy isolation。
 - `BT-P1-002` local-first observability。
+- `BT-UX-001` 一般使用者雙擊安裝驗收。
+- `BT-UX-002` 可見且穩定的錯誤代碼。
+- `BT-UPD-001` 使用者確認後更新。
+- `BT-SUP-001` 公開 GitHub Issues 與繁中表單。
+- `BT-DOC-002` 補齊正式 URL 並完成使用者文件驗收。
 
 ## 2. 後續 PR 模板
 

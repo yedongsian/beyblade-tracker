@@ -181,3 +181,44 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 - 沒有 remote authentication／authorization，因現行 boundary 是 loopback single-user。
 - 沒有 idempotency key；部分 mutation 依 DB unique constraints 或業務規則去重。
 - `DELETE /api/sources/:id` 實際為 disable，路由語意容易誤解，未來若變更需先提供 compatibility plan。
+
+## 13. Proposed vNext update／error contract
+
+本節是下一公開版本需求，不是 1.0.0 as-built API。
+
+### Error response
+
+Local UI API 應以中央 registry 產生 stable error envelope：
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "BT-UPD-003",
+    "message": "更新簽章無法驗證。",
+    "recovery": ["保留目前版本", "問題回報"],
+    "supportRef": "safe-correlation-id",
+    "timestamp": "2026-07-28T00:00:00.000Z"
+  }
+}
+```
+
+HTTP status 應區分 validation、policy、conflict、not found 與 internal failure；不再把多數 exception 都折成 400。
+
+### `GET /api/update`
+
+成功且有新版時至少回傳：current version、target version、channel、release notes、published time、download size、publisher、manifest digest、是否已 defer。此 endpoint 只檢查，不下載 installer。
+
+### `POST /api/update/apply`
+
+預期 request：
+
+```json
+{
+  "confirmed": true,
+  "targetVersion": "1.1.0",
+  "manifestDigest": "sha256-of-confirmed-manifest"
+}
+```
+
+Server 必須拒絕 `confirmed != true`、target／digest 不符、network disabled、signature／hash 無效或 backup 失敗。UI 的 background check 不可直接呼叫 apply；使用者 confirmation 也不能被保存為未來版本的永久同意。

@@ -1,4 +1,15 @@
-# Beyblade 商品追蹤器：第一版待辦清單
+# Legacy TODO（已封存）
+
+> 本檔只保留 2026-07-18 以前的歷史紀錄，不再更新。
+> 正式 backlog：[`docs/TICKETS.md`](docs/TICKETS.md)
+> 優先順序與里程碑：[`docs/ROADMAP.md`](docs/ROADMAP.md)
+> 已完成歷史：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
+
+以下內容已合併進正式文件；不得把舊 checkbox 當成目前工作狀態。
+
+---
+
+# Beyblade 商品追蹤器：第一版待辦清單（歷史快照）
 
 ## 目標
 

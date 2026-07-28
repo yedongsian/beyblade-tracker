@@ -1,4 +1,14 @@
-# Beyblade Tracker 專案記憶與交接文件
+# Legacy Project Memory（已封存）
+
+> 本檔只保留 Phase 0–7 的歷史快照，不再作為執行來源。
+> 正式文件入口：[`docs/README.md`](docs/README.md)
+> 產品、工程、維運、backlog 與歷史已分別合併至 PRD、Tech Spec、Runbook、Tickets 與 CHANGELOG。
+
+新的執行團隊或 AI 協作者應先閱讀 `docs/README.md`，不要依下方歷史內容重做 Phase 0–7。
+
+---
+
+# Beyblade Tracker 專案記憶與交接文件（歷史快照）
 
 > 更新日期：2026-07-18（Asia/Taipei）
 > 專案階段：版本 1.0.0；Roadmap Phase 0 至 Phase 7 與既有技術債清理已完成

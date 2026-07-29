@@ -18,6 +18,7 @@
 - 新增 `USER_GUIDE.md`、`ERROR_CODES.md` 與 `SUPPORT.md`；錯誤代碼及完整 update UX 明確標為下一版 Proposed，不誤列為 1.0.0 已完成。
 - 新增 `BT-UX-001`、`BT-UX-002`、`BT-UPD-001`、`BT-SUP-001` 與 `BT-DOC-002` 的範圍、依賴及驗收條件。
 - 建立公開 repository `yedongsian/beyblade-tracker`、繁中 GitHub Issue Form、privacy confirmation 與使用教學／錯誤代碼入口。
+- 完成 GitHub Issue Form 實際渲染驗收、問題分類 labels，以及 owner 的 `Custom → Issues` 與 Email notification 設定。
 
 ## [1.0.0] — 2026-07-18
 

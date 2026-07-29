@@ -1,7 +1,7 @@
 # GitHub Support and Issue Intake
 
 > 決策：使用與程式碼相同的公開 GitHub repository，啟用 Issues 與繁中 Issue Form
-> 狀態：In implementation；repository 與表單已建立，通知及 end-to-end 驗收待完成
+> 狀態：In verification；repository、表單、labels 與 owner 通知已完成，雙帳號 end-to-end 收信驗收待完成
 > 最後更新：2026-07-29
 
 ## 1. 使用者體驗
@@ -72,4 +72,4 @@ Form 自動加上 `bug`、`needs-triage` labels。Title 可要求使用者以 `[
 - Issues URL：<https://github.com/yedongsian/beyblade-tracker/issues>
 - Release URL：<https://github.com/yedongsian/beyblade-tracker/releases>
 - Repository owner／triage owner：`yedongsian`（待確認日常 triage owner 是否相同）
-- Verified notification email：只記錄「已驗證」，不要把私人 Email 寫入 repository。
+- Email delivery：Watching 與 Participating 已啟用 GitHub／Email；實際收信仍待第二帳號 end-to-end 測試。不要把私人 Email 寫入 repository。

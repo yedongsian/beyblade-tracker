@@ -29,7 +29,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
 | BT-UX-002 | P0 | Ready | 建立可見且穩定的使用者錯誤代碼 | 無 |
 | BT-UPD-001 | P0 | Ready | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel |
-| BT-SUP-001 | P1 | In Progress | 建立公開 GitHub Issues 與繁中問題回報表單 | 通知設定與雙帳號驗收 |
+| BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | Support／Release URL 待填 |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
 | BT-P2-002 | P2 | Proposed | Chrome browser pool 與 concurrency control | 效能基準 |
@@ -162,6 +162,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Owner 設定 `Watch → Custom → Issues`，GitHub 與 Email notification 都啟用。
   - 第二帳號建立 Issue 後，owner 收到通知；owner 回覆後，reporter 收到通知。
   - `SUPPORT.md`、User Guide 與 App 填入正式 Issues URL。
+- Evidence（2026-07-29）：公開 repository 與繁中 Issue Form 已上線；GitHub 實際渲染全部必填欄位及 privacy checkbox；`bug`／`needs-triage` 自動套用；7 個分類 labels 已建立；owner 已設定 `Custom → Issues`，Watching／Participating 均啟用 GitHub／Email。剩餘第二帳號送出、owner 收信、owner 回覆、reporter 收信的 end-to-end 驗收。
 
 ### BT-DOC-002 — 建立一般使用者教學與錯誤代碼目錄
 

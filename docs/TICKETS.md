@@ -136,6 +136,8 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
 ### BT-UPD-001 — 實作使用者確認後的自動更新 UX
 
+> Follow-up verification (2026-07-29): defer can be reversed; active apply controls stay hidden; temporary scheduled failure preserves the verified manifest and retries in five minutes; each new apply clears stale rollback status; rollback success requires the previous service to start and `BT-UPD-007` overrides stale health UI. Regression coverage added. Status remains In Review pending release-channel and clean-Windows-VM update/rollback acceptance.
+
 - Priority：P0
 - Status：In Review
 - Owner：待指定

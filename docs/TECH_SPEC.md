@@ -142,6 +142,10 @@ flowchart LR
 - Diagnostics 排除 credentials、URLs、logs、product history；transfer bundle 以 hash 驗證且排除 credentials。
 - Update manifest 必須為 HTTPS、合法 semantic version、matching SHA-256 及 Ed25519 signature；正式公開發布另需 Authenticode。
 
+## Update recovery follow-up
+
+A temporary scheduled-check failure retains the last verified result and retries after five minutes. Defer is reversible without download consent. A new apply clears prior rollback status; rollback is `succeeded` only after the previous service has started, and `BT-UPD-007` overrides a stale health marker.
+
 ## 9. Failure handling
 
 | Failure | 系統行為 |

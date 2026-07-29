@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Database } from '../src/db/database.js';
 import { setNetworkEnabled } from '../src/core/network-control.js';
 import {
-  UPDATE_CHECK_INTERVAL_MS, deferUpdate, finalizePostUpdateHealth, getPostUpdateHealth, getRollbackStatus, getUpdateState,
+  UPDATE_CHECK_INTERVAL_MS, UPDATE_RETRY_INTERVAL_MS, clearDeferredUpdate, deferUpdate, finalizePostUpdateHealth, getPostUpdateHealth, getRollbackStatus, getUpdateState,
   isUpdateCheckDue, launchPreparedUpdate, manifestDigest, prepareConfirmedUpdate, runScheduledUpdateCheck,
   scheduleRecurringUpdateCheck, isDeferredUpdate, writeRollbackStatus,
   signedPayload, validateUpdateConfirmation, validateUpdateManifest, checkForUpdate,
@@ -68,6 +68,9 @@ test('stable update checks defer only the verified manifest and run no more than
   assert.equal(deferred.targetVersion, '1.1.0');
   assert.equal(getUpdateState(db).deferred.manifestDigest, checked.manifestDigest);
   assert.equal(isDeferredUpdate(getUpdateState(db), checked), true);
+  clearDeferredUpdate(db);
+  assert.equal(isDeferredUpdate(getUpdateState(db), checked), false);
+  deferUpdate(db, { targetVersion: checked.version, manifestDigest: checked.manifestDigest }, checked, { now: '2026-07-29T00:00:00.000Z' });
   assert.equal(isUpdateCheckDue(db, { now: Date.parse('2026-07-29T00:00:00.000Z') }), true);
   let requests = 0;
   const config = { network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey } };
@@ -80,6 +83,11 @@ test('stable update checks defer only the verified manifest and run no more than
   assert.equal(isUpdateCheckDue(db, { now: Date.parse('2026-07-29T00:00:00.000Z') + UPDATE_CHECK_INTERVAL_MS - 1 }), false);
   await runScheduledUpdateCheck(db, config, { fetchImpl: async () => { requests += 1; return new Response(JSON.stringify(manifest)); }, now: Date.parse('2026-07-29T00:00:00.000Z') + UPDATE_CHECK_INTERVAL_MS - 1 });
   assert.equal(requests, 1);
+  const preserved = getUpdateState(db);
+  await assert.rejects(runScheduledUpdateCheck(db, config, {
+    fetchImpl: async () => { throw new Error('offline'); }, now: Date.parse('2026-07-30T00:00:00.000Z'),
+  }), /BT-UPD-002/);
+  assert.deepEqual(getUpdateState(db), preserved);
   assert.throws(() => validateUpdateConfirmation({ confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest) }, { ...manifest, channel: 'beta' }), /BT-UPD-003/);
   db.close();
 });
@@ -183,4 +191,47 @@ test('recurring scheduler waits five seconds, persists a verified result, then r
   stop();
   assert.equal(timers[0].cleared, true);
   db.close();
+});
+
+test('recurring scheduler retries temporary failures without replacing a verified result', async () => {
+  const db = new Database(':memory:');
+  const timers = [];
+  const stop = scheduleRecurringUpdateCheck(db, {
+    network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey: 'unused' },
+  }, {
+    setTimeoutImpl: (fn, delay) => { const timer = { fn, delay, cleared: false }; timers.push(timer); return timer; },
+    clearTimeoutImpl: (timer) => { timer.cleared = true; },
+    fetchImpl: async () => { throw new Error('offline'); },
+  });
+  await timers.shift().fn();
+  assert.equal(timers[0].delay, UPDATE_RETRY_INTERVAL_MS);
+  stop();
+  db.close();
+});
+
+test('preparing a new update clears a completed rollback status', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-update-rollback-reset-'));
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const bytes = Buffer.from('installer fixture');
+  const manifest = signedManifest(privateKey, bytes);
+  mkdirSync(join(root, 'data'), { recursive: true });
+  const db = new Database(join(root, 'data', 'tracker.db'));
+  const config = {
+    dbPath: join(root, 'data', 'tracker.db'), releaseDir: join(root, 'releases'), backup: { dir: join(root, 'backups') },
+    update: { publicKey, rollbackFile: join(root, 'runtime', 'rollback.json'), healthFile: join(root, 'runtime', 'update-health.json'), rollbackStatusFile: join(root, 'runtime', 'rollback-status.json') },
+  };
+  writeRollbackStatus(config, { status: 'succeeded', version: '1.0.0', completedAt: '2026-07-29T00:00:00.000Z' });
+  await prepareConfirmedUpdate(db, config, manifest, {
+    confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest),
+  }, { fetchImpl: async () => new Response(bytes, { headers: { 'content-length': String(bytes.length) } }) });
+  assert.equal(existsSync(config.update.rollbackStatusFile), false);
+  db.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('rollback runner records success only after the rolled-back service has started', () => {
+  const runner = readFileSync(new URL('../bin/rollback.js', import.meta.url), 'utf8');
+  assert.match(runner, /await startRolledBackService\(config, result\.version\)/);
+  assert.ok(runner.indexOf('await startRolledBackService(config, result.version)') < runner.indexOf("status: 'succeeded'"));
+  assert.match(runner, /service-control\.js/);
 });

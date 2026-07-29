@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- BT-UPD-001 follow-up: reversible defer, stable in-progress update controls, retry without discarding a verified manifest, rollback status reset per apply, and service-start-confirmed rollback status with `BT-UPD-007` priority.
+
 ### Fixed
 
 - 讓 `npm test` 在保留 external proxy policy 的同時，於隔離 child process 明確 bypass loopback proxy；新增環境合併回歸測試（`BT-P1-001`）。

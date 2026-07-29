@@ -186,6 +186,10 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 - 沒有 idempotency key；部分 mutation 依 DB unique constraints 或業務規則去重。
 - `DELETE /api/sources/:id` 實際為 disable，路由語意容易誤解，未來若變更需先提供 compatibility plan。
 
+## Deferred update control
+
+`POST /api/update/resume` accepts `{}`, clears the saved defer decision for the currently verified manifest, and returns `{resumed:true,state,deferred:false}`. It never downloads or installs an update.
+
 ## 13. Update error contract
 
 此 error envelope 與 update consent API 已實作為下一個 release candidate 行為；仍不是 1.0.0 已發布能力。

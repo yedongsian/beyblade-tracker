@@ -8,6 +8,7 @@ import { APP_VERSION } from './version.js';
 
 export const UPDATE_STARTUP_DELAY_MS = 5000;
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const UPDATE_RETRY_INTERVAL_MS = 5 * 60 * 1000;
 
 export class UpdateError extends Error {
   constructor(code, message) {
@@ -143,6 +144,7 @@ export async function downloadInstaller(manifest, destination, { fetchImpl = fet
 export async function prepareUpdate(config, manifest, options = {}) {
   const checked = validateUpdateManifest(manifest, { publicKey: config.update.publicKey });
   if (!checked.updateAvailable) throw updateError('BT-UPD-005', '沒有較新的版本可安裝。');
+  if (config.update.rollbackStatusFile) rmSync(config.update.rollbackStatusFile, { force: true });
   mkdirSync(config.releaseDir, { recursive: true });
   const installer = join(config.releaseDir, `BeybladeTracker-${checked.version}-Setup.exe`);
   await downloadInstaller(checked, installer, options);
@@ -308,18 +310,15 @@ export async function prepareConfirmedUpdate(db, config, manifest, confirmation,
 
 export async function runScheduledUpdateCheck(db, config, options = {}) {
   if (!getNetworkState(db, config).enabled || !config.update?.manifestUrl || !isUpdateCheckDue(db, options)) return null;
-  let result;
-  try {
-    result = await checkForUpdate(config, options);
-    return result;
-  } finally {
-    recordUpdateCheck(db, result, options);
-  }
+  const result = await checkForUpdate(config, options);
+  recordUpdateCheck(db, result, options);
+  return result;
 }
 
 export function scheduleRecurringUpdateCheck(db, config, {
   initialDelayMs = UPDATE_STARTUP_DELAY_MS,
   intervalMs = UPDATE_CHECK_INTERVAL_MS,
+  retryDelayMs = UPDATE_RETRY_INTERVAL_MS,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
   onResult = () => {},
@@ -329,10 +328,13 @@ export function scheduleRecurringUpdateCheck(db, config, {
   let stopped = false;
   let timer = null;
   const run = async () => {
-    try { onResult(await runScheduledUpdateCheck(db, config, checkOptions)); }
-    catch (error) { onError(error); }
+    let completed = false;
+    try {
+      onResult(await runScheduledUpdateCheck(db, config, checkOptions));
+      completed = true;
+    } catch (error) { onError(error); }
     finally {
-      if (!stopped) timer = setTimeoutImpl(run, intervalMs);
+      if (!stopped) timer = setTimeoutImpl(run, completed ? intervalMs : retryDelayMs);
     }
   };
   timer = setTimeoutImpl(run, initialDelayMs);

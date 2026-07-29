@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '../src/db/database.js';
@@ -91,7 +91,16 @@ test('update rollback endpoint queues a safe service handoff instead of restorin
     assert.match(page, /data-scheduled-update="[^"]*1\.1\.0/);
     assert.match(page, /id="update-apply"[^>]*hidden/);
     assert.match(page, /id="update-defer"[^>]*hidden/);
+    assert.doesNotMatch(page, /id="update-resume"[^>]*hidden/);
     const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+    const resumed = await fetch(`${base}/api/update/resume`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token }, body: '{}',
+    });
+    assert.equal(resumed.status, 200);
+    assert.equal((await resumed.json()).resumed, true);
+    const resumedPage = await (await fetch(`${base}/settings`)).text();
+    assert.doesNotMatch(resumedPage, /id="update-apply"[^>]*hidden/);
+    assert.doesNotMatch(resumedPage, /id="update-defer"[^>]*hidden/);
     const result = await fetch(`${base}/api/update/rollback`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token }, body: '{}',
     });
@@ -99,6 +108,29 @@ test('update rollback endpoint queues a safe service handoff instead of restorin
     assert.deepEqual(await result.json(), { accepted: true, message: '服務將停止並執行回滾。' });
   }, { onRollbackRequested: () => { requested += 1; return true; } });
   assert.equal(requested, 1);
+});
+
+test('rollback failure takes priority over a stale update health failure in Settings', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-update-rollback-ui-'));
+  const healthFile = join(root, 'health.json');
+  const rollbackStatusFile = join(root, 'rollback-status.json');
+  writeFileSync(healthFile, JSON.stringify({ status: 'failed', code: 'BT-UPD-006', rollbackOffered: true }));
+  writeFileSync(rollbackStatusFile, JSON.stringify({ status: 'failed', code: 'BT-UPD-007', completedAt: '2026-07-29T00:00:00.000Z' }));
+  try {
+    await withServer(async ({ base }) => {
+      const page = await (await fetch(`${base}/settings`)).text();
+      assert.match(page, /BT-UPD-007/);
+      assert.match(page, /id="update-rollback"[^>]*hidden/);
+    }, { appConfig: { update: { healthFile, rollbackStatusFile } } });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Settings update script keeps action controls hidden while an apply operation is active', () => {
+  const script = readFileSync(new URL('../src/web/ui.js', import.meta.url), 'utf8');
+  assert.match(script, /if\(activeUpdateOperation\)return/);
+  assert.match(script, /if\(!activeUpdateOperation\)renderUpdate\(await api\('\/api\/update\/status',\{method:'GET'\}\)\)/);
 });
 
 test('update apply keeps one download and installer operation in flight', async () => {

@@ -246,6 +246,12 @@ npm run update:rollback
 
 驗證 current version pointer、pre-update DB restore、schema compatibility、health、source counts 與 UI。若新 migration 不可逆，必須使用 release 前 DB backup，不可只切換 binary。
 
+### Update defer and rollback recovery
+
+1. A deferred verified update may be resumed in Settings without downloading.
+2. Retain the last verified manifest after a transient scheduled-check failure and retry in five minutes.
+3. Treat rollback as complete only after the previous service starts; handle `BT-UPD-007` before any stale `BT-UPD-006` marker.
+
 ### Update consent 與健康檢查
 
 1. Update check 只讀 signed stable manifest；不會下載 installer。

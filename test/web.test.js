@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '../src/db/database.js';
@@ -127,10 +127,36 @@ test('rollback failure takes priority over a stale update health failure in Sett
   }
 });
 
-test('Settings update script keeps action controls hidden while an apply operation is active', () => {
-  const script = readFileSync(new URL('../src/web/ui.js', import.meta.url), 'utf8');
-  assert.match(script, /if\(activeUpdateOperation\)return/);
-  assert.match(script, /if\(!activeUpdateOperation\)renderUpdate\(await api\('\/api\/update\/status',\{method:'GET'\}\)\)/);
+test('manual update check failure preserves the last verified result and checked timestamp', async () => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const expected = Buffer.from('installer');
+  const manifest = {
+    version: '1.1.0', installerUrl: 'https://updates.example.test/setup.exe', sha256: createHash('sha256').update(expected).digest('hex'),
+    schemaVersion: 10, channel: 'stable', publisher: 'Beyblade Tracker', releaseNotes: 'verified', publishedAt: '2026-07-29T00:00:00.000Z', size: expected.length, publishReady: true,
+  };
+  manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
+  const originalFetch = globalThis.fetch;
+  let online = true;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('http://127.0.0.1:')) return originalFetch(url, options);
+    if (!online) throw new Error('offline');
+    return new Response(JSON.stringify(manifest));
+  };
+  try {
+    await withServer(async ({ base }) => {
+      const first = await fetch(`${base}/api/update`);
+      assert.equal(first.status, 200);
+      const verified = await (await fetch(`${base}/api/update/status`)).json();
+      online = false;
+      const failed = await fetch(`${base}/api/update`);
+      assert.equal(failed.status, 400);
+      assert.equal((await failed.json()).error.code, 'BT-UPD-002');
+      const preserved = await (await fetch(`${base}/api/update/status`)).json();
+      assert.deepEqual(preserved.state, verified.state);
+    }, { appConfig: { network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey } } });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('update apply keeps one download and installer operation in flight', async () => {
@@ -169,7 +195,14 @@ test('update apply keeps one download and installer operation in flight', async 
       assert.equal(secondResult.inProgress, true);
       assert.equal(secondResult.operationId, firstResult.operationId);
       assert.equal(installerRequests, 1);
+      const status = await (await fetch(`${base}/api/update/status`)).json();
+      assert.deepEqual(status.operation, { id: firstResult.operationId, targetVersion: manifest.version, phase: 'downloading', received: 0, total: expected.length });
+      const reloaded = await (await fetch(`${base}/settings`)).text();
+      assert.match(reloaded, new RegExp(firstResult.operationId));
+      assert.doesNotMatch(JSON.stringify(status.operation), /setup\.exe|releases|backups/);
       releaseInstaller(new Response(Buffer.from('tampered installer'), { headers: { 'content-length': String(expected.length) } }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal((await (await fetch(`${base}/api/update/status`)).json()).operation, null);
     }, { appConfig: {
       dbPath, releaseDir: join(root, 'releases'), installRoot: join(root, 'program'), backup: { dir: join(root, 'backups') }, network: { enabled: true },
       update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey, rollbackFile: join(root, 'runtime', 'rollback.json'), healthFile: join(root, 'runtime', 'health.json') },

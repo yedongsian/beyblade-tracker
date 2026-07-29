@@ -144,7 +144,6 @@ export async function downloadInstaller(manifest, destination, { fetchImpl = fet
 export async function prepareUpdate(config, manifest, options = {}) {
   const checked = validateUpdateManifest(manifest, { publicKey: config.update.publicKey });
   if (!checked.updateAvailable) throw updateError('BT-UPD-005', '沒有較新的版本可安裝。');
-  if (config.update.rollbackStatusFile) rmSync(config.update.rollbackStatusFile, { force: true });
   mkdirSync(config.releaseDir, { recursive: true });
   const installer = join(config.releaseDir, `BeybladeTracker-${checked.version}-Setup.exe`);
   await downloadInstaller(checked, installer, options);
@@ -164,6 +163,7 @@ export async function prepareUpdate(config, manifest, options = {}) {
       status: 'pending', createdAt: new Date().toISOString(),
     }, null, 2));
   }
+  clearRollbackStatus(config);
   return { installer, rollback, manifest: checked };
 }
 
@@ -224,6 +224,11 @@ export function writeRollbackStatus(config, patch) {
   return safe;
 }
 
+export function clearRollbackStatus(config) {
+  const file = config.update?.rollbackStatusFile;
+  if (file) rmSync(file, { force: true });
+}
+
 export function validateUpdateConfirmation(confirmation, manifest) {
   const checked = validateUpdateManifest(manifest, { publicKey: null, requireSignature: false });
   if (confirmation?.confirmed !== true) throw updateError('BT-UPD-005', '必須明確確認後才能下載並安裝更新。');
@@ -260,6 +265,16 @@ export function isUpdateCheckDue(db, { now = Date.now() } = {}) {
 
 function checkedAtIso(now) {
   return typeof now === 'number' ? new Date(now).toISOString() : now;
+}
+
+export function nextUpdateCheckDelay(db, config, {
+  now = Date.now(), intervalMs = UPDATE_CHECK_INTERVAL_MS, retryDelayMs = UPDATE_RETRY_INTERVAL_MS,
+} = {}) {
+  if (!config.update?.manifestUrl) return intervalMs;
+  if (!getNetworkState(db, config).enabled) return retryDelayMs;
+  const checkedAt = Date.parse(getUpdateState(db).lastCheckedAt || '');
+  if (Number.isNaN(checkedAt)) return 0;
+  return Math.max(0, intervalMs - Math.max(0, now - checkedAt));
 }
 
 function updateResultForDisplay(result, checkedAt) {
@@ -321,23 +336,27 @@ export function scheduleRecurringUpdateCheck(db, config, {
   retryDelayMs = UPDATE_RETRY_INTERVAL_MS,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
+  nowImpl = () => Date.now(),
   onResult = () => {},
   onError = () => {},
   ...checkOptions
 } = {}) {
   let stopped = false;
   let timer = null;
+  const schedule = (delay) => { if (!stopped) timer = setTimeoutImpl(run, delay); };
   const run = async () => {
-    let completed = false;
+    let failed = false;
     try {
       onResult(await runScheduledUpdateCheck(db, config, checkOptions));
-      completed = true;
-    } catch (error) { onError(error); }
+    } catch (error) { failed = true; onError(error); }
     finally {
-      if (!stopped) timer = setTimeoutImpl(run, completed ? intervalMs : retryDelayMs);
+      schedule(failed
+        ? retryDelayMs
+        : nextUpdateCheckDelay(db, config, { now: nowImpl(), intervalMs, retryDelayMs }));
     }
   };
-  timer = setTimeoutImpl(run, initialDelayMs);
+  const firstDelay = nextUpdateCheckDelay(db, config, { now: nowImpl(), intervalMs, retryDelayMs });
+  schedule(Math.max(initialDelayMs, firstDelay));
   return () => {
     stopped = true;
     if (timer) clearTimeoutImpl(timer);

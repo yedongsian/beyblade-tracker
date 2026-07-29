@@ -9,7 +9,7 @@ import { Database } from '../src/db/database.js';
 import { setNetworkEnabled } from '../src/core/network-control.js';
 import {
   UPDATE_CHECK_INTERVAL_MS, UPDATE_RETRY_INTERVAL_MS, clearDeferredUpdate, deferUpdate, finalizePostUpdateHealth, getPostUpdateHealth, getRollbackStatus, getUpdateState,
-  isUpdateCheckDue, launchPreparedUpdate, manifestDigest, prepareConfirmedUpdate, runScheduledUpdateCheck,
+  isUpdateCheckDue, launchPreparedUpdate, manifestDigest, nextUpdateCheckDelay, prepareConfirmedUpdate, recordUpdateCheck, runScheduledUpdateCheck,
   scheduleRecurringUpdateCheck, isDeferredUpdate, writeRollbackStatus,
   signedPayload, validateUpdateConfirmation, validateUpdateManifest, checkForUpdate,
 } from '../src/release/update.js';
@@ -187,7 +187,8 @@ test('recurring scheduler waits five seconds, persists a verified result, then r
   await timers.shift().fn();
   assert.equal(results, 1);
   assert.equal(getUpdateState(db).latestResult.updateAvailable, true);
-  assert.equal(timers[0].delay, UPDATE_CHECK_INTERVAL_MS);
+  assert.ok(timers[0].delay <= UPDATE_CHECK_INTERVAL_MS);
+  assert.ok(timers[0].delay > UPDATE_CHECK_INTERVAL_MS - 1000);
   stop();
   assert.equal(timers[0].cleared, true);
   db.close();
@@ -209,7 +210,7 @@ test('recurring scheduler retries temporary failures without replacing a verifie
   db.close();
 });
 
-test('preparing a new update clears a completed rollback status', async () => {
+test('preparing an update preserves rollback failure status until every preparation step succeeds', async () => {
   const root = mkdtempSync(join(tmpdir(), 'beyblade-update-rollback-reset-'));
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const bytes = Buffer.from('installer fixture');
@@ -220,11 +221,28 @@ test('preparing a new update clears a completed rollback status', async () => {
     dbPath: join(root, 'data', 'tracker.db'), releaseDir: join(root, 'releases'), backup: { dir: join(root, 'backups') },
     update: { publicKey, rollbackFile: join(root, 'runtime', 'rollback.json'), healthFile: join(root, 'runtime', 'update-health.json'), rollbackStatusFile: join(root, 'runtime', 'rollback-status.json') },
   };
-  writeRollbackStatus(config, { status: 'succeeded', version: '1.0.0', completedAt: '2026-07-29T00:00:00.000Z' });
+  writeRollbackStatus(config, { status: 'failed', code: 'BT-UPD-007', completedAt: '2026-07-29T00:00:00.000Z' });
+  const confirmation = { confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest) };
+  await assert.rejects(prepareConfirmedUpdate(db, config, manifest, confirmation, {
+    fetchImpl: async () => { throw new Error('offline'); },
+  }), /BT-UPD-005/);
+  assert.equal(getRollbackStatus(config).code, 'BT-UPD-007');
+  await assert.rejects(prepareConfirmedUpdate(db, config, manifest, confirmation, {
+    fetchImpl: async () => new Response(Buffer.from('tampered installer')),
+  }), /BT-UPD-004/);
+  assert.equal(getRollbackStatus(config).code, 'BT-UPD-007');
+  const blockedBackup = join(root, 'backup-file');
+  writeFileSync(blockedBackup, 'not a directory');
+  await assert.rejects(prepareConfirmedUpdate(db, { ...config, backup: { dir: blockedBackup } }, manifest, confirmation, {
+    fetchImpl: async () => new Response(bytes, { headers: { 'content-length': String(bytes.length) } }),
+  }));
+  assert.equal(getRollbackStatus(config).code, 'BT-UPD-007');
   await prepareConfirmedUpdate(db, config, manifest, {
-    confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest),
+    ...confirmation,
   }, { fetchImpl: async () => new Response(bytes, { headers: { 'content-length': String(bytes.length) } }) });
   assert.equal(existsSync(config.update.rollbackStatusFile), false);
+  assert.equal(existsSync(config.update.rollbackFile), true);
+  assert.equal(JSON.parse(readFileSync(config.update.healthFile, 'utf8')).status, 'pending');
   db.close();
   rmSync(root, { recursive: true, force: true });
 });
@@ -234,4 +252,31 @@ test('rollback runner records success only after the rolled-back service has sta
   assert.match(runner, /await startRolledBackService\(config, result\.version\)/);
   assert.ok(runner.indexOf('await startRolledBackService(config, result.version)') < runner.indexOf("status: 'succeeded'"));
   assert.match(runner, /service-control\.js/);
+});
+
+test('scheduler uses the remaining verified-check delay and retries while network is paused', () => {
+  const db = new Database(':memory:');
+  const now = Date.parse('2026-07-30T00:00:00.000Z');
+  const config = { network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json' } };
+  recordUpdateCheck(db, { enabled: true, updateAvailable: false }, { now: now - (60 * 60 * 1000) });
+  assert.equal(nextUpdateCheckDelay(db, config, { now }), UPDATE_CHECK_INTERVAL_MS - (60 * 60 * 1000));
+  const timers = [];
+  const stop = scheduleRecurringUpdateCheck(db, config, {
+    nowImpl: () => now,
+    setTimeoutImpl: (fn, delay) => { const timer = { fn, delay, cleared: false }; timers.push(timer); return timer; },
+    clearTimeoutImpl: (timer) => { timer.cleared = true; },
+  });
+  assert.equal(timers[0].delay, UPDATE_CHECK_INTERVAL_MS - (60 * 60 * 1000));
+  stop();
+  setNetworkEnabled(db, false, { config, reason: 'operator pause' });
+  const pausedTimers = [];
+  const stopPaused = scheduleRecurringUpdateCheck(db, config, {
+    nowImpl: () => now,
+    setTimeoutImpl: (fn, delay) => { const timer = { fn, delay, cleared: false }; pausedTimers.push(timer); return timer; },
+    clearTimeoutImpl: (timer) => { timer.cleared = true; },
+    fetchImpl: async () => { throw new Error('must not fetch'); },
+  });
+  assert.equal(pausedTimers[0].delay, UPDATE_RETRY_INTERVAL_MS);
+  stopPaused();
+  db.close();
 });

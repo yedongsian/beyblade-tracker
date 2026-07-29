@@ -190,6 +190,10 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 
 `POST /api/update/resume` accepts `{}`, clears the saved defer decision for the currently verified manifest, and returns `{resumed:true,state,deferred:false}`. It never downloads or installs an update.
 
+`GET /api/update/status` returns the last verified result without starting a network request. While an apply is active it also returns an allowlisted `operation` object with only `id`, `targetVersion`, `phase`, `received`, `total`, and optional `errorCode`; it never includes installer locations, backup locations, manifest URLs, signatures, or exception details.
+
+`GET /api/update` records a new check only after a successful verified response. `BT-UPD-002` and `BT-UPD-003` responses leave the stored verified result and `lastCheckedAt` unchanged.
+
 ## 13. Update error contract
 
 此 error envelope 與 update consent API 已實作為下一個 release candidate 行為；仍不是 1.0.0 已發布能力。

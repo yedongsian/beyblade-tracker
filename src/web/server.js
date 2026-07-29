@@ -98,6 +98,22 @@ export function healthData(db, config = {}) {
   };
 }
 
+const ACTIVE_UPDATE_PHASES = new Set(['downloading', 'installing']);
+
+function findActiveUpdateOperation(operations) {
+  return [...operations.values()].find((operation) => ACTIVE_UPDATE_PHASES.has(operation.phase)) || null;
+}
+
+function updateOperationSummary(operation) {
+  if (!operation) return null;
+  const summary = {
+    id: operation.id, targetVersion: operation.targetVersion, phase: operation.phase,
+    received: Number(operation.received) || 0, total: Number(operation.total) || 0,
+  };
+  if (operation.errorCode) summary.errorCode = operation.errorCode;
+  return summary;
+}
+
 function pageOptions(db, base) {
   const settings = readSettings(db);
   const t = createTranslator(settings.language || 'zh-TW');
@@ -191,7 +207,8 @@ function settingsPage(db, base) {
   const updateDeferred = isDeferredUpdate(updateState, scheduledUpdate?.manifest);
   const updateHealth = getPostUpdateHealth(base.appConfig);
   const rollbackStatus = getRollbackStatus(base.appConfig);
-  const updateUiState = { deferred: updateDeferred, health: updateHealth, rollback: rollbackStatus };
+  const updateUiState = { deferred: updateDeferred, health: updateHealth, rollback: rollbackStatus,
+    operation: updateOperationSummary(findActiveUpdateOperation(base.updateOperations || new Map())) };
   const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('settings.eyebrow'))}</p><h1>${esc(t('settings.title'))}</h1><p>${esc(t('settings.intro'))}</p></div></div><p id="settings-status" class="status" role="status" aria-live="polite"></p>
   <div class="grid two-col"><section class="card"><h2>${esc(t('settings.releaseTitle'))}</h2><p>${esc(t('settings.version'))}：${esc(release.version)} · ${esc(release.channel)}</p><p>${esc(t('settings.browser'))}：${esc(browser.available ? browser.name : t('settings.browserMissing'))}</p>${browser.available ? '' : `<p><a href="${esc(browser.downloadUrl)}" target="_blank" rel="noopener noreferrer">${esc(t('settings.downloadChrome'))}</a></p>`}<section id="update-card" class="notice" aria-live="polite" data-scheduled-update="${esc(JSON.stringify(scheduledUpdate))}" data-update-state="${esc(JSON.stringify(updateUiState))}"><strong>${esc(t('settings.updateTitle'))}</strong><p id="update-details">${scheduledUpdate ? esc(t(updateDeferred ? 'settings.updateDeferred' : 'settings.updateAvailable', { version: scheduledUpdate.manifest.version })) : esc(release.updateManifestUrl ? t('settings.updateNotChecked') : t('settings.updateUnavailable'))}</p><progress id="update-progress" max="100" value="0" hidden></progress><p id="update-health" class="hint">${rollbackStatus?.status === 'failed' ? esc(t('settings.rollbackFailed', { code: rollbackStatus.code || 'BT-UPD-007' })) : updateHealth?.rollbackOffered ? esc(t('settings.updateHealthFailed', { code: updateHealth.code })) : ''}</p><p class="hint">${esc(t('settings.updateHint'))}</p></section><div class="actions" style="justify-content:flex-start"><button id="update-check" class="btn secondary" type="button"${release.updateManifestUrl ? '' : ' disabled'}>${esc(t('settings.checkUpdate'))}</button><button id="update-defer" class="btn secondary" type="button"${scheduledUpdate && !updateDeferred ? '' : ' hidden'}>${esc(t('common.defer'))}</button><button id="update-resume" class="btn secondary" type="button"${scheduledUpdate && updateDeferred ? '' : ' hidden'}>${esc(t('settings.resumeUpdate'))}</button><button id="update-apply" class="btn" type="button"${scheduledUpdate && !updateDeferred ? '' : ' hidden'}>${esc(t('settings.applyUpdate'))}</button><button id="update-rollback" class="btn danger" type="button"${updateHealth?.rollbackOffered && rollbackStatus?.status !== 'failed' ? '' : ' hidden'}>${esc(t('settings.rollback'))}</button></div></section>
   <section class="card"><h2>${esc(t('settings.telegramTitle'))}</h2><p>${esc(t('settings.telegramSteps'))} <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">BotFather</a></p><p><span class="pill ${secrets.telegram.configured ? 'good' : 'warn'}">${esc(t(secrets.telegram.configured ? 'settings.configured' : 'settings.notConfigured'))}</span> · ${esc(secrets.provider)}</p><form id="telegram-form"><div class="field"><label for="telegram-token">${esc(t('settings.botToken'))}</label><input id="telegram-token" name="token" type="password" autocomplete="off" required></div><div class="field"><label for="telegram-chat-id">${esc(t('settings.chatId'))}</label><input id="telegram-chat-id" name="chatId" autocomplete="off" required></div><div class="actions" style="justify-content:flex-start"><button class="btn" type="submit">${esc(t('settings.saveAndTest'))}</button><button id="telegram-test" class="btn secondary" type="button"${secrets.telegram.configured ? '' : ' disabled'}>${esc(t('settings.test'))}</button><button id="telegram-clear" class="btn danger" type="button"${secrets.telegram.configured ? '' : ' disabled'}>${esc(t('settings.clear'))}</button></div></form></section></div>
@@ -449,8 +466,8 @@ export function createWebServer(db, options = {}) {
   const csrfToken = randomBytes(24).toString('base64url');
   const nonce = randomBytes(16).toString('base64url');
   const appConfig = options.appConfig || {};
-  const base = { csrfToken, nonce, appConfig, secretStore: options.secretStore };
   const updateOperations = new Map();
+  const base = { csrfToken, nonce, appConfig, secretStore: options.secretStore, updateOperations };
   return createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const requestT = createTranslator(readSettings(db).language || 'zh-TW');
@@ -528,19 +545,16 @@ export function createWebServer(db, options = {}) {
         out = response(bundle, 'application/gzip', 200, { 'Content-Disposition': 'attachment; filename="beyblade-diagnostics.json.gz"' });
       } else if (req.method === 'GET' && url.pathname === '/api/update') {
         assertNetworkEnabled(db, appConfig);
-        let update;
-        try {
-          update = await checkForUpdate(appConfig);
-        } finally {
-          if (appConfig.update?.manifestUrl) recordUpdateCheck(db, update);
-        }
+        const update = await checkForUpdate(appConfig);
+        recordUpdateCheck(db, update);
         const state = getUpdateState(db);
         out = json({ ...state.latestResult, state, deferred: isDeferredUpdate(state, state.latestResult?.manifest),
           health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
       } else if (req.method === 'GET' && url.pathname === '/api/update/status') {
         const state = getUpdateState(db);
         out = json({ ...(state.latestResult || { enabled: Boolean(appConfig.update?.manifestUrl), updateAvailable: false }), state,
-          deferred: isDeferredUpdate(state, state.latestResult?.manifest), health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
+          deferred: isDeferredUpdate(state, state.latestResult?.manifest), health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig),
+          operation: updateOperationSummary(findActiveUpdateOperation(updateOperations)) });
       } else if (req.method === 'POST' && url.pathname === '/api/update/defer') {
         assertNetworkEnabled(db, appConfig);
         const confirmation = await readJson(req);
@@ -554,18 +568,18 @@ export function createWebServer(db, options = {}) {
       } else if (req.method === 'POST' && url.pathname === '/api/update/apply') {
         assertNetworkEnabled(db, appConfig);
         const confirmation = await readJson(req);
-        const update = await checkForUpdate(appConfig);
-        if (!update.updateAvailable) throw new UpdateError('BT-UPD-005', '目前已是最新版本。');
-        validateUpdateConfirmation(confirmation, update.manifest);
-        const active = [...updateOperations.values()].find((operation) => !['failed', 'completed'].includes(operation.phase));
+        const active = findActiveUpdateOperation(updateOperations);
         if (active) {
           out = json({ operationId: active.id, targetVersion: active.targetVersion, inProgress: true }, 202);
           res.writeHead(out.status, { 'Content-Type': out.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data: https:; frame-ancestors 'none'` });
           res.end(out.body);
           return;
         }
+        const update = await checkForUpdate(appConfig);
+        if (!update.updateAvailable) throw new UpdateError('BT-UPD-005', '目前已是最新版本。');
+        validateUpdateConfirmation(confirmation, update.manifest);
         const id = randomBytes(18).toString('base64url');
-        const operation = { id, targetVersion: update.manifest.version, phase: 'downloading', received: 0, total: Number(update.manifest.size), error: null };
+        const operation = { id, targetVersion: update.manifest.version, phase: 'downloading', received: 0, total: Number(update.manifest.size), errorCode: null };
         updateOperations.set(id, operation);
         void (async () => {
           try {
@@ -577,7 +591,7 @@ export function createWebServer(db, options = {}) {
             operation.phase = 'completed';
           } catch (error) {
             operation.phase = 'failed';
-            operation.error = error instanceof UpdateError ? error.message : 'BT-UPD-005：更新安裝失敗。';
+            operation.errorCode = error instanceof UpdateError ? error.code : 'BT-UPD-005';
           }
         })();
         out = json({ operationId: id, targetVersion: operation.targetVersion }, 202);
@@ -585,7 +599,7 @@ export function createWebServer(db, options = {}) {
         const id = url.pathname.split('/').at(-1);
         const operation = updateOperations.get(id);
         if (!operation) out = response(requestT('api.notFound'), 'text/plain; charset=utf-8', 404);
-        else out = json(operation);
+        else out = json(updateOperationSummary(operation));
       } else if (req.method === 'POST' && url.pathname === '/api/update/rollback') {
         if (!options.onRollbackRequested?.()) throw new UpdateError('BT-UPD-007', '無法安全地排程回滾。');
         out = json({ accepted: true, message: '服務將停止並執行回滾。' }, 202);

@@ -146,6 +146,8 @@ flowchart LR
 
 A temporary scheduled-check failure retains the last verified result and retries after five minutes. Defer is reversible without download consent. A new apply clears prior rollback status; rollback is `succeeded` only after the previous service has started, and `BT-UPD-007` overrides a stale health marker.
 
+Rollback status is cleared only after installer verification, backup creation, rollback record creation, and pending health-marker creation all succeed. The scheduler uses the remaining interval since `lastCheckedAt` rather than adding a full interval after a not-due run; paused network uses the five-minute retry delay. Active update progress is an in-memory, allowlisted summary so Settings can resume polling after a page reload.
+
 ## 9. Failure handling
 
 | Failure | 系統行為 |

@@ -251,6 +251,8 @@ npm run update:rollback
 1. A deferred verified update may be resumed in Settings without downloading.
 2. Retain the last verified manifest after a transient scheduled-check failure and retry in five minutes.
 3. Treat rollback as complete only after the previous service starts; handle `BT-UPD-007` before any stale `BT-UPD-006` marker.
+4. Do not clear a previous rollback failure until the next update has fully prepared its verified installer, backup, rollback record, and pending health marker. A failed download, validation, hash, or backup step must retain it.
+5. A manual update-check error must preserve the last verified result and timestamp. Settings may safely resume an active apply from the status summary after reload; no file locations or URLs appear in that summary.
 
 ### Update consent 與健康檢查
 

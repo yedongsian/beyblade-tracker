@@ -58,4 +58,4 @@ Windows release builder 目前會把 `README.md`、`INSTALL.md`、`PRIVACY.md`�
 - 工作樹在本次文件整理前已有一項使用者修改：`ROADMAP.md` 新增 Phase 7 後暫停點；已合併至新 Roadmap，不視為本次新產品決策。
 - `npm run config:check`：2026-07-28 通過，3 個來源。
 - `npm run status:tracker`：2026-07-28 顯示服務已停止。
-- `npm test`：Launcher regression test 加入後完整 suite 為 134 項；proxy-free child process 已通過 134/134。一般 shell 仍有 11 項 Local Web 測試受環境 HTTP Proxy 對 localhost 回傳 403 影響，追蹤於 `BT-P1-001`。
+- `npm test`：runner 保留外部 proxy 設定，並在測試子程序以 `NO_PROXY=127.0.0.1,localhost,::1` bypass loopback；ambient proxy 環境完整 suite 已通過 139/139（`BT-P1-001`）。

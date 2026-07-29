@@ -23,7 +23,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | ID | Priority | Status | 標題 | 依賴／阻塞 |
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Blocked | 完成 Windows 公開發佈閘門 | 憑證、hosting、key owner、clean VM |
-| BT-P1-001 | P1 | Ready | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
+| BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Proposed | 建立 local-first 可觀測性 | 產品指標與 UI scope 決策 |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
 | BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
@@ -62,8 +62,8 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-P1-001 — 使 Local Web 測試不受 ambient proxy 影響
 
 - Priority：P1
-- Status：Ready
-- Owner：待指定
+- Status：Done
+- Owner：Engineering
 - 背景：2026-07-28 `npm test` 為 122/133；11 項 `test/web.test.js` 均在 fetch localhost 時收到 `Proxy response (403) !== 200 when HTTP Tunneling`。其他 122 項通過，失敗並非 application assertion。
 - Problem：測試依賴 shell／npm proxy environment，造成 localhost integration test 非 hermetic，也可能掩蓋真實 Web regression。
 - Scope：確認 root cause、讓 loopback test 明確 bypass proxy、加入 regression coverage、更新 Runbook。
@@ -71,9 +71,9 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 - Acceptance criteria：
   - 在有 `HTTP_PROXY`／`HTTPS_PROXY` 的測試環境仍可完成 loopback Web tests。
   - External HTTP client 的 proxy／network policy 行為不因修復意外改變。
-  - `npm test` 133/133 通過。
+  - `npm test` 完整 suite 通過。
   - 記錄 Node／OS／proxy variables 是否存在的低敏感度驗收摘要。
-- Evidence：Before／after test output、targeted Web test、full suite。
+- Evidence：2026-07-29 Windows／Node v25.7.0，ambient `HTTP_PROXY`／`HTTPS_PROXY`／`ALL_PROXY` 存在且 `NO_PROXY` 原為空值；修正前目前分支為 126/138，12 項 localhost fetch 皆遭 proxy 403；加入保留 external proxy、只 bypass loopback 的 test runner 與 regression test 後，一般 `npm test` 通過 139/139。
 
 ### BT-P1-002 — 建立 local-first 可觀測性
 
@@ -101,7 +101,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Launcher 前三個 bytes 為 UTF-8 BOM `EF BB BF`。
   - Windows PowerShell 5.1 能正確解析繁中錯誤、狀態與移機對話框文案。
   - Phase 7 targeted test 與完整 Node test suite 通過。
-- Evidence：Windows PowerShell 5.1 實際錯誤路徑正確顯示繁中；`test/phase7.test.js` 8/8；proxy-free child process 完整測試 134/134。一般環境仍有 `BT-P1-001` 已記錄的 11 項 localhost proxy 失敗，與本修正無關。
+- Evidence：Windows PowerShell 5.1 實際錯誤路徑正確顯示繁中；Launcher static regression 與 safe Web error contract 已通過；`BT-P1-001` 完成後，ambient proxy 環境完整測試為 139/139。
 
 ### BT-UX-001 — 完成一般使用者雙擊安裝與單一入口驗收
 

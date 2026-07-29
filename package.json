@@ -27,7 +27,7 @@
     "config:check": "node --no-warnings bin/config-check.js",
     "dev": "node --no-warnings bin/worker.js --dev",
     "health": "node --no-warnings bin/health-check.js",
-    "test": "node --no-warnings --test \"test/**/*.test.js\""
+    "test": "node --no-warnings scripts/run-tests.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0",

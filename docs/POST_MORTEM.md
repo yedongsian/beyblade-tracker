@@ -1,13 +1,13 @@
 # Incident Management and Post-mortem
 
 > 狀態：Active
-> 最後更新：2026-07-28
+> 最後更新：2026-07-29
 
 ## 1. 目前紀錄
 
 截至 2026-07-28，專案紀錄中**沒有已確認的重大 production incident 或完成的 post-mortem**。
 
-已知的 Takara Queue-it 是外部存取限制；X API 未啟用是產品安全預設；2026-07-28 Local Web 測試受 ambient proxy 影響是待處理的 test-environment issue。三者目前都不應被虛構為 production incident。
+已知的 Takara Queue-it 是外部存取限制；X API 未啟用是產品安全預設。2026-07-28 Local Web 測試受 ambient proxy 影響屬 test-environment issue，已於 2026-07-29 由 `BT-P1-001` 修正，並非 production incident。
 
 ## 2. 何時宣告 Incident
 

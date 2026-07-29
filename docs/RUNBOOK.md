@@ -193,14 +193,14 @@ npm run db:restore -- --from backups\manual-YYYYMMDD-HHMMSSZ.db --to C:\test\dat
 
 症狀：`test/web.test.js` 出現 `Proxy response (403) !== 200 when HTTP Tunneling`，而非應用 assertion failure。
 
-處理：
+自動處理：
 
-1. 只讀檢查目前 shell 的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 與 npm proxy 設定；不要把含帳密的 proxy URL 貼進文件。
-2. 確認 `NO_PROXY` 包含 `127.0.0.1,localhost,::1`，或在隔離的測試 process 明確 bypass loopback proxy。
-3. 重跑 `npm test`；目前完整 suite 為 134 項，必須取得 134/134 才可判定 Web regression 已排除。
-4. 若移除環境影響後仍失敗，才依第一個 application stack／assertion 建立 Bug Ticket。
+1. 執行 `npm test`；`scripts/run-tests.js` 會保留現有 proxy 設定，合併既有 `NO_PROXY`，並只加入 `127.0.0.1,localhost,::1`。
+2. runner 以隔離的 child process 執行測試，不修改 shell、使用者或系統環境。
+3. 若仍出現 proxy 403，只讀檢查 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 與 npm proxy 設定；不要把含帳密的 proxy URL 貼進文件。
+4. 若 loopback 已 bypass 仍失敗，依第一個 application stack／assertion 建立 Bug Ticket。
 
-此問題追蹤於 `BT-P1-001`；一般環境仍有 11 項 localhost proxy failure，proxy-free child process 已取得 134/134。未排除 ambient proxy 前不可把一般 shell 結果寫成通過。
+2026-07-29 驗收：Windows／Node v25.7.0、ambient proxy variables 存在且 `NO_PROXY` 原為空值；一般 `npm test` 通過 139/139。修正追蹤於 `BT-P1-001`。
 
 ## 13. Windows release procedure
 

@@ -231,7 +231,7 @@ stateDiagram-v2
 - Release：Windows payload／installer declarations、manifest、rollback、diagnostics 與 isolated E2E。
 - Fixture acceptance：產品生命週期、Takara Discovery、community intelligence。
 
-2026-07-28 Launcher regression test 加入後完整 suite 為 134 項；proxy-free child process 通過 134/134。一般 shell 仍有 11 個 `test/web.test.js` 測試因 proxy 對 localhost tunneling 回傳 403 而失敗。這是環境相依性風險，追蹤於 `BT-P1-001`。
+2026-07-29 `scripts/run-tests.js` 會合併既有 `NO_PROXY` 並加入 `127.0.0.1`、`localhost`、`::1`，再啟動 Node test child process。`HTTP_PROXY`、`HTTPS_PROXY` 及其他環境設定保持不變，因此只隔離 loopback integration tests，不改 production external fetch policy。ambient proxy 環境完整 suite 通過 139/139（`BT-P1-001`）。
 
 ## 12. 變更規則
 

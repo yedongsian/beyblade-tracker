@@ -27,7 +27,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P1-002 | P1 | Proposed | 建立 local-first 可觀測性 | 產品指標與 UI scope 決策 |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
 | BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
-| BT-UX-002 | P0 | Ready | 建立可見且穩定的使用者錯誤代碼 | 無 |
+| BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Windows native dialog 實機驗收 |
 | BT-UPD-001 | P0 | Ready | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | Support／Release URL 待填 |
@@ -122,7 +122,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-UX-002 — 建立可見且穩定的使用者錯誤代碼
 
 - Priority：P0
-- Status：Ready
+- Status：In Review
 - Owner：待指定
 - 背景：目前 Launcher 由 hidden VBS／PowerShell 執行，exception 可能無聲消失；其他元件也多回傳純文字，沒有可查詢的穩定代碼。
 - Scope：中央 registry、`BT-<AREA>-<NNN>`、native／Web error dialog、copy／report、safe support reference、log correlation、catalog docs。
@@ -132,6 +132,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - UI 文案為繁中、可鍵盤操作、可複製；不洩漏 secret、stack、private URL／path。
   - Error code 與 App version 可預填 Issue Form，但使用者送出前能檢視。
   - 未知 internal error 使用保留的 generic code，不把 exception message 當公開契約。
+- Verification evidence（2026-07-29）：中央 registry、safe Local Web error envelope、可鍵盤操作的 copy／report dialog 與 hidden Launcher 的 `BT-LCH-001`～`005` mapping 已實作；catalog／registry、Web envelope 與 Launcher static regression tests 已新增。仍需在隔離 Windows 安裝目錄完成 native dialog 實機互動驗收後才能標記 Done。
 
 ### BT-UPD-001 — 實作使用者確認後的自動更新 UX
 

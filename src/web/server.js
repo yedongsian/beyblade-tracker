@@ -37,6 +37,7 @@ import { createTransferBundle, stageTransferImport } from '../maintenance/transf
 import { checkForUpdate, launchPreparedUpdate, prepareUpdate } from '../release/update.js';
 import { releaseInfo } from '../release/version.js';
 import { createDiagnosticsBundle } from '../maintenance/diagnostics.js';
+import { errorEnvelope } from '../errors/registry.js';
 
 function stateBadge(state, t) {
   const kind = ['in_stock'].includes(state) ? 'good' :
@@ -639,10 +640,15 @@ export function createWebServer(db, options = {}) {
       });
       res.end(out.body);
     } catch (err) {
-      logger.warn(`web request failed: ${err.message}`);
+      const supportRef = randomBytes(9).toString('base64url');
+      const envelope = errorEnvelope(err, {
+        appVersion: releaseInfo(appConfig).version,
+        supportRef,
+      });
+      logger.warn(`web request failed: code=${envelope.code} supportRef=${envelope.supportRef}`);
       const status = /找不到|not found|見つかり/i.test(err.message) ? 404 : 400;
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ status: 'error', error: err.message }));
+      res.end(JSON.stringify({ status: 'error', error: envelope }));
     }
   });
 }

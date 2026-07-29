@@ -170,7 +170,7 @@ flowchart LR
 
 ### 10.2 Error contract
 
-所有 user-facing error 使用 `BT-<AREA>-<NNN>`。中央 registry 是 code、localized title、message、recovery actions、severity、support safety policy 的唯一來源。
+所有 user-facing error 使用 `BT-<AREA>-<NNN>`。中央 registry 是 code、localized title、message、recovery actions 與 support safety policy 的唯一來源。Local Web 與 Launcher 已實作安全 envelope／native dialog；其餘 release gate 仍須在發布流程接線與實機驗收。
 
 建議 error envelope：
 
@@ -186,7 +186,7 @@ flowchart LR
 }
 ```
 
-Log 可保存 safe correlation ID 與 internal error class，但 UI／Issue Form 不自動帶入 full path、URL、request body、stack 或 credentials。公開代碼與 recovery 必須同步 [Error Code Catalog](ERROR_CODES.md)。
+Log 只保存 safe correlation ID、公開 code 與 internal error class；UI／Issue Form 不自動帶入 full path、URL、request body、stack 或 credentials。未知 exception 必須映射為保留 generic code，而非公開原始訊息。公開代碼與 recovery 必須同步 [Error Code Catalog](ERROR_CODES.md)。
 
 ### 10.3 Consent-based update state machine
 

@@ -1,8 +1,8 @@
 # Error Code Catalog
 
-> 狀態：Proposed／Reserved for next release
-> 重要：下列代碼是已核准的未來契約，現有 1.0.0 尚未全面實作，不得對外宣稱目前一定會顯示
-> 最後更新：2026-07-28
+> 狀態：Active／next-release contract
+> 重要：代碼、繁中訊息與 recovery 由中央 registry 管理；發布前仍需完成 Windows 實機驗收。
+> 最後更新：2026-07-29
 
 ## 1. 格式
 
@@ -33,6 +33,13 @@
 
 UI 不顯示 stack trace、Token、完整 URL、DB row、private path 或 signing key。
 
+## 2.1 實作與測試範圍
+
+- `src/errors/registry.js` 是 Local Web 的中央 registry；每個本目錄代碼都有 deterministic registry trigger 與 automated test。
+- Hidden Windows Launcher 對目前版本遺失、runtime 遺失、service failure、health timeout 與開啟本機頁失敗分別顯示 `BT-LCH-001` 至 `BT-LCH-005` 的 native dialog。
+- Local Web API 使用安全 error envelope；未知 exception 一律映射為 `BT-LCH-999`，不把 exception message 當公開契約。
+- 「複製錯誤資訊」與 Issue Form 預填只包含 code、App version、UTC timestamp 與 safe support reference；使用者可在送出前編輯或取消。
+
 ## 3. 安裝與啟動
 
 | Code | 意義 | 使用者處理 |
@@ -45,6 +52,7 @@ UI 不顯示 stack trace、Token、完整 URL、DB row、private path 或 signin
 | `BT-LCH-003` | 背景服務啟動失敗。 | 選「查看服務狀態」，記錄 support reference；若重試仍失敗再回報。 |
 | `BT-LCH-004` | 等待服務健康狀態逾時。 | 等候一分鐘後重試；確認 8787 port 未被其他程式占用。 |
 | `BT-LCH-005` | 服務已啟動，但無法開啟本機管理頁。 | 手動開啟 `http://127.0.0.1:8787`；若仍失敗，匯出診斷並回報。 |
+| `BT-LCH-999` | 未知 internal error。 | 不顯示 exception message；稍後再試，複製低敏感度錯誤資訊後回報。 |
 
 ## 4. 更新與 rollback
 

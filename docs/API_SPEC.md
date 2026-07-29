@@ -37,7 +37,7 @@
 | 400 | 現有實作將 validation、policy、network 及多數 internal error 統一回傳為 400。 |
 | 404 | Route、Product 或 error message 被辨識為 not found。 |
 
-錯誤 body 為 JSON `{"status":"error","error":"<localized message>"}`；語言依使用者設定。
+錯誤 body 為安全 envelope：`{"status":"error","error":{"code":"BT-<AREA>-<NNN>","message":"<localized message>","recovery":[],"appVersion":"…","timestamp":"…","supportRef":"…"}}`。未知 exception 使用 `BT-LCH-999`；不得回傳原始 exception、stack、secret、private URL 或 path。
 
 ## 3. HTML routes
 
@@ -182,9 +182,9 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 - 沒有 idempotency key；部分 mutation 依 DB unique constraints 或業務規則去重。
 - `DELETE /api/sources/:id` 實際為 disable，路由語意容易誤解，未來若變更需先提供 compatibility plan。
 
-## 13. Proposed vNext update／error contract
+## 13. Update error contract
 
-本節是下一公開版本需求，不是 1.0.0 as-built API。
+此 error envelope 已由 Local Web 實作；update confirmation flow 其餘要求仍是下一公開版本需求，不是 1.0.0 as-built API。
 
 ### Error response
 

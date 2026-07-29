@@ -70,7 +70,7 @@ export function layout({
 <meta name="csrf-token" content="${esc(csrfToken)}"><title>${esc(title)}｜${esc(t('app.name'))}</title><style>${CSS}</style></head><body>
 <a class="skip" href="#main">${esc(t('a11y.skip'))}</a><header class="topbar"><div class="shell"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">B</span><span>${esc(t('app.name'))}</span></a><nav aria-label="${esc(t('a11y.primaryNav'))}">${nav(current, t)}</nav><select id="language-picker" class="language-picker" aria-label="${esc(t('language.label'))}"><option value="zh-TW"${t.locale === 'zh-TW' ? ' selected' : ''}>繁體中文</option><option value="ja"${t.locale === 'ja' ? ' selected' : ''}>日本語</option><option value="en"${t.locale === 'en' ? ' selected' : ''}>English</option></select></div></header>
 <main id="main" class="shell">${body}</main><footer><div class="shell">${esc(t('footer.local'))}</div></footer>
-${onboarding ? onboardingDialog(t) : ''}<script nonce="${esc(nonce)}">${commonJs(t)}${onboarding ? onboardingJs(t) : ''}${extraScript}</script></body></html>`;
+${errorDialog()}${onboarding ? onboardingDialog(t) : ''}<script nonce="${esc(nonce)}">${commonJs(t)}${onboarding ? onboardingJs(t) : ''}${extraScript}</script></body></html>`;
 }
 
 export function table(headers, rows, t = createTranslator()) {
@@ -89,9 +89,17 @@ function onboardingDialog(t) {
   </form></div></dialog>`;
 }
 
+function errorDialog() {
+  return `<dialog id="user-error-dialog" aria-labelledby="user-error-title"><div class="dialog-body"><p id="user-error-code" class="eyebrow"></p><h2 id="user-error-title">發生問題</h2><p id="user-error-message"></p><ul id="user-error-recovery"></ul><p class="muted"><span id="user-error-version"></span><br><span id="user-error-time"></span><br><span id="user-error-reference"></span></p><div class="dialog-actions"><button id="user-error-copy" class="btn secondary" type="button">複製錯誤資訊</button><button id="user-error-report" class="btn secondary" type="button">問題回報</button><button id="user-error-close" class="btn" type="button">關閉</button></div></div></dialog>`;
+}
+
 function commonJs(t) { return `
 const csrf=document.querySelector('meta[name="csrf-token"]')?.content||'';
-async function api(path,options={}){const headers={'Content-Type':'application/json','X-CSRF-Token':csrf,...(options.headers||{})};const res=await fetch(path,{...options,headers});let data={};try{data=await res.json()}catch{}if(!res.ok)throw new Error(data.error||${JSON.stringify(t('js.failed'))});return data}
+const errorDialog=document.getElementById('user-error-dialog');let lastUserError=null;
+function reportUrl(error){const query=new URLSearchParams({title:'['+error.code+'] Beyblade Tracker 問題回報',body:'錯誤代碼：'+error.code+'\\nApp version：'+error.appVersion+'\\nSupport reference：'+error.supportRef+'\\n\\n送出前請確認未包含 Token、Webhook、資料庫、完整 log、URL 或路徑。'});return 'https://github.com/yedongsian/beyblade-tracker/issues/new/choose?'+query}
+function showUserError(error){if(!errorDialog||!error?.code)return;lastUserError=error;document.getElementById('user-error-code').textContent=error.code;document.getElementById('user-error-title').textContent=error.title;document.getElementById('user-error-message').textContent=error.message;const recovery=document.getElementById('user-error-recovery');recovery.replaceChildren(...(error.recovery||[]).map(step=>{const item=document.createElement('li');item.textContent=step;return item}));document.getElementById('user-error-version').textContent='App version：'+error.appVersion;document.getElementById('user-error-time').textContent='UTC：'+error.timestamp;document.getElementById('user-error-reference').textContent='Support reference：'+error.supportRef;if(!errorDialog.open)errorDialog.showModal();document.getElementById('user-error-close').focus()}
+document.getElementById('user-error-close')?.addEventListener('click',()=>errorDialog.close());document.getElementById('user-error-copy')?.addEventListener('click',async()=>{if(!lastUserError)return;const text=['錯誤代碼：'+lastUserError.code,'App version：'+lastUserError.appVersion,'UTC：'+lastUserError.timestamp,'Support reference：'+lastUserError.supportRef].join('\\n');try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;document.body.append(area);area.select();document.execCommand('copy');area.remove()}});document.getElementById('user-error-report')?.addEventListener('click',()=>{if(lastUserError)window.open(reportUrl(lastUserError),'_blank','noopener,noreferrer')});
+async function api(path,options={}){const headers={'Content-Type':'application/json','X-CSRF-Token':csrf,...(options.headers||{})};const res=await fetch(path,{...options,headers});let data={};try{data=await res.json()}catch{}if(!res.ok){const detail=data.error&&typeof data.error==='object'?data.error:null;const error=new Error(detail?.message||${JSON.stringify(t('js.failed'))});if(detail){error.detail=detail;showUserError(detail)}throw error}return data}
 document.getElementById('language-picker')?.addEventListener('change',async(event)=>{event.target.disabled=true;try{await api('/api/settings/language',{method:'POST',body:JSON.stringify({language:event.target.value})});location.reload()}catch(error){event.target.disabled=false;alert(error.message)}});
 `; }
 

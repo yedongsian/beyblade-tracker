@@ -141,6 +141,19 @@ test('Windows PowerShell 5.1 launcher uses a UTF-8 BOM for localized text', () =
   assert.match(source, /移機檔/);
 });
 
+test('hidden Windows launcher maps startup failures to safe dialogs with copy and report actions', () => {
+  const launcher = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url));
+  assert.deepEqual([...launcher.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  const source = launcher.subarray(3).toString('utf8');
+  for (const code of ['BT-LCH-001', 'BT-LCH-002', 'BT-LCH-003', 'BT-LCH-004', 'BT-LCH-005', 'BT-LCH-999']) {
+    assert.match(source, new RegExp(code));
+  }
+  assert.match(source, /Show-LauncherError/);
+  assert.match(source, /複製錯誤資訊/);
+  assert.match(source, /問題回報/);
+  assert.doesNotMatch(source, /Show-LauncherError \$_.Exception.Message/);
+});
+
 test('diagnostics require consent and exclude credentials, URLs, logs, and product history', () => {
   const db = new Database(':memory:');
   assert.throws(() => createDiagnosticsBundle(db, {}), /同意/);

@@ -204,6 +204,10 @@ npm run db:restore -- --from backups\manual-YYYYMMDD-HHMMSSZ.db --to C:\test\dat
 
 ## 13. Windows release procedure
 
+### Launcher error verification
+
+以隔離的測試安裝目錄分別製造 `current.json` 缺失、runtime 缺失、service failure 與 health timeout。每個 hidden Launcher 路徑都必須顯示 native dialog，包含固定 `BT-LCH-*` code、繁中 recovery、「複製錯誤資訊」與「問題回報」。複製內容只能含 code、App version、UTC 與 safe support reference；不得附完整 path、stack、Token、Webhook 或 URL。完成時記錄 code 與測試結果，不要保存使用者資料。
+
 ### Build
 
 ```powershell

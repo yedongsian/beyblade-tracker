@@ -8,9 +8,9 @@ import { join } from 'node:path';
 import { Database } from '../src/db/database.js';
 import { setNetworkEnabled } from '../src/core/network-control.js';
 import {
-  UPDATE_CHECK_INTERVAL_MS, deferUpdate, finalizePostUpdateHealth, getUpdateState,
+  UPDATE_CHECK_INTERVAL_MS, deferUpdate, finalizePostUpdateHealth, getPostUpdateHealth, getRollbackStatus, getUpdateState,
   isUpdateCheckDue, launchPreparedUpdate, manifestDigest, prepareConfirmedUpdate, runScheduledUpdateCheck,
-  scheduleRecurringUpdateCheck,
+  scheduleRecurringUpdateCheck, isDeferredUpdate, writeRollbackStatus,
   signedPayload, validateUpdateConfirmation, validateUpdateManifest, checkForUpdate,
 } from '../src/release/update.js';
 
@@ -18,7 +18,7 @@ function signedManifest(privateKey, bytes = Buffer.from('installer fixture')) {
   const manifest = {
     version: '1.1.0', installerUrl: 'https://updates.example.test/BeybladeTracker-1.1.0-Setup.exe',
     sha256: createHash('sha256').update(bytes).digest('hex'), schemaVersion: 10, channel: 'stable',
-    publisher: 'Beyblade Tracker', releaseNotes: '改善更新流程', publishedAt: '2026-07-29T00:00:00.000Z', size: bytes.length,
+    publisher: 'Beyblade Tracker', releaseNotes: '改善更新流程', publishedAt: '2026-07-29T00:00:00.000Z', size: bytes.length, publishReady: true,
   };
   manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
   return manifest;
@@ -67,6 +67,7 @@ test('stable update checks defer only the verified manifest and run no more than
   const deferred = deferUpdate(db, { targetVersion: checked.version, manifestDigest: checked.manifestDigest }, checked, { now: '2026-07-29T00:00:00.000Z' });
   assert.equal(deferred.targetVersion, '1.1.0');
   assert.equal(getUpdateState(db).deferred.manifestDigest, checked.manifestDigest);
+  assert.equal(isDeferredUpdate(getUpdateState(db), checked), true);
   assert.equal(isUpdateCheckDue(db, { now: Date.parse('2026-07-29T00:00:00.000Z') }), true);
   let requests = 0;
   const config = { network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey } };
@@ -96,6 +97,11 @@ test('post-install health failure offers rollback and a healthy target is record
   assert.equal(healthy.status, 'healthy');
   const healthyAgain = finalizePostUpdateHealth(config, { currentVersion: '1.1.0', integrity: 'ok' });
   assert.deepEqual(healthyAgain, healthy);
+  assert.equal(getPostUpdateHealth(config).status, 'healthy');
+  writeRollbackStatus({ update: { rollbackStatusFile: join(root, 'runtime', 'rollback-status.json') } }, { status: 'failed', code: 'BT-UPD-007', completedAt: '2026-07-29T00:00:00.000Z' });
+  assert.deepEqual(getRollbackStatus({ update: { rollbackStatusFile: join(root, 'runtime', 'rollback-status.json') } }), {
+    status: 'failed', code: 'BT-UPD-007', rollbackOffered: false, targetVersion: null, version: null, checkedAt: '2026-07-29T00:00:00.000Z',
+  });
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -121,6 +127,16 @@ test('no update, offline, paused network, hash mismatch, and installer launch fa
   await assert.rejects(launchPreparedUpdate({ installer: 'safe-installer' }, {
     spawnImpl: () => { queueMicrotask(() => failedChild.emit('error', new Error('ENOENT'))); return failedChild; },
   }), /BT-UPD-005/);
+  const installedChild = new EventEmitter();
+  installedChild.unref = () => {};
+  const installed = launchPreparedUpdate({ installer: 'safe-installer' }, {
+    spawnImpl: () => { queueMicrotask(() => { installedChild.emit('spawn'); installedChild.emit('close', 0); }); return installedChild; },
+  });
+  assert.deepEqual(await installed, { launched: true, installed: true });
+  const failedInstaller = new EventEmitter();
+  await assert.rejects(launchPreparedUpdate({ installer: 'safe-installer' }, {
+    spawnImpl: () => { queueMicrotask(() => { failedInstaller.emit('spawn'); failedInstaller.emit('close', 1); }); return failedInstaller; },
+  }), /BT-UPD-005/);
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const manifest = signedManifest(privateKey, Buffer.from('expected installer'));
   const root = mkdtempSync(join(tmpdir(), 'beyblade-update-hash-'));
@@ -131,6 +147,18 @@ test('no update, offline, paused network, hash mismatch, and installer launch fa
     confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest),
   }, { fetchImpl: async () => new Response(Buffer.from('tampered installer')) }), /BT-UPD-004/);
   fileDb.close(); db.close(); rmSync(root, { recursive: true, force: true });
+});
+
+test('unpublished, malformed, and invalid-key manifests return validation errors rather than network errors', async () => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const manifest = signedManifest(privateKey);
+  assert.throws(() => validateUpdateManifest({ ...manifest, publishReady: false }, { publicKey }), /BT-UPD-003/);
+  await assert.rejects(checkForUpdate({ update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey } }, {
+    fetchImpl: async () => new Response('{not-json'),
+  }), /BT-UPD-003/);
+  await assert.rejects(checkForUpdate({ update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey: 'not-a-key' } }, {
+    fetchImpl: async () => new Response(JSON.stringify(manifest)),
+  }), /BT-UPD-003/);
 });
 
 test('recurring scheduler waits five seconds, persists a verified result, then runs every 24 hours', async () => {

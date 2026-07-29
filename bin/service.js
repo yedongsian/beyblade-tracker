@@ -11,7 +11,7 @@ import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 import { projectPaths } from '../src/paths.js';
 import { getNetworkState } from '../src/core/network-control.js';
-import { finalizePostUpdateHealth, scheduleRecurringUpdateCheck } from '../src/release/update.js';
+import { finalizePostUpdateHealth, scheduleRecurringUpdateCheck, writeRollbackStatus } from '../src/release/update.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(ROOT);
@@ -68,11 +68,20 @@ async function finishShutdown(reason) {
   clearOwnPid();
   if (rollbackRequested) {
     const rollback = join(ROOT, 'bin', 'rollback.js');
-    const child = spawn(process.execPath, ['--no-warnings', rollback], {
-      cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: process.env,
-    });
-    child.once('error', () => logger.warn('rollback runner could not start: code=BT-UPD-007'));
-    child.unref();
+    try {
+      writeRollbackStatus(app.config, { status: 'running' });
+      const child = spawn(process.execPath, ['--no-warnings', rollback], {
+        cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: process.env,
+      });
+      await new Promise((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', reject);
+      });
+      child.unref();
+    } catch {
+      writeRollbackStatus(app.config, { status: 'failed', code: 'BT-UPD-007', completedAt: new Date().toISOString() });
+      logger.warn('rollback runner could not start: code=BT-UPD-007');
+    }
   }
   writeStatus({ status: 'stopped', pid: null, stoppedAt: new Date().toISOString(), reason });
   process.exit(0);

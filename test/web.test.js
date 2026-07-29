@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Database } from '../src/db/database.js';
 import { createWebServer } from '../src/web/server.js';
+import { signedPayload } from '../src/release/update.js';
 import { confirmSource, saveOnboardingSettings } from '../src/core/source-manager.js';
 import { processListing } from '../src/core/pipeline.js';
 import { upsertSource } from '../src/core/store.js';
@@ -46,6 +51,7 @@ test('Phase 7 settings UI stores privacy choices and never returns Telegram plai
     assert.match(page, /id="update-card"/);
     assert.match(page, /id="update-defer"/);
     assert.match(page, /id="update-progress"/);
+    assert.match(page, /id="update-rollback"/);
     assert.doesNotMatch(page, /hidden-token|hidden-chat/);
     const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
     const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
@@ -61,6 +67,13 @@ test('Phase 7 settings UI stores privacy choices and never returns Telegram plai
     assert.equal(db.get("SELECT value_json FROM user_settings WHERE key='privacyAccepted'").value_json, 'true');
     assert.equal((await fetch(`${base}/privacy`)).status, 200);
     assert.equal((await fetch(`${base}/source-policy`)).status, 200);
+    db.run(`INSERT INTO user_settings (key,value_json,updated_at) VALUES ('language','"en"','x') ON CONFLICT(key) DO UPDATE SET value_json='"en"'`);
+    const english = await (await fetch(`${base}/settings`)).text();
+    assert.match(english, /Version update/);
+    assert.doesNotMatch(english, /版本更新/);
+    db.run(`UPDATE user_settings SET value_json='"ja"' WHERE key='language'`);
+    const japanese = await (await fetch(`${base}/settings`)).text();
+    assert.match(japanese, /バージョン更新/);
   }, { secretStore, appConfig: { browser: { available: false, downloadUrl: 'https://www.google.com/chrome/' }, update: {} } });
 });
 
@@ -71,8 +84,13 @@ test('update rollback endpoint queues a safe service handoff instead of restorin
       JSON.stringify({ updateAvailable: true, manifest: { version: '1.1.0', publisher: 'Beyblade Tracker', releaseNotes: 'verified', publishedAt: '2026-07-29T00:00:00.000Z', size: 42, manifestDigest: 'safe-digest' } }),
       '2026-07-29T00:00:00.000Z',
     ]);
+    db.run(`INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateDeferred',?,?)`, [
+      JSON.stringify({ targetVersion: '1.1.0', manifestDigest: 'safe-digest' }), '2026-07-29T00:00:00.000Z',
+    ]);
     const page = await (await fetch(`${base}/settings`)).text();
     assert.match(page, /data-scheduled-update="[^"]*1\.1\.0/);
+    assert.match(page, /id="update-apply"[^>]*hidden/);
+    assert.match(page, /id="update-defer"[^>]*hidden/);
     const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
     const result = await fetch(`${base}/api/update/rollback`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token }, body: '{}',
@@ -81,6 +99,53 @@ test('update rollback endpoint queues a safe service handoff instead of restorin
     assert.deepEqual(await result.json(), { accepted: true, message: '服務將停止並執行回滾。' });
   }, { onRollbackRequested: () => { requested += 1; return true; } });
   assert.equal(requested, 1);
+});
+
+test('update apply keeps one download and installer operation in flight', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-update-flight-'));
+  const dbPath = join(root, 'data', 'tracker.db');
+  mkdirSync(join(root, 'data'), { recursive: true });
+  new Database(dbPath).close();
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const expected = Buffer.from('expected installer');
+  const manifest = {
+    version: '1.1.0', installerUrl: 'https://updates.example.test/setup.exe', sha256: createHash('sha256').update(expected).digest('hex'),
+    schemaVersion: 10, channel: 'stable', publisher: 'Beyblade Tracker', releaseNotes: 'verified', publishedAt: '2026-07-29T00:00:00.000Z', size: expected.length, publishReady: true,
+  };
+  manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
+  const originalFetch = globalThis.fetch;
+  let installerRequests = 0;
+  let releaseInstaller;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('http://127.0.0.1:')) return originalFetch(url, options);
+    if (String(url).includes('manifest')) return new Response(JSON.stringify(manifest));
+    installerRequests += 1;
+    return new Promise((resolve) => { releaseInstaller = resolve; });
+  };
+  try {
+    await withServer(async ({ base }) => {
+      const page = await (await fetch(`${base}/settings`)).text();
+      const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+      const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
+      const body = JSON.stringify({ confirmed: true, targetVersion: manifest.version, manifestDigest: createHash('sha256').update(signedPayload(manifest)).digest('hex') });
+      const first = await fetch(`${base}/api/update/apply`, { method: 'POST', headers, body });
+      const firstResult = await first.json();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const second = await fetch(`${base}/api/update/apply`, { method: 'POST', headers, body });
+      const secondResult = await second.json();
+      assert.equal(second.status, 202);
+      assert.equal(secondResult.inProgress, true);
+      assert.equal(secondResult.operationId, firstResult.operationId);
+      assert.equal(installerRequests, 1);
+      releaseInstaller(new Response(Buffer.from('tampered installer'), { headers: { 'content-length': String(expected.length) } }));
+    }, { appConfig: {
+      dbPath, releaseDir: join(root, 'releases'), installRoot: join(root, 'program'), backup: { dir: join(root, 'backups') }, network: { enabled: true },
+      update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey, rollbackFile: join(root, 'runtime', 'rollback.json'), healthFile: join(root, 'runtime', 'health.json') },
+    } });
+  } finally {
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('manual identity, exclusion review, and network controls are available through the local UI', async () => {

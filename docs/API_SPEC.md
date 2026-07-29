@@ -172,9 +172,9 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 | POST | `/api/transfer/import` | `{data:"<base64>"}` | 202 `{staged,restartRequired:true}`；驗證後 staged，稍後要求 restart。 |
 | POST | `/api/diagnostics/export` | — | gzip diagnostics；需使用者 consent，排除 credentials、URLs、logs 與 product history。 |
 | GET | `/api/update` | — | 驗證 manifest 並回傳 update availability。 |
-| GET | `/api/update/status` | — | 回傳最近一次自動或手動檢查的安全摘要，供 Settings UI 顯示已驗證的可用更新；不會發出網路請求。 |
+| GET | `/api/update/status` | — | 回傳最近一次自動或手動檢查的安全摘要、defer、post-update health 與 rollback runner 結果，供 Settings UI 顯示；不會發出網路請求。 |
 | POST | `/api/update/defer` | `{targetVersion,manifestDigest}` | 保存該已驗證版本的 defer 選擇；不下載。 |
-| POST | `/api/update/apply` | `{confirmed:true,targetVersion,manifestDigest}` | 202；確認值必須匹配當前 signed manifest，才開始下載、驗證、備份與 installer launch。 |
+| POST | `/api/update/apply` | `{confirmed:true,targetVersion,manifestDigest}` | 202；確認值必須匹配當前 signed manifest，才開始下載、驗證、備份與 installer launch；同時間只允許一個 operation。 |
 | GET | `/api/update/progress/:operationId` | — | 只回傳本機 operation 的安全 phase、bytes progress、target version 或公開錯誤代碼。 |
 | POST | `/api/update/rollback` | `{}` | 回傳 `202` 後由服務安全停機，再由外部 rollback runner 還原 update 前 backup 與切回前一個 version pointer；不會在仍開啟 DB 的 Web process 中直接還原。 |
 

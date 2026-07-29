@@ -255,6 +255,7 @@ npm run update:rollback
 5. 新版服務啟動後檢查 target version 與 SQLite integrity。健康結果一旦寫入即保持不變；失敗顯示 `BT-UPD-006`，並依既有 rollback procedure 回復。
 6. Web rollback 會先接受請求並安全停止服務，之後由外部 rollback runner 還原資料與 version pointer；不得在仍開啟 Tracker DB 的 Web process 中直接執行還原。
 7. 不在 Ticket、Issue 或 log 分享 manifest URL、backup 位置、簽章資料或完整診斷資料。
+8. 若 Settings 顯示 `BT-UPD-006`，使用者可選擇回滾；rollback runner 的結果會保存在安全狀態摘要中。若結果為 `BT-UPD-007`，重新開啟 Tracker 後查看 Settings，再依既有 backup procedure 處理。
 
 ## 15. GitHub Support operations
 

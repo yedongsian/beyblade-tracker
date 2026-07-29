@@ -35,7 +35,7 @@ import { assertNetworkEnabled, getNetworkState, setNetworkEnabled } from '../cor
 import { TelegramNotifier } from '../notify/telegram.js';
 import { createTransferBundle, stageTransferImport } from '../maintenance/transfer.js';
 import {
-  checkForUpdate, deferUpdate, getUpdateState, launchPreparedUpdate,
+  checkForUpdate, deferUpdate, getPostUpdateHealth, getRollbackStatus, getUpdateState, isDeferredUpdate, launchPreparedUpdate,
   prepareConfirmedUpdate, recordUpdateCheck, UpdateError, validateUpdateConfirmation,
 } from '../release/update.js';
 import { releaseInfo } from '../release/version.js';
@@ -188,8 +188,12 @@ function settingsPage(db, base) {
   const browser = base.appConfig.browser || { available: false, downloadUrl: 'https://www.google.com/chrome/' };
   const updateState = getUpdateState(db);
   const scheduledUpdate = updateState.latestResult?.updateAvailable ? updateState.latestResult : null;
+  const updateDeferred = isDeferredUpdate(updateState, scheduledUpdate?.manifest);
+  const updateHealth = getPostUpdateHealth(base.appConfig);
+  const rollbackStatus = getRollbackStatus(base.appConfig);
+  const updateUiState = { deferred: updateDeferred, health: updateHealth, rollback: rollbackStatus };
   const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('settings.eyebrow'))}</p><h1>${esc(t('settings.title'))}</h1><p>${esc(t('settings.intro'))}</p></div></div><p id="settings-status" class="status" role="status" aria-live="polite"></p>
-  <div class="grid two-col"><section class="card"><h2>${esc(t('settings.releaseTitle'))}</h2><p>${esc(t('settings.version'))}：${esc(release.version)} · ${esc(release.channel)}</p><p>${esc(t('settings.browser'))}：${esc(browser.available ? browser.name : t('settings.browserMissing'))}</p>${browser.available ? '' : `<p><a href="${esc(browser.downloadUrl)}" target="_blank" rel="noopener noreferrer">${esc(t('settings.downloadChrome'))}</a></p>`}<section id="update-card" class="notice" aria-live="polite" data-scheduled-update="${esc(JSON.stringify(scheduledUpdate))}"><strong>版本更新</strong><p id="update-details">${scheduledUpdate ? `可更新至 ${esc(scheduledUpdate.manifest.version)}。` : release.updateManifestUrl ? '尚未檢查更新。' : '正式更新來源尚未設定。'}</p><progress id="update-progress" max="100" value="0" hidden></progress><p class="hint">${updateState.deferred ? `已選擇稍後更新 ${esc(updateState.deferred.targetVersion)}。` : '檢查不會下載；只有確認後才會下載並安裝。'}</p></section><div class="actions" style="justify-content:flex-start"><button id="update-check" class="btn secondary" type="button"${release.updateManifestUrl ? '' : ' disabled'}>${esc(t('settings.checkUpdate'))}</button><button id="update-defer" class="btn secondary" type="button"${scheduledUpdate ? '' : ' hidden'}>稍後更新</button><button id="update-apply" class="btn" type="button"${scheduledUpdate ? '' : ' hidden'}>${esc(t('settings.applyUpdate'))}</button></div></section>
+  <div class="grid two-col"><section class="card"><h2>${esc(t('settings.releaseTitle'))}</h2><p>${esc(t('settings.version'))}：${esc(release.version)} · ${esc(release.channel)}</p><p>${esc(t('settings.browser'))}：${esc(browser.available ? browser.name : t('settings.browserMissing'))}</p>${browser.available ? '' : `<p><a href="${esc(browser.downloadUrl)}" target="_blank" rel="noopener noreferrer">${esc(t('settings.downloadChrome'))}</a></p>`}<section id="update-card" class="notice" aria-live="polite" data-scheduled-update="${esc(JSON.stringify(scheduledUpdate))}" data-update-state="${esc(JSON.stringify(updateUiState))}"><strong>${esc(t('settings.updateTitle'))}</strong><p id="update-details">${scheduledUpdate ? esc(t(updateDeferred ? 'settings.updateDeferred' : 'settings.updateAvailable', { version: scheduledUpdate.manifest.version })) : esc(release.updateManifestUrl ? t('settings.updateNotChecked') : t('settings.updateUnavailable'))}</p><progress id="update-progress" max="100" value="0" hidden></progress><p id="update-health" class="hint">${updateHealth?.rollbackOffered ? esc(t('settings.updateHealthFailed', { code: updateHealth.code })) : rollbackStatus?.status === 'failed' ? esc(t('settings.rollbackFailed', { code: rollbackStatus.code || 'BT-UPD-007' })) : ''}</p><p class="hint">${esc(t('settings.updateHint'))}</p></section><div class="actions" style="justify-content:flex-start"><button id="update-check" class="btn secondary" type="button"${release.updateManifestUrl ? '' : ' disabled'}>${esc(t('settings.checkUpdate'))}</button><button id="update-defer" class="btn secondary" type="button"${scheduledUpdate && !updateDeferred ? '' : ' hidden'}>${esc(t('common.defer'))}</button><button id="update-apply" class="btn" type="button"${scheduledUpdate && !updateDeferred ? '' : ' hidden'}>${esc(t('settings.applyUpdate'))}</button><button id="update-rollback" class="btn danger" type="button"${updateHealth?.rollbackOffered ? '' : ' hidden'}>${esc(t('settings.rollback'))}</button></div></section>
   <section class="card"><h2>${esc(t('settings.telegramTitle'))}</h2><p>${esc(t('settings.telegramSteps'))} <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">BotFather</a></p><p><span class="pill ${secrets.telegram.configured ? 'good' : 'warn'}">${esc(t(secrets.telegram.configured ? 'settings.configured' : 'settings.notConfigured'))}</span> · ${esc(secrets.provider)}</p><form id="telegram-form"><div class="field"><label for="telegram-token">${esc(t('settings.botToken'))}</label><input id="telegram-token" name="token" type="password" autocomplete="off" required></div><div class="field"><label for="telegram-chat-id">${esc(t('settings.chatId'))}</label><input id="telegram-chat-id" name="chatId" autocomplete="off" required></div><div class="actions" style="justify-content:flex-start"><button class="btn" type="submit">${esc(t('settings.saveAndTest'))}</button><button id="telegram-test" class="btn secondary" type="button"${secrets.telegram.configured ? '' : ' disabled'}>${esc(t('settings.test'))}</button><button id="telegram-clear" class="btn danger" type="button"${secrets.telegram.configured ? '' : ' disabled'}>${esc(t('settings.clear'))}</button></div></form></section></div>
   <div class="grid two-col" style="margin-top:1rem"><section class="card"><h2>${esc(t('settings.transferTitle'))}</h2><p>${esc(t('settings.transferHint'))}</p><div class="actions" style="justify-content:flex-start"><button id="transfer-export" class="btn" type="button">${esc(t('settings.export'))}</button><label class="btn secondary" for="transfer-import">${esc(t('settings.import'))}</label><input id="transfer-import" type="file" accept=".beyblade-transfer" hidden></div></section>
   <section class="card"><h2>${esc(t('settings.privacyTitle'))}</h2><p><a href="/privacy">${esc(t('settings.privacyLink'))}</a> · <a href="/source-policy">${esc(t('settings.sourcePolicyLink'))}</a></p><form id="privacy-form"><label style="font-weight:400"><input style="width:auto" type="checkbox" name="privacyAccepted"${settings.privacyAccepted ? ' checked' : ''}> ${esc(t('settings.acceptPrivacy'))}</label><label style="font-weight:400"><input style="width:auto" type="checkbox" name="sourcePolicyAccepted"${settings.sourcePolicyAccepted ? ' checked' : ''}> ${esc(t('settings.acceptSourcePolicy'))}</label><label style="font-weight:400"><input style="width:auto" type="checkbox" name="diagnosticsConsent"${settings.diagnosticsConsent ? ' checked' : ''}> ${esc(t('settings.diagnosticsConsent'))}</label><div class="actions" style="justify-content:flex-start"><button class="btn secondary" type="submit">${esc(t('common.save'))}</button><button id="diagnostics-export" class="btn secondary" type="button"${settings.diagnosticsConsent ? '' : ' disabled'}>${esc(t('settings.exportDiagnostics'))}</button></div></form></section></div>`;
@@ -530,10 +534,13 @@ export function createWebServer(db, options = {}) {
         } finally {
           if (appConfig.update?.manifestUrl) recordUpdateCheck(db, update);
         }
-        out = json({ ...getUpdateState(db).latestResult, state: getUpdateState(db) });
+        const state = getUpdateState(db);
+        out = json({ ...state.latestResult, state, deferred: isDeferredUpdate(state, state.latestResult?.manifest),
+          health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
       } else if (req.method === 'GET' && url.pathname === '/api/update/status') {
         const state = getUpdateState(db);
-        out = json({ ...(state.latestResult || { enabled: Boolean(appConfig.update?.manifestUrl), updateAvailable: false }), state });
+        out = json({ ...(state.latestResult || { enabled: Boolean(appConfig.update?.manifestUrl), updateAvailable: false }), state,
+          deferred: isDeferredUpdate(state, state.latestResult?.manifest), health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
       } else if (req.method === 'POST' && url.pathname === '/api/update/defer') {
         assertNetworkEnabled(db, appConfig);
         const confirmation = await readJson(req);
@@ -546,6 +553,13 @@ export function createWebServer(db, options = {}) {
         const update = await checkForUpdate(appConfig);
         if (!update.updateAvailable) throw new UpdateError('BT-UPD-005', '目前已是最新版本。');
         validateUpdateConfirmation(confirmation, update.manifest);
+        const active = [...updateOperations.values()].find((operation) => !['failed', 'completed'].includes(operation.phase));
+        if (active) {
+          out = json({ operationId: active.id, targetVersion: active.targetVersion, inProgress: true }, 202);
+          res.writeHead(out.status, { 'Content-Type': out.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data: https:; frame-ancestors 'none'` });
+          res.end(out.body);
+          return;
+        }
         const id = randomBytes(18).toString('base64url');
         const operation = { id, targetVersion: update.manifest.version, phase: 'downloading', received: 0, total: Number(update.manifest.size), error: null };
         updateOperations.set(id, operation);
@@ -556,7 +570,7 @@ export function createWebServer(db, options = {}) {
             });
             operation.phase = 'installing';
             await launchPreparedUpdate(prepared);
-            operation.phase = 'launched';
+            operation.phase = 'completed';
           } catch (error) {
             operation.phase = 'failed';
             operation.error = error instanceof UpdateError ? error.message : 'BT-UPD-005：更新安裝失敗。';

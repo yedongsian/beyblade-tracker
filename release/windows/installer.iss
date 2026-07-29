@@ -50,7 +50,7 @@ Name: "{group}\服務狀態"; Filename: "powershell.exe"; Parameters: "-NoProfil
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "BeybladeTracker"; ValueData: """{sys}\wscript.exe"" ""{app}\launcher.vbs"" start"; Tasks: startup; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" restart"; Description: "啟動 Beyblade Tracker"; Flags: postinstall nowait skipifsilent
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" restart"; Description: "啟動 Beyblade Tracker"; Flags: nowait runhidden
 
 [UninstallRun]
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" stop"; RunOnceId: "StopTracker"; Flags: runhidden waituntilterminated

@@ -69,7 +69,7 @@ test('update manifest requires valid semantic version, HTTPS, hash, and Ed25519 
   const manifest = {
     version: '1.1.0', installerUrl: 'https://updates.example.test/BeybladeTracker-1.1.0-Setup.exe',
     sha256: 'a'.repeat(64), schemaVersion: 10, channel: 'stable', publisher: 'Beyblade Tracker',
-    releaseNotes: 'Test release notes', publishedAt: '2026-07-29T00:00:00.000Z', size: 1024,
+    releaseNotes: 'Test release notes', publishedAt: '2026-07-29T00:00:00.000Z', size: 1024, publishReady: true,
   };
   manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
   assert.equal(validateUpdateManifest(manifest, { publicKey }).updateAvailable, true);
@@ -124,6 +124,10 @@ test('Windows installer declares per-user install, startup task, shortcuts, and 
   assert.match(installer, /Name: "startup"/);
   assert.match(installer, /Microsoft\\Windows\\CurrentVersion\\Run/);
   assert.match(installer, /launcher\.vbs.*restart/);
+  assert.match(installer, /Flags: nowait runhidden/);
+  assert.doesNotMatch(installer, /skipifsilent/);
+  const releaseBuilder = readFileSync(new URL('../scripts/build-windows-release.js', import.meta.url), 'utf8');
+  assert.ok(releaseBuilder.indexOf('manifest.publishReady = true') < releaseBuilder.indexOf('manifest.signature = sign'));
   assert.match(installer, /PreserveUserData/);
   assert.match(installer, /\[UninstallDelete\][\s\S]*\{app\}\\current\.json/);
   assert.match(installer, /google\.com\/chrome/);

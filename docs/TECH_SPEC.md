@@ -210,11 +210,13 @@ stateDiagram-v2
 
 - Check 可自動，download／install 不可在沒有明確 confirmation 的情況下開始。
 - Stable channel 預設在啟動後延遲 5 秒檢查，並在服務持續運作時每 24 小時再次檢查；manual check 不受此顯示頻率限制。
+- Manifest 必須是 signed stable 且 `publishReady=true`；格式、版本、簽章與公鑰錯誤固定回報 `BT-UPD-003`，不會被歸類為網路錯誤。
 - Update card 顯示 current／target version、release notes、download size、publisher 與稍後／安裝選項。
 - Confirmation 綁定 manifest digest／target version，避免 manifest 在確認後被替換。
 - 開始安裝前建立 consistent DB backup；post-update 執行 schema、health、integrity check；失敗時提供 rollback。
 - `NETWORK_ENABLED=0` 時不檢查、不下載；使用者選擇稍後不視為同意。
 - 實作會保存最後一次驗證結果的安全摘要，Settings UI 會提示可用更新；資料庫 network pause 與環境 network 設定都會阻止自動檢查。自動檢查從不下載檔案。
+- Silent installer 會完成安裝後重啟 Tracker；安裝完成、post-update health、rollback runner 成功或失敗都以安全狀態摘要提供 UI 顯示。defer 對相同 target version／manifest digest 持續有效，直到 manifest 變更或使用者明確套用。
 - Manifest 必須是 signed stable channel，並包含 publisher、release notes、published time、size、HTTPS URL 與 SHA-256；confirmation 綁定 target version 與 manifest digest。
 - 使用者按「稍後更新」會保存該已驗證 manifest 的 defer 紀錄；下載進度只在 loopback UI 顯示。
 - 安裝前才建立 consistent backup 與 rollback record。更新後服務啟動會驗證 target version 與 SQLite integrity；失敗時以 `BT-UPD-006` 提供 rollback。

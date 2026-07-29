@@ -83,8 +83,8 @@ const manifest = {
 };
 const keyPath = process.env.RELEASE_SIGNING_KEY_FILE;
 if (installer && baseUrl && keyPath) {
-  manifest.signature = sign(null, signedPayload(manifest), readFileSync(keyPath, 'utf8')).toString('base64');
   manifest.publishReady = true;
+  manifest.signature = sign(null, signedPayload(manifest), readFileSync(keyPath, 'utf8')).toString('base64');
 }
 writeFileSync(join(DIST, 'release-manifest.json'), JSON.stringify(manifest, null, 2));
 

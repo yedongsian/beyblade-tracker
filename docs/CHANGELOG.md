@@ -11,6 +11,7 @@
 - 新增 BT-UX-002 中央錯誤代碼 registry、safe Local Web error envelope 與 hidden Launcher native dialog；未知 internal error 使用 `BT-LCH-999`，不公開 exception message、stack、secret、private URL 或 path。
 - BT-UPD-001：更新只接受 signed stable manifest，並要求使用者以 target version 與 manifest digest 明確確認後，才下載、備份或啟動 installer；加入 defer、24h cadence、進度、post-update health 與 rollback flow。
 - BT-UPD-001 follow-up：修正持續服務的 recurring update check、資料庫 network pause、冪等 health marker、非同步 installer spawn failure，以及 Web rollback 的安全停機 handoff。
+- BT-UPD-001 follow-up：silent installer 現在完成後重啟服務；補齊 defer、single-flight、health／rollback 結果 UI、`publishReady` 驗證、manifest error mapping 與英日介面文字。
 
 ### Documentation
 

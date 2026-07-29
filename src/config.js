@@ -94,6 +94,7 @@ export function getConfig() {
       publicKey: process.env.UPDATE_PUBLIC_KEY || '',
       currentFile: join(paths.installRoot, 'current.json'),
       rollbackFile: paths.rollbackFile,
+      rollbackStatusFile: paths.rollbackStatusFile,
       healthFile: paths.updateHealthFile,
     },
     backup: {

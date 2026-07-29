@@ -50,6 +50,7 @@ export function signedPayload(manifest) {
     releaseNotes: manifest.releaseNotes,
     publishedAt: manifest.publishedAt,
     size: Number(manifest.size),
+    publishReady: manifest.publishReady === true,
   }));
 }
 
@@ -58,8 +59,10 @@ export function manifestDigest(manifest) {
 }
 
 export function validateUpdateManifest(manifest, { publicKey, requireSignature = true } = {}) {
-  parseVersion(manifest?.version);
+  try { parseVersion(manifest?.version); }
+  catch { throw updateError('BT-UPD-003', '更新 manifest 的版本無效。'); }
   if (manifest.channel !== 'stable') throw updateError('BT-UPD-003', '只接受 stable update channel。');
+  if (manifest.publishReady !== true) throw updateError('BT-UPD-003', '更新 manifest 尚未標示為可發布。');
   if (!/^https:\/\//i.test(manifest.installerUrl || '')) throw updateError('BT-UPD-003', '更新安裝器必須使用 HTTPS。');
   if (!/^[a-f0-9]{64}$/i.test(manifest.sha256 || '')) throw updateError('BT-UPD-003', '更新 manifest 缺少有效 SHA-256。');
   if (!Number.isInteger(Number(manifest.schemaVersion)) || Number(manifest.schemaVersion) < 1) {
@@ -77,7 +80,9 @@ export function validateUpdateManifest(manifest, { publicKey, requireSignature =
   }
   if (requireSignature) {
     if (!publicKey || !manifest.signature) throw updateError('BT-UPD-003', '遠端更新未設定簽章公鑰或 manifest 簽章。');
-    const valid = verifySignature(null, signedPayload(manifest), publicKey, Buffer.from(manifest.signature, 'base64'));
+    let valid = false;
+    try { valid = verifySignature(null, signedPayload(manifest), publicKey, Buffer.from(manifest.signature, 'base64')); }
+    catch { throw updateError('BT-UPD-003', '更新 manifest 簽章或公鑰無效。'); }
     if (!valid) throw updateError('BT-UPD-003', '更新 manifest 簽章驗證失敗。');
   }
   return { ...manifest, manifestDigest: manifestDigest(manifest), updateAvailable: compareVersions(manifest.version, APP_VERSION) > 0 };
@@ -86,15 +91,15 @@ export function validateUpdateManifest(manifest, { publicKey, requireSignature =
 export async function checkForUpdate(config, { fetchImpl = fetch } = {}) {
   if (!config.update?.manifestUrl) return { enabled: false, currentVersion: APP_VERSION, updateAvailable: false };
   if (!/^https:\/\//i.test(config.update.manifestUrl)) throw updateError('BT-UPD-003', '更新 manifest 必須使用 HTTPS。');
-  try {
-    const response = await fetchImpl(config.update.manifestUrl, { signal: AbortSignal.timeout(15000) });
-    if (!response.ok) throw updateError('BT-UPD-002', `無法取得更新資訊（HTTP ${response.status}）。`);
-    const manifest = validateUpdateManifest(await response.json(), { publicKey: config.update.publicKey });
-    return { enabled: true, currentVersion: APP_VERSION, manifest, updateAvailable: manifest.updateAvailable };
-  } catch (error) {
-    if (error instanceof UpdateError) throw error;
-    throw updateError('BT-UPD-002', '無法取得更新資訊，請稍後再試。');
-  }
+  let response;
+  try { response = await fetchImpl(config.update.manifestUrl, { signal: AbortSignal.timeout(15000) }); }
+  catch { throw updateError('BT-UPD-002', '無法取得更新資訊，請稍後再試。'); }
+  if (!response.ok) throw updateError('BT-UPD-002', `無法取得更新資訊（HTTP ${response.status}）。`);
+  let manifest;
+  try { manifest = await response.json(); }
+  catch { throw updateError('BT-UPD-003', '更新 manifest 格式無效。'); }
+  const checked = validateUpdateManifest(manifest, { publicKey: config.update.publicKey });
+  return { enabled: true, currentVersion: APP_VERSION, manifest: checked, updateAvailable: checked.updateAvailable };
 }
 
 export async function downloadInstaller(manifest, destination, { fetchImpl = fetch, onProgress } = {}) {
@@ -178,6 +183,45 @@ export function finalizePostUpdateHealth(config, { currentVersion = APP_VERSION,
   return result;
 }
 
+function readUpdateStatus(path, failureCode) {
+  if (!path || !existsSync(path)) return null;
+  try {
+    const record = JSON.parse(readFileSync(path, 'utf8'));
+    return {
+      status: record.status === 'succeeded' ? 'succeeded' : record.status === 'healthy' ? 'healthy' : record.status === 'failed' ? 'failed' : 'running',
+      code: record.code || null, rollbackOffered: record.rollbackOffered === true,
+      targetVersion: record.targetVersion || null, version: record.version || null,
+      checkedAt: record.checkedAt || record.completedAt || null,
+    };
+  } catch {
+    return { status: 'failed', code: failureCode, rollbackOffered: failureCode === 'BT-UPD-006' };
+  }
+}
+
+export function getPostUpdateHealth(config) {
+  return readUpdateStatus(config.update?.healthFile, 'BT-UPD-006');
+}
+
+export function getRollbackStatus(config) {
+  return readUpdateStatus(config.update?.rollbackStatusFile, 'BT-UPD-007');
+}
+
+export function writeRollbackStatus(config, patch) {
+  const file = config.update?.rollbackStatusFile;
+  if (!file) return null;
+  mkdirSync(dirname(file), { recursive: true });
+  const safe = {
+    status: patch.status === 'succeeded' ? 'succeeded' : patch.status === 'failed' ? 'failed' : 'running',
+    code: patch.code || null, version: patch.version || null,
+    completedAt: patch.completedAt || null,
+  };
+  const temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, JSON.stringify(safe, null, 2));
+  rmSync(file, { force: true });
+  renameSync(temp, file);
+  return safe;
+}
+
 export function validateUpdateConfirmation(confirmation, manifest) {
   const checked = validateUpdateManifest(manifest, { publicKey: null, requireSignature: false });
   if (confirmation?.confirmed !== true) throw updateError('BT-UPD-005', '必須明確確認後才能下載並安裝更新。');
@@ -250,6 +294,11 @@ export function clearDeferredUpdate(db, { now = new Date().toISOString() } = {})
   writeSetting(db, 'updateDeferred', null, now);
 }
 
+export function isDeferredUpdate(state, manifest) {
+  const deferred = state?.deferred;
+  return Boolean(deferred && manifest && deferred.targetVersion === manifest.version && deferred.manifestDigest === manifest.manifestDigest);
+}
+
 export async function prepareConfirmedUpdate(db, config, manifest, confirmation, options = {}) {
   const checked = validateUpdateConfirmation(confirmation, manifest);
   const prepared = await prepareUpdate(config, checked, options);
@@ -297,13 +346,12 @@ export async function launchPreparedUpdate(prepared, { spawnImpl = spawn } = {})
   let child;
   try {
     child = spawnImpl(prepared.installer, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'], {
-      detached: true, windowsHide: true, stdio: 'ignore',
+      detached: false, windowsHide: true, stdio: 'ignore',
     });
   } catch {
     throw updateError('BT-UPD-005', '已驗證的更新安裝器無法啟動。');
   }
   if (!child?.once) {
-    child?.unref?.();
     return { launched: true };
   }
   return new Promise((resolve, reject) => {
@@ -311,8 +359,10 @@ export async function launchPreparedUpdate(prepared, { spawnImpl = spawn } = {})
     child.once('error', fail);
     child.once('spawn', () => {
       child.off?.('error', fail);
-      child.unref?.();
-      resolve({ launched: true });
+      child.once('close', (code) => {
+        if (code === 0) resolve({ launched: true, installed: true });
+        else reject(updateError('BT-UPD-005', '更新安裝器未能完成。'));
+      });
     });
   });
 }

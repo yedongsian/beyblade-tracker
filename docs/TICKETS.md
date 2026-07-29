@@ -1,7 +1,7 @@
 # Delivery Tickets／Backlog
 
 > 狀態：Active
-> 最後更新：2026-07-28
+> 最後更新：2026-07-29
 > 規則：本檔是正式 backlog；Roadmap 只保存優先順序與里程碑。
 
 ## 1. 工作流程
@@ -139,6 +139,8 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 > Follow-up verification (2026-07-29): defer can be reversed; active apply controls stay hidden; temporary scheduled failure preserves the verified manifest and retries in five minutes; each new apply clears stale rollback status; rollback success requires the previous service to start and `BT-UPD-007` overrides stale health UI. Regression coverage added. Status remains In Review pending release-channel and clean-Windows-VM update/rollback acceptance.
 
 > Remaining-fixes verification (2026-07-29): rollback status is now retained through failed preparation and cleared only after all preparation artifacts succeed. Manual check failures preserve the verified state and timestamp. Scheduling uses remaining delay and safe active-operation summaries allow Settings reload recovery; apply controls are guarded and polling is non-overlapping. Status remains In Review pending external release-channel and clean-Windows-VM acceptance.
+
+> Packaged Windows verification (2026-07-29): rebuilt installer passed isolated silent install, service start, packaged health, synchronous stop, uninstall, and user-data preservation E2E. Silent setup does not show the optional browser prompt, while service restart remains enabled. Status remains In Review: this is not a substitute for signed release-channel and clean-Windows-VM upgrade/rollback acceptance.
 
 - Priority：P0
 - Status：In Review

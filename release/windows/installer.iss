@@ -53,7 +53,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" restart"; Description: "啟動 Beyblade Tracker"; Flags: nowait runhidden
 
 [UninstallRun]
-Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" stop"; RunOnceId: "StopTracker"; Flags: runhidden waituntilterminated
+Filename: "{sys}\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\launcher.ps1"" -Action stop"; RunOnceId: "StopTracker"; Flags: runhidden waituntilterminated
 
 [UninstallDelete]
 Type: files; Name: "{app}\current.json"
@@ -75,7 +75,7 @@ var
   Choice, ErrorCode: Integer;
 begin
   Result := True;
-  if (CurPageID = wpReady) and (not ChromeInstalled) then begin
+  if (CurPageID = wpReady) and (not WizardSilent) and (not ChromeInstalled) then begin
     Choice := MsgBox('找不到 Google Chrome。一般 HTTP 商店仍可使用，但需要瀏覽器的來源將無法掃描。是否開啟官方 Chrome 下載頁？', mbConfirmation, MB_YESNO);
     if Choice = IDYES then ShellExec('open', 'https://www.google.com/chrome/', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
   end;

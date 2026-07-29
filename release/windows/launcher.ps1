@@ -54,7 +54,11 @@ if ([string]::IsNullOrWhiteSpace($version)) { Throw-LauncherError 'BT-LCH-001' }
 $appRoot = Join-Path (Join-Path $installRoot 'versions') $version
 $node = Join-Path $appRoot 'runtime\node.exe'
 if (-not (Test-Path -LiteralPath $node)) { Throw-LauncherError 'BT-LCH-002' }
-$userRoot = Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
+$userRoot = if ([string]::IsNullOrWhiteSpace($env:BEYBLADE_USER_ROOT)) {
+  Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
+} else {
+  $env:BEYBLADE_USER_ROOT
+}
 $env:BEYBLADE_INSTALL_ROOT = $installRoot
 $env:BEYBLADE_APP_ROOT = $appRoot
 $env:BEYBLADE_USER_ROOT = $userRoot

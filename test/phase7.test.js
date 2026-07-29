@@ -126,6 +126,11 @@ test('Windows installer declares per-user install, startup task, shortcuts, and 
   assert.match(installer, /launcher\.vbs.*restart/);
   assert.match(installer, /Flags: nowait runhidden/);
   assert.doesNotMatch(installer, /skipifsilent/);
+  assert.match(installer, /not WizardSilent/);
+  assert.match(installer, /\[UninstallRun\][\s\S]*powershell\.exe[\s\S]*launcher\.ps1[\s\S]*waituntilterminated/);
+  const e2e = readFileSync(new URL('../scripts/phase7-e2e.ps1', import.meta.url), 'utf8');
+  assert.match(e2e, /function Wait-E2ePathAbsent/);
+  assert.match(e2e, /Wait-E2ePathAbsent \$installRoot 'Uninstaller'/);
   const releaseBuilder = readFileSync(new URL('../scripts/build-windows-release.js', import.meta.url), 'utf8');
   assert.ok(releaseBuilder.indexOf('manifest.publishReady = true') < releaseBuilder.indexOf('manifest.signature = sign'));
   assert.match(installer, /PreserveUserData/);

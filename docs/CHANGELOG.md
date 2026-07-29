@@ -6,6 +6,7 @@
 
 - BT-UPD-001 follow-up: reversible defer, stable in-progress update controls, retry without discarding a verified manifest, rollback status reset per apply, and service-start-confirmed rollback status with `BT-UPD-007` priority.
 - BT-UPD-001 remaining fixes: retain rollback failure evidence until update preparation completes, preserve verified update state on manual-check failure, schedule from the remaining cadence, and expose only safe active-operation progress so Settings can resume after reload without overlapping apply or poll requests.
+- BT-UPD-001 Windows packaging hardening: silent setup suppresses the optional browser prompt without suppressing service restart; uninstall waits for the launcher to stop the service; isolated packaged E2E now verifies install, health, uninstall, and user-data preservation with bounded Inno Setup cleanup.
 
 ### Fixed
 

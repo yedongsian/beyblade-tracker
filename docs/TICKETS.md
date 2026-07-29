@@ -148,7 +148,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 更新前 consistent backup；使用者資料及 settings 保留。
   - 只接受 HTTPS、valid manifest／hash／publisher；failure 顯示 `BT-UPD-*`。
   - Clean VM 由 1.0.0 升至測試版並可 rollback。
-- Verification evidence（2026-07-29）：已實作 signed stable manifest、5 秒啟動延遲與 24h cadence、defer、target／manifest digest confirmation、下載進度、SHA-256 驗證、backup、rollback record、post-update integrity health marker 與 rollback API。已新增 consent／defer／cadence／signature／hash／post-health automated tests。仍待正式 HTTPS release channel 與 clean Windows VM 升級／rollback 實機驗收；因此不可標記 Done。
+- Verification evidence（2026-07-29）：已實作 signed stable manifest、5 秒啟動延遲與持續服務 24h cadence、資料庫 network pause、保存的可用更新 UI 提示、defer、target／manifest digest confirmation、下載進度、SHA-256 驗證、backup、rollback record、冪等 post-update integrity health marker，以及先安全停機再交由外部 runner 執行的 rollback handoff。已新增 consent／defer／cadence／pause／signature／hash／post-health／async launch／rollback handoff automated tests。仍待正式 HTTPS release channel 與 clean Windows VM 升級／rollback 實機驗收；因此不可標記 Done。
 
 ### BT-SUP-001 — 建立公開 GitHub Issues 與繁中問題回報表單
 

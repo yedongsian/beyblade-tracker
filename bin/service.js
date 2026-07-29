@@ -11,7 +11,7 @@ import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 import { projectPaths } from '../src/paths.js';
 import { getNetworkState } from '../src/core/network-control.js';
-import { finalizePostUpdateHealth, UPDATE_STARTUP_DELAY_MS, runScheduledUpdateCheck } from '../src/release/update.js';
+import { finalizePostUpdateHealth, scheduleRecurringUpdateCheck } from '../src/release/update.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(ROOT);
@@ -30,7 +30,8 @@ let stopPoll;
 let tickInProgress = false;
 let stopping = false;
 let finishing = false;
-let updateCheckTimer;
+let stopUpdateChecks;
+let rollbackRequested = false;
 const startedAt = new Date().toISOString();
 
 function writeStatus(patch) {
@@ -56,7 +57,7 @@ async function finishShutdown(reason) {
   if (finishing) return;
   finishing = true;
   if (nextTimer) clearTimeout(nextTimer);
-  if (updateCheckTimer) clearTimeout(updateCheckTimer);
+  stopUpdateChecks?.();
   if (stopPoll) clearInterval(stopPoll);
   logger.info(`service shutting down: ${reason}`);
   try {
@@ -65,6 +66,14 @@ async function finishShutdown(reason) {
   try { app?.db.close(); } catch { /* best effort */ }
   try { unlinkSync(STOP_FILE); } catch { /* absent */ }
   clearOwnPid();
+  if (rollbackRequested) {
+    const rollback = join(ROOT, 'bin', 'rollback.js');
+    const child = spawn(process.execPath, ['--no-warnings', rollback], {
+      cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: process.env,
+    });
+    child.once('error', () => logger.warn('rollback runner could not start: code=BT-UPD-007'));
+    child.unref();
+  }
   writeStatus({ status: 'stopped', pid: null, stoppedAt: new Date().toISOString(), reason });
   process.exit(0);
 }
@@ -98,6 +107,13 @@ function requestRestart(reason) {
     cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: process.env,
   });
   child.unref();
+}
+
+function requestRollback() {
+  if (stopping) return false;
+  rollbackRequested = true;
+  requestStop('update rollback requested');
+  return true;
 }
 
 async function tick() {
@@ -135,16 +151,19 @@ async function main() {
       onMonitorRequested: wakeMonitor,
       onNotificationSettingsChanged: () => refreshNotificationConfiguration(app),
       onRestartRequested: requestRestart,
+      onRollbackRequested: requestRollback,
     });
     const updateHealth = finalizePostUpdateHealth(app.config, {
       integrity: app.db.get('PRAGMA integrity_check').integrity,
     });
     if (updateHealth?.rollbackOffered) logger.warn('post-update health failed: code=BT-UPD-006');
     writeStatus({ status: 'running', webUrl: `http://${app.config.web.host}:${app.config.web.port}` });
-    updateCheckTimer = setTimeout(async () => {
-      try { await runScheduledUpdateCheck(app.db, app.config); }
-      catch (err) { logger.warn(`scheduled update check failed: ${err.code || 'BT-UPD-002'}`); }
-    }, UPDATE_STARTUP_DELAY_MS);
+    stopUpdateChecks = scheduleRecurringUpdateCheck(app.db, app.config, {
+      onResult: (update) => {
+        if (update?.updateAvailable) logger.info(`scheduled update available: ${update.manifest.version}`);
+      },
+      onError: (err) => logger.warn(`scheduled update check failed: ${err.code || 'BT-UPD-002'}`),
+    });
     stopPoll = setInterval(() => {
       if (existsSync(STOP_FILE)) requestStop('stop.request');
     }, 500);

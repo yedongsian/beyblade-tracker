@@ -10,6 +10,7 @@
 - 修正 Windows PowerShell 5.1 將無 BOM UTF-8 `launcher.ps1` 當成 ANSI 解碼，造成繁中錯誤訊息、狀態提示與移機對話框標籤亂碼；新增 Launcher BOM 防回歸測試（`BT-P1-003`）。
 - 新增 BT-UX-002 中央錯誤代碼 registry、safe Local Web error envelope 與 hidden Launcher native dialog；未知 internal error 使用 `BT-LCH-999`，不公開 exception message、stack、secret、private URL 或 path。
 - BT-UPD-001：更新只接受 signed stable manifest，並要求使用者以 target version 與 manifest digest 明確確認後，才下載、備份或啟動 installer；加入 defer、24h cadence、進度、post-update health 與 rollback flow。
+- BT-UPD-001 follow-up：修正持續服務的 recurring update check、資料庫 network pause、冪等 health marker、非同步 installer spawn failure，以及 Web rollback 的安全停機 handoff。
 
 ### Documentation
 

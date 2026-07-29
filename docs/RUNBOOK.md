@@ -252,8 +252,9 @@ npm run update:rollback
 2. 使用者先檢視 target version、release notes、publisher、size 與 manifest digest，再選擇「稍後更新」或「下載並安裝」。
 3. 確認必須綁定該 target version 與 manifest digest；manifest 變更後要求重新確認。
 4. 下載完成並驗證 SHA-256 後才建立 update 前 backup、啟動 installer 與寫入 rollback record。
-5. 新版服務啟動後檢查 target version 與 SQLite integrity。失敗顯示 `BT-UPD-006`，停止寫入並依既有 rollback procedure 回復。
-6. 不在 Ticket、Issue 或 log 分享 manifest URL、backup 位置、簽章資料或完整診斷資料。
+5. 新版服務啟動後檢查 target version 與 SQLite integrity。健康結果一旦寫入即保持不變；失敗顯示 `BT-UPD-006`，並依既有 rollback procedure 回復。
+6. Web rollback 會先接受請求並安全停止服務，之後由外部 rollback runner 還原資料與 version pointer；不得在仍開啟 Tracker DB 的 Web process 中直接執行還原。
+7. 不在 Ticket、Issue 或 log 分享 manifest URL、backup 位置、簽章資料或完整診斷資料。
 
 ## 15. GitHub Support operations
 

@@ -1,13 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '../src/db/database.js';
+import { setNetworkEnabled } from '../src/core/network-control.js';
 import {
   UPDATE_CHECK_INTERVAL_MS, deferUpdate, finalizePostUpdateHealth, getUpdateState,
   isUpdateCheckDue, launchPreparedUpdate, manifestDigest, prepareConfirmedUpdate, runScheduledUpdateCheck,
+  scheduleRecurringUpdateCheck,
   signedPayload, validateUpdateConfirmation, validateUpdateManifest, checkForUpdate,
 } from '../src/release/update.js';
 
@@ -69,6 +72,10 @@ test('stable update checks defer only the verified manifest and run no more than
   const config = { network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey } };
   await runScheduledUpdateCheck(db, config, { fetchImpl: async () => { requests += 1; return new Response(JSON.stringify(manifest)); }, now: Date.parse('2026-07-29T00:00:00.000Z') });
   assert.equal(requests, 1);
+  assert.deepEqual(getUpdateState(db).latestResult.manifest, {
+    version: manifest.version, publisher: manifest.publisher, releaseNotes: manifest.releaseNotes,
+    publishedAt: manifest.publishedAt, size: manifest.size, manifestDigest: manifestDigest(manifest),
+  });
   assert.equal(isUpdateCheckDue(db, { now: Date.parse('2026-07-29T00:00:00.000Z') + UPDATE_CHECK_INTERVAL_MS - 1 }), false);
   await runScheduledUpdateCheck(db, config, { fetchImpl: async () => { requests += 1; return new Response(JSON.stringify(manifest)); }, now: Date.parse('2026-07-29T00:00:00.000Z') + UPDATE_CHECK_INTERVAL_MS - 1 });
   assert.equal(requests, 1);
@@ -87,6 +94,8 @@ test('post-install health failure offers rollback and a healthy target is record
   writeFileSync(config.update.healthFile, JSON.stringify(pending));
   const healthy = finalizePostUpdateHealth(config, { currentVersion: '1.1.0', integrity: 'ok' });
   assert.equal(healthy.status, 'healthy');
+  const healthyAgain = finalizePostUpdateHealth(config, { currentVersion: '1.1.0', integrity: 'ok' });
+  assert.deepEqual(healthyAgain, healthy);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -100,11 +109,18 @@ test('no update, offline, paused network, hash mismatch, and installer launch fa
   );
   const db = new Database(':memory:');
   let pausedFetches = 0;
-  await runScheduledUpdateCheck(db, { network: { enabled: false }, update: { manifestUrl: 'https://updates.example.test/manifest.json' } }, {
+  const pausedConfig = { network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json' } };
+  setNetworkEnabled(db, false, { config: pausedConfig, reason: 'operator pause' });
+  await runScheduledUpdateCheck(db, pausedConfig, {
     fetchImpl: async () => { pausedFetches += 1; throw new Error('must not fetch'); },
   });
   assert.equal(pausedFetches, 0);
-  assert.throws(() => launchPreparedUpdate({ installer: 'safe-installer' }, { spawnImpl: () => { throw new Error('launch failed'); } }), /BT-UPD-005/);
+  await assert.rejects(launchPreparedUpdate({ installer: 'safe-installer' }, { spawnImpl: () => { throw new Error('launch failed'); } }), /BT-UPD-005/);
+  const failedChild = new EventEmitter();
+  failedChild.unref = () => {};
+  await assert.rejects(launchPreparedUpdate({ installer: 'safe-installer' }, {
+    spawnImpl: () => { queueMicrotask(() => failedChild.emit('error', new Error('ENOENT'))); return failedChild; },
+  }), /BT-UPD-005/);
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const manifest = signedManifest(privateKey, Buffer.from('expected installer'));
   const root = mkdtempSync(join(tmpdir(), 'beyblade-update-hash-'));
@@ -115,4 +131,28 @@ test('no update, offline, paused network, hash mismatch, and installer launch fa
     confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest),
   }, { fetchImpl: async () => new Response(Buffer.from('tampered installer')) }), /BT-UPD-004/);
   fileDb.close(); db.close(); rmSync(root, { recursive: true, force: true });
+});
+
+test('recurring scheduler waits five seconds, persists a verified result, then runs every 24 hours', async () => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const manifest = signedManifest(privateKey);
+  const db = new Database(':memory:');
+  const timers = [];
+  let results = 0;
+  const stop = scheduleRecurringUpdateCheck(db, {
+    network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey },
+  }, {
+    setTimeoutImpl: (fn, delay) => { const timer = { fn, delay, cleared: false }; timers.push(timer); return timer; },
+    clearTimeoutImpl: (timer) => { timer.cleared = true; },
+    fetchImpl: async () => new Response(JSON.stringify(manifest)),
+    onResult: (result) => { if (result?.updateAvailable) results += 1; },
+  });
+  assert.equal(timers[0].delay, 5000);
+  await timers.shift().fn();
+  assert.equal(results, 1);
+  assert.equal(getUpdateState(db).latestResult.updateAvailable, true);
+  assert.equal(timers[0].delay, UPDATE_CHECK_INTERVAL_MS);
+  stop();
+  assert.equal(timers[0].cleared, true);
+  db.close();
 });

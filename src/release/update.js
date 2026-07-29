@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { createBackup, restoreBackup } from '../maintenance/backup.js';
+import { getNetworkState } from '../core/network-control.js';
 import { APP_VERSION } from './version.js';
 
 export const UPDATE_STARTUP_DELAY_MS = 5000;
@@ -165,6 +166,9 @@ export function finalizePostUpdateHealth(config, { currentVersion = APP_VERSION,
   let record;
   try { record = JSON.parse(readFileSync(healthFile, 'utf8')); }
   catch { throw updateError('BT-UPD-006', '更新後健康檢查紀錄無法驗證。'); }
+  // A completed health result is immutable: every later normal service start must
+  // report the original outcome instead of re-evaluating a non-pending marker.
+  if (record.status === 'healthy' || record.status === 'failed') return record;
   const healthy = record.status === 'pending' && record.targetVersion === currentVersion && integrity === 'ok';
   const result = {
     ...record, status: healthy ? 'healthy' : 'failed', checkedAt: new Date().toISOString(),
@@ -199,6 +203,7 @@ export function getUpdateState(db) {
   return {
     lastCheckedAt: readSetting(db, 'updateLastCheckedAt'),
     deferred: readSetting(db, 'updateDeferred'),
+    latestResult: readSetting(db, 'updateLatestResult'),
   };
 }
 
@@ -207,8 +212,31 @@ export function isUpdateCheckDue(db, { now = Date.now() } = {}) {
   return !lastCheckedAt || Number.isNaN(Date.parse(lastCheckedAt)) || now - Date.parse(lastCheckedAt) >= UPDATE_CHECK_INTERVAL_MS;
 }
 
-export function recordUpdateCheck(db, { now = new Date().toISOString() } = {}) {
-  writeSetting(db, 'updateLastCheckedAt', now, now);
+function checkedAtIso(now) {
+  return typeof now === 'number' ? new Date(now).toISOString() : now;
+}
+
+function updateResultForDisplay(result, checkedAt) {
+  const manifest = result?.updateAvailable && result.manifest ? {
+    version: result.manifest.version,
+    publisher: result.manifest.publisher,
+    releaseNotes: result.manifest.releaseNotes,
+    publishedAt: result.manifest.publishedAt,
+    size: Number(result.manifest.size),
+    manifestDigest: result.manifest.manifestDigest,
+  } : null;
+  return {
+    enabled: Boolean(result?.enabled), currentVersion: result?.currentVersion || APP_VERSION,
+    updateAvailable: Boolean(result?.updateAvailable), manifest, checkedAt,
+  };
+}
+
+export function recordUpdateCheck(db, result = null, { now = new Date().toISOString() } = {}) {
+  const checkedAt = checkedAtIso(now);
+  const display = updateResultForDisplay(result, checkedAt);
+  writeSetting(db, 'updateLastCheckedAt', checkedAt, checkedAt);
+  writeSetting(db, 'updateLatestResult', display, checkedAt);
+  return display;
 }
 
 export function deferUpdate(db, confirmation, manifest, { now = new Date().toISOString() } = {}) {
@@ -230,21 +258,63 @@ export async function prepareConfirmedUpdate(db, config, manifest, confirmation,
 }
 
 export async function runScheduledUpdateCheck(db, config, options = {}) {
-  if (!config.network?.enabled || !config.update?.manifestUrl || !isUpdateCheckDue(db, options)) return null;
-  try { return await checkForUpdate(config, options); }
-  finally { recordUpdateCheck(db); }
+  if (!getNetworkState(db, config).enabled || !config.update?.manifestUrl || !isUpdateCheckDue(db, options)) return null;
+  let result;
+  try {
+    result = await checkForUpdate(config, options);
+    return result;
+  } finally {
+    recordUpdateCheck(db, result, options);
+  }
 }
 
-export function launchPreparedUpdate(prepared, { spawnImpl = spawn } = {}) {
+export function scheduleRecurringUpdateCheck(db, config, {
+  initialDelayMs = UPDATE_STARTUP_DELAY_MS,
+  intervalMs = UPDATE_CHECK_INTERVAL_MS,
+  setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
+  onResult = () => {},
+  onError = () => {},
+  ...checkOptions
+} = {}) {
+  let stopped = false;
+  let timer = null;
+  const run = async () => {
+    try { onResult(await runScheduledUpdateCheck(db, config, checkOptions)); }
+    catch (error) { onError(error); }
+    finally {
+      if (!stopped) timer = setTimeoutImpl(run, intervalMs);
+    }
+  };
+  timer = setTimeoutImpl(run, initialDelayMs);
+  return () => {
+    stopped = true;
+    if (timer) clearTimeoutImpl(timer);
+  };
+}
+
+export async function launchPreparedUpdate(prepared, { spawnImpl = spawn } = {}) {
+  let child;
   try {
-    const child = spawnImpl(prepared.installer, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'], {
+    child = spawnImpl(prepared.installer, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'], {
       detached: true, windowsHide: true, stdio: 'ignore',
     });
-    child.unref?.();
-    return { launched: true };
   } catch {
     throw updateError('BT-UPD-005', '已驗證的更新安裝器無法啟動。');
   }
+  if (!child?.once) {
+    child?.unref?.();
+    return { launched: true };
+  }
+  return new Promise((resolve, reject) => {
+    const fail = () => reject(updateError('BT-UPD-005', '已驗證的更新安裝器無法啟動。'));
+    child.once('error', fail);
+    child.once('spawn', () => {
+      child.off?.('error', fail);
+      child.unref?.();
+      resolve({ launched: true });
+    });
+  });
 }
 
 export function rollbackUpdate(config, { pidFile } = {}) {

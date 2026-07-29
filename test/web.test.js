@@ -64,6 +64,25 @@ test('Phase 7 settings UI stores privacy choices and never returns Telegram plai
   }, { secretStore, appConfig: { browser: { available: false, downloadUrl: 'https://www.google.com/chrome/' }, update: {} } });
 });
 
+test('update rollback endpoint queues a safe service handoff instead of restoring while the web service is live', async () => {
+  let requested = 0;
+  await withServer(async ({ db, base }) => {
+    db.run(`INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateLatestResult',?,?)`, [
+      JSON.stringify({ updateAvailable: true, manifest: { version: '1.1.0', publisher: 'Beyblade Tracker', releaseNotes: 'verified', publishedAt: '2026-07-29T00:00:00.000Z', size: 42, manifestDigest: 'safe-digest' } }),
+      '2026-07-29T00:00:00.000Z',
+    ]);
+    const page = await (await fetch(`${base}/settings`)).text();
+    assert.match(page, /data-scheduled-update="[^"]*1\.1\.0/);
+    const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+    const result = await fetch(`${base}/api/update/rollback`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token }, body: '{}',
+    });
+    assert.equal(result.status, 202);
+    assert.deepEqual(await result.json(), { accepted: true, message: '服務將停止並執行回滾。' });
+  }, { onRollbackRequested: () => { requested += 1; return true; } });
+  assert.equal(requested, 1);
+});
+
 test('manual identity, exclusion review, and network controls are available through the local UI', async () => {
   await withServer(async ({ db, base }) => {
     const sourceA = upsertSource(db, { key: 'manual-a', name: 'Manual A', connector: 'fixture' });

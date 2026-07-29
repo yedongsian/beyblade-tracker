@@ -20,7 +20,7 @@ try {
       const prepared = await prepareConfirmedUpdate(app.db, app.config, update.manifest, {
         confirmed: true, targetVersion, manifestDigest: digest,
       });
-      launchPreparedUpdate(prepared);
+      await launchPreparedUpdate(prepared);
       console.log('安裝器已啟動。');
     }
   }

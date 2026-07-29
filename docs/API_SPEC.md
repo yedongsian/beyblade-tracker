@@ -103,7 +103,7 @@
 | GET | `/api/watchlists` | — | `{watchlists: Watchlist[], alerts: WatchlistAlert[]}` |
 | GET | `/api/official-sources` | — | `{sources: OfficialSource[], announcements: OfficialAnnouncement[]}` |
 | GET | `/api/community` | — | `{sources: CommunitySource[], posts: CommunityPost[]}` |
-| GET | `/api/update` | — | Update check result；需要 network enabled。 |
+| GET | `/api/update` | — | 驗證 stable manifest，回傳 update availability、release notes、publisher、size、manifest digest 與 defer state；只檢查，不下載。 |
 
 ## 6. Settings、privacy 與 notification
 
@@ -172,7 +172,10 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 | POST | `/api/transfer/import` | `{data:"<base64>"}` | 202 `{staged,restartRequired:true}`；驗證後 staged，稍後要求 restart。 |
 | POST | `/api/diagnostics/export` | — | gzip diagnostics；需使用者 consent，排除 credentials、URLs、logs 與 product history。 |
 | GET | `/api/update` | — | 驗證 manifest 並回傳 update availability。 |
-| POST | `/api/update/apply` | `{}` | 202；下載、驗證、stage、launch prepared update。 |
+| POST | `/api/update/defer` | `{targetVersion,manifestDigest}` | 保存該已驗證版本的 defer 選擇；不下載。 |
+| POST | `/api/update/apply` | `{confirmed:true,targetVersion,manifestDigest}` | 202；確認值必須匹配當前 signed manifest，才開始下載、驗證、備份與 installer launch。 |
+| GET | `/api/update/progress/:operationId` | — | 只回傳本機 operation 的安全 phase、bytes progress、target version 或公開錯誤代碼。 |
+| POST | `/api/update/rollback` | `{}` | 還原 update 前 backup 並切回前一個 version pointer。 |
 
 ## 12. API 已知限制與後續改善
 
@@ -184,7 +187,7 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 
 ## 13. Update error contract
 
-此 error envelope 已由 Local Web 實作；update confirmation flow 其餘要求仍是下一公開版本需求，不是 1.0.0 as-built API。
+此 error envelope 與 update consent API 已實作為下一個 release candidate 行為；仍不是 1.0.0 已發布能力。
 
 ### Error response
 

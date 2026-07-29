@@ -43,6 +43,9 @@ test('Phase 7 settings UI stores privacy choices and never returns Telegram plai
     const page = await pageResponse.text();
     assert.equal(pageResponse.status, 200);
     assert.match(page, /Windows DPAPI/);
+    assert.match(page, /id="update-card"/);
+    assert.match(page, /id="update-defer"/);
+    assert.match(page, /id="update-progress"/);
     assert.doesNotMatch(page, /hidden-token|hidden-chat/);
     const token = page.match(/name="csrf-token" content="([^"]+)"/)[1];
     const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };

@@ -246,6 +246,15 @@ npm run update:rollback
 
 驗證 current version pointer、pre-update DB restore、schema compatibility、health、source counts 與 UI。若新 migration 不可逆，必須使用 release 前 DB backup，不可只切換 binary。
 
+### Update consent 與健康檢查
+
+1. Update check 只讀 signed stable manifest；不會下載 installer。
+2. 使用者先檢視 target version、release notes、publisher、size 與 manifest digest，再選擇「稍後更新」或「下載並安裝」。
+3. 確認必須綁定該 target version 與 manifest digest；manifest 變更後要求重新確認。
+4. 下載完成並驗證 SHA-256 後才建立 update 前 backup、啟動 installer 與寫入 rollback record。
+5. 新版服務啟動後檢查 target version 與 SQLite integrity。失敗顯示 `BT-UPD-006`，停止寫入並依既有 rollback procedure 回復。
+6. 不在 Ticket、Issue 或 log 分享 manifest URL、backup 位置、簽章資料或完整診斷資料。
+
 ## 15. GitHub Support operations
 
 公開 repository 建立後，Repository Owner 執行：

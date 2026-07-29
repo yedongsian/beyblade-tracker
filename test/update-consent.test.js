@@ -1,0 +1,118 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Database } from '../src/db/database.js';
+import {
+  UPDATE_CHECK_INTERVAL_MS, deferUpdate, finalizePostUpdateHealth, getUpdateState,
+  isUpdateCheckDue, launchPreparedUpdate, manifestDigest, prepareConfirmedUpdate, runScheduledUpdateCheck,
+  signedPayload, validateUpdateConfirmation, validateUpdateManifest, checkForUpdate,
+} from '../src/release/update.js';
+
+function signedManifest(privateKey, bytes = Buffer.from('installer fixture')) {
+  const manifest = {
+    version: '1.1.0', installerUrl: 'https://updates.example.test/BeybladeTracker-1.1.0-Setup.exe',
+    sha256: createHash('sha256').update(bytes).digest('hex'), schemaVersion: 10, channel: 'stable',
+    publisher: 'Beyblade Tracker', releaseNotes: '改善更新流程', publishedAt: '2026-07-29T00:00:00.000Z', size: bytes.length,
+  };
+  manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
+  return manifest;
+}
+
+test('update requires explicit confirmation bound to version and manifest digest before any download', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-update-consent-'));
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const bytes = Buffer.from('installer fixture');
+  const manifest = signedManifest(privateKey, bytes);
+  mkdirSync(join(root, 'data'), { recursive: true });
+  const db = new Database(join(root, 'data', 'tracker.db'));
+  const config = {
+    dbPath: join(root, 'data', 'tracker.db'), releaseDir: join(root, 'releases'), backup: { dir: join(root, 'backups') },
+    update: { publicKey, rollbackFile: join(root, 'runtime', 'rollback.json'), healthFile: join(root, 'runtime', 'update-health.json') },
+  };
+  let downloads = 0;
+  await assert.rejects(
+    prepareConfirmedUpdate(db, config, manifest, { confirmed: false, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest) }, {
+      fetchImpl: async () => { downloads += 1; return new Response(bytes); },
+    }), /BT-UPD-005/
+  );
+  assert.equal(downloads, 0);
+  await assert.rejects(
+    prepareConfirmedUpdate(db, config, manifest, { confirmed: true, targetVersion: '1.1.1', manifestDigest: manifestDigest(manifest) }, {
+      fetchImpl: async () => { downloads += 1; return new Response(bytes); },
+    }), /BT-UPD-003/
+  );
+  assert.equal(downloads, 0);
+  const prepared = await prepareConfirmedUpdate(db, config, manifest, {
+    confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest),
+  }, { fetchImpl: async () => { downloads += 1; return new Response(bytes, { headers: { 'content-length': String(bytes.length) } }); } });
+  assert.equal(downloads, 1);
+  assert.equal(existsSync(prepared.installer), true);
+  assert.equal(existsSync(config.update.rollbackFile), true);
+  assert.equal(JSON.parse(readFileSync(config.update.healthFile, 'utf8')).status, 'pending');
+  db.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('stable update checks defer only the verified manifest and run no more than once per 24 hours', async () => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const manifest = signedManifest(privateKey);
+  const db = new Database(':memory:');
+  const checked = validateUpdateManifest(manifest, { publicKey });
+  const deferred = deferUpdate(db, { targetVersion: checked.version, manifestDigest: checked.manifestDigest }, checked, { now: '2026-07-29T00:00:00.000Z' });
+  assert.equal(deferred.targetVersion, '1.1.0');
+  assert.equal(getUpdateState(db).deferred.manifestDigest, checked.manifestDigest);
+  assert.equal(isUpdateCheckDue(db, { now: Date.parse('2026-07-29T00:00:00.000Z') }), true);
+  let requests = 0;
+  const config = { network: { enabled: true }, update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey } };
+  await runScheduledUpdateCheck(db, config, { fetchImpl: async () => { requests += 1; return new Response(JSON.stringify(manifest)); }, now: Date.parse('2026-07-29T00:00:00.000Z') });
+  assert.equal(requests, 1);
+  assert.equal(isUpdateCheckDue(db, { now: Date.parse('2026-07-29T00:00:00.000Z') + UPDATE_CHECK_INTERVAL_MS - 1 }), false);
+  await runScheduledUpdateCheck(db, config, { fetchImpl: async () => { requests += 1; return new Response(JSON.stringify(manifest)); }, now: Date.parse('2026-07-29T00:00:00.000Z') + UPDATE_CHECK_INTERVAL_MS - 1 });
+  assert.equal(requests, 1);
+  assert.throws(() => validateUpdateConfirmation({ confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest) }, { ...manifest, channel: 'beta' }), /BT-UPD-003/);
+  db.close();
+});
+
+test('post-install health failure offers rollback and a healthy target is recorded', () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-update-health-'));
+  const config = { update: { healthFile: join(root, 'runtime', 'update-health.json') } };
+  mkdirSync(join(root, 'runtime'), { recursive: true });
+  const pending = { targetVersion: '1.1.0', status: 'pending', databaseBackup: 'safe-reference' };
+  writeFileSync(config.update.healthFile, JSON.stringify(pending));
+  const failed = finalizePostUpdateHealth(config, { currentVersion: '1.0.0', integrity: 'ok' });
+  assert.deepEqual({ status: failed.status, code: failed.code, rollbackOffered: failed.rollbackOffered }, { status: 'failed', code: 'BT-UPD-006', rollbackOffered: true });
+  writeFileSync(config.update.healthFile, JSON.stringify(pending));
+  const healthy = finalizePostUpdateHealth(config, { currentVersion: '1.1.0', integrity: 'ok' });
+  assert.equal(healthy.status, 'healthy');
+  rmSync(root, { recursive: true, force: true });
+});
+
+
+
+test('no update, offline, paused network, hash mismatch, and installer launch failure stay safe', async () => {
+  assert.deepEqual(await checkForUpdate({ update: {} }), { enabled: false, currentVersion: '1.0.0', updateAvailable: false });
+  await assert.rejects(
+    checkForUpdate({ update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey: 'unused' } }, { fetchImpl: async () => { throw new Error('offline'); } }),
+    /BT-UPD-002/
+  );
+  const db = new Database(':memory:');
+  let pausedFetches = 0;
+  await runScheduledUpdateCheck(db, { network: { enabled: false }, update: { manifestUrl: 'https://updates.example.test/manifest.json' } }, {
+    fetchImpl: async () => { pausedFetches += 1; throw new Error('must not fetch'); },
+  });
+  assert.equal(pausedFetches, 0);
+  assert.throws(() => launchPreparedUpdate({ installer: 'safe-installer' }, { spawnImpl: () => { throw new Error('launch failed'); } }), /BT-UPD-005/);
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const manifest = signedManifest(privateKey, Buffer.from('expected installer'));
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-update-hash-'));
+  mkdirSync(join(root, 'data'), { recursive: true });
+  const config = { dbPath: join(root, 'data', 'tracker.db'), releaseDir: join(root, 'releases'), backup: { dir: join(root, 'backups') }, update: { publicKey, rollbackFile: join(root, 'runtime', 'rollback.json') } };
+  const fileDb = new Database(config.dbPath);
+  await assert.rejects(prepareConfirmedUpdate(fileDb, config, manifest, {
+    confirmed: true, targetVersion: manifest.version, manifestDigest: manifestDigest(manifest),
+  }, { fetchImpl: async () => new Response(Buffer.from('tampered installer')) }), /BT-UPD-004/);
+  fileDb.close(); db.close(); rmSync(root, { recursive: true, force: true });
+});

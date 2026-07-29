@@ -11,6 +11,7 @@ import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 import { projectPaths } from '../src/paths.js';
 import { getNetworkState } from '../src/core/network-control.js';
+import { finalizePostUpdateHealth, UPDATE_STARTUP_DELAY_MS, runScheduledUpdateCheck } from '../src/release/update.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(ROOT);
@@ -29,6 +30,7 @@ let stopPoll;
 let tickInProgress = false;
 let stopping = false;
 let finishing = false;
+let updateCheckTimer;
 const startedAt = new Date().toISOString();
 
 function writeStatus(patch) {
@@ -54,6 +56,7 @@ async function finishShutdown(reason) {
   if (finishing) return;
   finishing = true;
   if (nextTimer) clearTimeout(nextTimer);
+  if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (stopPoll) clearInterval(stopPoll);
   logger.info(`service shutting down: ${reason}`);
   try {
@@ -133,7 +136,15 @@ async function main() {
       onNotificationSettingsChanged: () => refreshNotificationConfiguration(app),
       onRestartRequested: requestRestart,
     });
+    const updateHealth = finalizePostUpdateHealth(app.config, {
+      integrity: app.db.get('PRAGMA integrity_check').integrity,
+    });
+    if (updateHealth?.rollbackOffered) logger.warn('post-update health failed: code=BT-UPD-006');
     writeStatus({ status: 'running', webUrl: `http://${app.config.web.host}:${app.config.web.port}` });
+    updateCheckTimer = setTimeout(async () => {
+      try { await runScheduledUpdateCheck(app.db, app.config); }
+      catch (err) { logger.warn(`scheduled update check failed: ${err.code || 'BT-UPD-002'}`); }
+    }, UPDATE_STARTUP_DELAY_MS);
     stopPoll = setInterval(() => {
       if (existsSync(STOP_FILE)) requestStop('stop.request');
     }, 500);

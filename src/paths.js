@@ -27,6 +27,7 @@ export function projectPaths(root = process.cwd(), env = process.env) {
     sourcesFile: absolute(configDir, env.SOURCES_FILE, 'sources.json'),
     pendingImportFile: join(runtimeDir, 'pending-import.beyblade-transfer'),
     rollbackFile: join(runtimeDir, 'rollback.json'),
+    updateHealthFile: join(runtimeDir, 'update-health.json'),
     pidFile: join(runtimeDir, 'tracker.pid'),
     statusFile: join(runtimeDir, 'tracker-status.json'),
     stopFile: join(runtimeDir, 'stop.request'),

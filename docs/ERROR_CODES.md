@@ -56,6 +56,8 @@ UI 不顯示 stack trace、Token、完整 URL、DB row、private path 或 signin
 
 ## 4. 更新與 rollback
 
+`BT-UPD-001` 至 `BT-UPD-007` 已由 BT-UPD-001 的 update flow 映射。顯示內容只包含代碼與安全 recovery；不包含 manifest URL、檔案 path、stack、憑證或備份位置。Windows clean VM 安裝／rollback 仍是 release gate 驗收。
+
 | Code | 意義 | 使用者處理 |
 |---|---|---|
 | `BT-UPD-001` | 正式更新來源尚未設定。 | 目前無法線上更新；到正式 GitHub Releases 手動下載，或等待 Developer 完成 release channel。 |

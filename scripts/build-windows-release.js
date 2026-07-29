@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION } from '../src/release/version.js';
+import { signedPayload } from '../src/release/update.js';
 import { CURRENT_SCHEMA_VERSION } from '../src/db/database.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -73,16 +74,16 @@ const manifest = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
   installerUrl: installer && baseUrl ? `${baseUrl}/${basename(installer)}` : null,
   sha256: installer ? hashFile(installer) : null,
+  size: installer ? statSync(installer).size : null,
+  publisher: 'Beyblade Tracker',
+  releaseNotes: String(process.env.RELEASE_NOTES || ''),
+  publishedAt: new Date().toISOString(),
   signature: null,
   publishReady: false,
 };
 const keyPath = process.env.RELEASE_SIGNING_KEY_FILE;
 if (installer && baseUrl && keyPath) {
-  const payload = Buffer.from(JSON.stringify({
-    version: manifest.version, installerUrl: manifest.installerUrl, sha256: manifest.sha256,
-    schemaVersion: manifest.schemaVersion, channel: manifest.channel,
-  }));
-  manifest.signature = sign(null, payload, readFileSync(keyPath, 'utf8')).toString('base64');
+  manifest.signature = sign(null, signedPayload(manifest), readFileSync(keyPath, 'utf8')).toString('base64');
   manifest.publishReady = true;
 }
 writeFileSync(join(DIST, 'release-manifest.json'), JSON.stringify(manifest, null, 2));

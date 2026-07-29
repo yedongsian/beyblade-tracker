@@ -28,7 +28,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
 | BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
 | BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Windows native dialog 實機驗收 |
-| BT-UPD-001 | P0 | Ready | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel |
+| BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | Support／Release URL 待填 |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
@@ -137,7 +137,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-UPD-001 — 實作使用者確認後的自動更新 UX
 
 - Priority：P0
-- Status：Ready
+- Status：In Review
 - Owner：待指定
 - 背景：現有 manifest／HTTPS／SHA-256／Ed25519／backup／rollback foundation 已存在，但缺少正式 channel 與 consumer consent flow。
 - Scope：startup delay、24h cadence、stable channel、version／release notes UI、defer、explicit confirmation、download progress、backup、install、post-health、rollback。
@@ -148,6 +148,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 更新前 consistent backup；使用者資料及 settings 保留。
   - 只接受 HTTPS、valid manifest／hash／publisher；failure 顯示 `BT-UPD-*`。
   - Clean VM 由 1.0.0 升至測試版並可 rollback。
+- Verification evidence（2026-07-29）：已實作 signed stable manifest、5 秒啟動延遲與 24h cadence、defer、target／manifest digest confirmation、下載進度、SHA-256 驗證、backup、rollback record、post-update integrity health marker 與 rollback API。已新增 consent／defer／cadence／signature／hash／post-health automated tests。仍待正式 HTTPS release channel 與 clean Windows VM 升級／rollback 實機驗收；因此不可標記 Done。
 
 ### BT-SUP-001 — 建立公開 GitHub Issues 與繁中問題回報表單
 

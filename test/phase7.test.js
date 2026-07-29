@@ -14,7 +14,7 @@ import {
   applyPendingTransfer, createTransferBundle, inspectTransferBundle, stageTransferImport,
 } from '../src/maintenance/transfer.js';
 import { createBackup } from '../src/maintenance/backup.js';
-import { compareVersions, rollbackUpdate, validateUpdateManifest } from '../src/release/update.js';
+import { compareVersions, rollbackUpdate, signedPayload, validateUpdateManifest } from '../src/release/update.js';
 import { upsertSource } from '../src/core/store.js';
 import { createDiagnosticsBundle, inspectDiagnosticsBundle } from '../src/maintenance/diagnostics.js';
 
@@ -68,13 +68,10 @@ test('update manifest requires valid semantic version, HTTPS, hash, and Ed25519 
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const manifest = {
     version: '1.1.0', installerUrl: 'https://updates.example.test/BeybladeTracker-1.1.0-Setup.exe',
-    sha256: 'a'.repeat(64), schemaVersion: 10, channel: 'stable',
+    sha256: 'a'.repeat(64), schemaVersion: 10, channel: 'stable', publisher: 'Beyblade Tracker',
+    releaseNotes: 'Test release notes', publishedAt: '2026-07-29T00:00:00.000Z', size: 1024,
   };
-  const payload = Buffer.from(JSON.stringify({
-    version: manifest.version, installerUrl: manifest.installerUrl, sha256: manifest.sha256,
-    schemaVersion: manifest.schemaVersion, channel: manifest.channel,
-  }));
-  manifest.signature = sign(null, payload, privateKey).toString('base64');
+  manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
   assert.equal(validateUpdateManifest(manifest, { publicKey }).updateAvailable, true);
   assert.throws(() => validateUpdateManifest({ ...manifest, sha256: 'b'.repeat(64) }, { publicKey }), /簽章/);
   assert.throws(() => validateUpdateManifest({ ...manifest, installerUrl: 'http://unsafe.example/setup.exe' }, { publicKey }), /HTTPS/);

@@ -214,6 +214,10 @@ stateDiagram-v2
 - Confirmation 綁定 manifest digest／target version，避免 manifest 在確認後被替換。
 - 開始安裝前建立 consistent DB backup；post-update 執行 schema、health、integrity check；失敗時提供 rollback。
 - `NETWORK_ENABLED=0` 時不檢查、不下載；使用者選擇稍後不視為同意。
+- 實作會在服務啟動後延遲檢查，並以本機設定保存最後檢查時間；同一使用者最多每 24 小時自動檢查一次。自動檢查從不下載檔案。
+- Manifest 必須是 signed stable channel，並包含 publisher、release notes、published time、size、HTTPS URL 與 SHA-256；confirmation 綁定 target version 與 manifest digest。
+- 使用者按「稍後更新」會保存該已驗證 manifest 的 defer 紀錄；下載進度只在 loopback UI 顯示。
+- 安裝前才建立 consistent backup 與 rollback record。更新後服務啟動會驗證 target version 與 SQLite integrity；失敗時以 `BT-UPD-006` 提供 rollback。
 
 ### 10.4 GitHub support integration
 

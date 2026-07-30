@@ -253,6 +253,13 @@ npm run update:rollback
 3. Treat rollback as complete only after the previous service starts; handle `BT-UPD-007` before any stale `BT-UPD-006` marker.
 4. Do not clear a previous rollback failure until the next update has fully prepared its verified installer, backup, rollback record, and pending health marker. A failed download, validation, hash, or backup step must retain it.
 5. A manual update-check error must preserve the last verified result and timestamp. Settings may safely resume an active apply from the status summary after reload; no file locations or URLs appear in that summary.
+6. Concurrent apply requests must return the same reserved `checking` operation. Terminal progress is available for up to ten minutes (maximum twenty records), after which `/api/update/progress/:operationId` returns 404.
+7. Packaged Windows E2E verifies the installed service PID/status and `http://127.0.0.1:8787/health`; do not substitute the standalone health-check smoke test. Silent uninstall uses `/SUPPRESSMSGBOXES` and retains user data by default.
+8. If E2E graceful stop fails, continue only with bounded cleanup of processes whose command line contains both the current run ID and install root. Report the graceful-stop and cleanup failures together; never stop all Node or PowerShell processes.
+9. Silent uninstall stops the service through the launcher in `-NonInteractive` mode. No path may open a window: a stop failure must abort the uninstall with a non-zero exit code and leave the running install in place, never delete files while the service is up.
+9a. The uninstall stop precondition fails closed. A missing `{app}\launcher.ps1` proves only that the stop helper cannot run — never that the service stopped — so the uninstall aborts non-zero and keeps the program files, startup entry and user data. Do not reintroduce a `Result := True` shortcut for a missing helper, and do not treat an absent PID file or a free port 8787 as proof that the service is gone.
+10. `unknown` process ownership may write the Tracker's own `stop.request`, but only re-verified `owned` ownership may force kill, and only that exact PID. `other` is never signalled or terminated, and a live PID that is not verifiably the Tracker is never reported as "already running".
+11. An unreadable child exit code is a verification failure, not a success: read exit codes from an owned process handle.
 
 ### Update consent 與健康檢查
 
@@ -264,7 +271,19 @@ npm run update:rollback
 6. Web rollback 會先接受請求並安全停止服務，之後由外部 rollback runner 還原資料與 version pointer；不得在仍開啟 Tracker DB 的 Web process 中直接執行還原。
 7. 不在 Ticket、Issue 或 log 分享 manifest URL、backup 位置、簽章資料或完整診斷資料。
 8. 若 Settings 顯示 `BT-UPD-006`，使用者可選擇回滾；rollback runner 的結果會保存在安全狀態摘要中。若結果為 `BT-UPD-007`，重新開啟 Tracker 後查看 Settings，再依既有 backup procedure 處理。
-9. Windows release candidate 至少執行 `npm run release:windows` 與 `npm run test:release:windows`。後者以隔離資料目錄驗證 silent install、服務啟動、packaged health、同步 stop、uninstall 與 user-data preservation；Inno Setup 自清理最多等待 60 秒，逾時即視為驗收失敗。
+9. Windows release candidate 至少執行 `npm run release:windows`、`npm run test:release:windows`、`npm run test:release:windows:stopfail` 與 `npm run test:release:windows:missing-launcher`。三個 packaged E2E 共用 8787，必須依序執行，不可平行。前者以隔離資料目錄驗證 silent install、服務啟動、packaged health、同步 stop、uninstall 與 user-data preservation；Inno Setup 自清理最多等待 60 秒，逾時即視為驗收失敗。`:stopfail` 只在本次隔離安裝目錄注入 stop failure（不得修改工作區 source 或正式安裝目錄），要求 uninstaller 在 60 秒內非零失敗、不顯示視窗、保留仍在執行的安裝，之後還原並完成一次正常 uninstall。`:missing-launcher` 只把本次隔離安裝的 `launcher.ps1` 移到同目錄 backup，要求 uninstaller 在 15 秒內非零失敗、不顯示視窗、保留 `current.json`／版本目錄／原 service PID／8787 health／user data，之後還原並完成一次正常 uninstall。兩種 negative mode 不可同時指定。三種 E2E 結束後都必須確認 8787 已釋放且本次 runId 無程序或目錄殘留。
+
+### 損壞安裝無法解除安裝時的處理
+
+若解除安裝回報無法確認背景服務已停止，或安裝檔案不完整（例如 `launcher.ps1` 被防毒隔離、更新中斷）：
+
+1. 不要手動終止所有 `node.exe`，也不要在未確認 PID ownership 前強制終止任何程序。
+2. 重新安裝相同或較新的正式版本，以修復 `launcher.ps1` 與 `scripts/service-control.js`。
+3. 從開始選單執行「停止背景追蹤」。
+4. 再次執行解除安裝。
+5. 若仍失敗，收集安全錯誤代碼與 support reference 後回報。
+
+不可建議或執行：`taskkill /IM node.exe /F`、`Get-Process node | Stop-Process`、刪除整個 `%LOCALAPPDATA%`、手動刪除 data／backup／credentials，或把完整 log、路徑、Token、webhook 貼到公開 issue。
 
 ## 15. GitHub Support operations
 

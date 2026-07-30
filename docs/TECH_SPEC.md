@@ -44,7 +44,9 @@ flowchart LR
 | 路徑 | 責任 |
 |---|---|
 | `bin/` | CLI entry points：crawl、worker、web、service、health、backup／restore、transfer、update／rollback。 |
-| `scripts/service-control.js` | Windows-friendly start／restart／stop／status；只管理本專案 PID。 |
+| `scripts/service-control.js` | Windows-friendly start／restart／stop／status；只管理本專案 PID，並注入真實 OS identity 與檔案操作給 lifecycle state machine。 |
+| `src/release/service-process.js` | Process ownership 純函式：`owned`／`other`／`unknown` 分類、CIM creation time 解析、graceful-stop 與 force-kill 授權判斷。 |
+| `src/release/service-lifecycle.js` | 可注入依賴的 start／stop state machine：unknown 只允許 graceful stop，force kill 前重查 ownership，stale／reused PID 不會被當成已啟動。 |
 | `src/app.js` | 建立 app、同步來源、recover interrupted work、執行 monitor／discovery／notification／retention。 |
 | `src/config.js` | 解析及驗證環境變數與來源設定；提供安全預設。 |
 | `src/connectors/` | 統一 Listing contract；Fixture、JSON-LD／CSS、system Chrome acquisition。 |
@@ -148,6 +150,10 @@ A temporary scheduled-check failure retains the last verified result and retries
 
 Rollback status is cleared only after installer verification, backup creation, rollback record creation, and pending health-marker creation all succeed. The scheduler uses the remaining interval since `lastCheckedAt` rather than adding a full interval after a not-due run; paused network uses the five-minute retry delay. Active update progress is an in-memory, allowlisted summary so Settings can resume polling after a page reload.
 
+`POST /api/update/apply` synchronously reserves a `checking` operation before the manifest request. `checking`, `downloading`, and `installing` are single-flight phases. Terminal summaries retain only safe fields, expire after ten minutes, and are capped at twenty records; pruning is request-driven so it creates no background timer.
+
+Windows service control treats a process as owned only when the PID, executable path, `bin/service.js` command-line path, and OS creation time match the service status metadata. Missing OS identity is `unknown`, never permission to force-kill a PID from a stale status file.
+
 ## 9. Failure handling
 
 | Failure | 系統行為 |
@@ -171,6 +177,11 @@ Rollback status is cleared only after installer verification, backup creation, r
 - 發布單一 Authenticode-signed Setup.exe，per-user 安裝並內含 Node runtime。
 - 安裝器寫入 versioned payload 與 `current.json`，建立開始功能表入口，可選登入後自動啟動。
 - `launcher.vbs` 可繼續隱藏 PowerShell console，但 `launcher.ps1` 最外層必須攔截 exception，將原因映射到中央 error registry，顯示 native dialog。
+- Launcher 有兩種明確模式：interactive（使用者自行啟動）可顯示 error dialog；`-NonInteractive`（installer、uninstaller、登入自動啟動、測試）絕不建立任何視窗，只在 stderr 輸出 safe error code 並以非零 exit code 結束。成功路徑必須明確回傳 0。
+- Non-interactive `Run-Control` 對 service-control 使用自有 process handle 與 bounded wait（stop 45s／start 40s／restart 80s），逾時即終止該 child 並回報 `BT-LCH-003`；不可依賴 `Start-Process -PassThru` 的 exit code。
+- 需要視窗的 action（`open`、`export`、`import`、`update`、`rollback`）在 non-interactive 模式回報 `BT-LCH-006`，不得改為靜默執行。
+- Uninstaller 以 `InitializeUninstall` 的 `Exec` 呼叫 non-interactive stop 作為明確前置條件：stop 失敗即中止移除並回傳非零，不刪除仍在執行的 service files。`/SUPPRESSMSGBOXES` 不得用來間接控制 launcher GUI。
+- 該前置條件必須 fail closed：`launcher.ps1` 不存在時只能證明 stop helper 無法執行，不能證明 service 已停止，因此回傳 `False`。修復方式是重新安裝同版本，不是略過 stop。
 - Launcher error dialog 提供「再試一次」、「服務狀態」、「複製錯誤資訊」、「問題回報」；不顯示 stack trace 或 secret。
 - `launcher.ps1` 必須保持 UTF-8 with BOM；byte-level test 防止 Windows PowerShell 5.1 繁中文字串回歸。
 

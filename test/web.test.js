@@ -5,7 +5,9 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '../src/db/database.js';
-import { createWebServer } from '../src/web/server.js';
+import { createWebServer, pruneUpdateOperations, UPDATE_OPERATION_MAX_TERMINAL, UPDATE_OPERATION_TTL_MS } from '../src/web/server.js';
+import { settingsScript } from '../src/web/ui.js';
+import { createTranslator } from '../src/i18n.js';
 import { signedPayload } from '../src/release/update.js';
 import { confirmSource, saveOnboardingSettings } from '../src/core/source-manager.js';
 import { processListing } from '../src/core/pipeline.js';
@@ -172,11 +174,16 @@ test('update apply keeps one download and installer operation in flight', async 
   };
   manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
   const originalFetch = globalThis.fetch;
+  let manifestRequests = 0;
+  let releaseManifest;
   let installerRequests = 0;
   let releaseInstaller;
   globalThis.fetch = async (url, options) => {
     if (String(url).startsWith('http://127.0.0.1:')) return originalFetch(url, options);
-    if (String(url).includes('manifest')) return new Response(JSON.stringify(manifest));
+    if (String(url).includes('manifest')) {
+      manifestRequests += 1;
+      return new Promise((resolve) => { releaseManifest = () => resolve(new Response(JSON.stringify(manifest))); });
+    }
     installerRequests += 1;
     return new Promise((resolve) => { releaseInstaller = resolve; });
   };
@@ -194,6 +201,12 @@ test('update apply keeps one download and installer operation in flight', async 
       assert.equal(second.status, 202);
       assert.equal(secondResult.inProgress, true);
       assert.equal(secondResult.operationId, firstResult.operationId);
+      assert.equal(manifestRequests, 1);
+      assert.equal(installerRequests, 0);
+      const checking = await (await fetch(`${base}/api/update/status`)).json();
+      assert.deepEqual(checking.operation, { id: firstResult.operationId, targetVersion: manifest.version, phase: 'checking', received: 0, total: 0 });
+      releaseManifest();
+      await new Promise((resolve) => setTimeout(resolve, 10));
       assert.equal(installerRequests, 1);
       const status = await (await fetch(`${base}/api/update/status`)).json();
       assert.deepEqual(status.operation, { id: firstResult.operationId, targetVersion: manifest.version, phase: 'downloading', received: 0, total: expected.length });
@@ -211,6 +224,33 @@ test('update apply keeps one download and installer operation in flight', async 
     globalThis.fetch = originalFetch;
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('update operation retention preserves active work and bounds terminal history', () => {
+  const now = 1_000_000;
+  const operations = new Map([
+    ['active', { id: 'active', phase: 'checking' }],
+    ['expired', { id: 'expired', phase: 'failed', completedAt: now - UPDATE_OPERATION_TTL_MS }],
+    ...Array.from({ length: UPDATE_OPERATION_MAX_TERMINAL + 2 }, (_, index) => [
+      `terminal-${index}`, { id: `terminal-${index}`, phase: 'completed', completedAt: now - index },
+    ]),
+  ]);
+  pruneUpdateOperations(operations, now);
+  assert.equal(operations.has('active'), true);
+  assert.equal(operations.has('expired'), false);
+  assert.equal(operations.size, UPDATE_OPERATION_MAX_TERMINAL + 1);
+  assert.equal(operations.has(`terminal-${UPDATE_OPERATION_MAX_TERMINAL + 1}`), false);
+});
+
+test('Settings update polling presents checking as an indeterminate active phase in every locale', () => {
+  for (const locale of ['zh-TW', 'en', 'ja']) {
+    const script = settingsScript(createTranslator(locale));
+    assert.match(script, /updateChecking/);
+    assert.match(script, /data\.phase==='checking'/);
+    assert.match(script, /updateProgress\.removeAttribute\('value'\)/);
+  }
+  const english = settingsScript(createTranslator('en'));
+  assert.match(english, /Checking update information and the signed manifest/);
 });
 
 test('manual identity, exclusion review, and network controls are available through the local UI', async () => {

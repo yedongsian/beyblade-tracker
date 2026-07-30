@@ -98,10 +98,35 @@ export function healthData(db, config = {}) {
   };
 }
 
-const ACTIVE_UPDATE_PHASES = new Set(['downloading', 'installing']);
+export const ACTIVE_UPDATE_PHASES = new Set(['checking', 'downloading', 'installing']);
+export const UPDATE_OPERATION_TTL_MS = 10 * 60 * 1000;
+export const UPDATE_OPERATION_MAX_TERMINAL = 20;
 
 function findActiveUpdateOperation(operations) {
   return [...operations.values()].find((operation) => ACTIVE_UPDATE_PHASES.has(operation.phase)) || null;
+}
+
+export function pruneUpdateOperations(operations, now = Date.now()) {
+  const terminal = [];
+  for (const [id, operation] of operations) {
+    if (ACTIVE_UPDATE_PHASES.has(operation.phase)) continue;
+    if (!Number.isFinite(operation.completedAt) || now - operation.completedAt >= UPDATE_OPERATION_TTL_MS) {
+      operations.delete(id);
+    } else {
+      terminal.push(operation);
+    }
+  }
+  terminal.sort((left, right) => (right.completedAt || 0) - (left.completedAt || 0));
+  for (const operation of terminal.slice(UPDATE_OPERATION_MAX_TERMINAL)) operations.delete(operation.id);
+}
+
+function assertUpdateConfirmationShape(confirmation) {
+  if (confirmation?.confirmed !== true ||
+      typeof confirmation.targetVersion !== 'string' ||
+      !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(confirmation.targetVersion) ||
+      typeof confirmation.manifestDigest !== 'string' || !/^[a-f0-9]{64}$/i.test(confirmation.manifestDigest)) {
+    throw new UpdateError('BT-UPD-005', '更新確認資料格式無效。');
+  }
 }
 
 function updateOperationSummary(operation) {
@@ -467,6 +492,7 @@ export function createWebServer(db, options = {}) {
   const nonce = randomBytes(16).toString('base64url');
   const appConfig = options.appConfig || {};
   const updateOperations = new Map();
+  const now = options.now || Date.now;
   const base = { csrfToken, nonce, appConfig, secretStore: options.secretStore, updateOperations };
   return createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -551,6 +577,7 @@ export function createWebServer(db, options = {}) {
         out = json({ ...state.latestResult, state, deferred: isDeferredUpdate(state, state.latestResult?.manifest),
           health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
       } else if (req.method === 'GET' && url.pathname === '/api/update/status') {
+        pruneUpdateOperations(updateOperations, now());
         const state = getUpdateState(db);
         out = json({ ...(state.latestResult || { enabled: Boolean(appConfig.update?.manifestUrl), updateAvailable: false }), state,
           deferred: isDeferredUpdate(state, state.latestResult?.manifest), health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig),
@@ -568,6 +595,8 @@ export function createWebServer(db, options = {}) {
       } else if (req.method === 'POST' && url.pathname === '/api/update/apply') {
         assertNetworkEnabled(db, appConfig);
         const confirmation = await readJson(req);
+        assertUpdateConfirmationShape(confirmation);
+        pruneUpdateOperations(updateOperations, now());
         const active = findActiveUpdateOperation(updateOperations);
         if (active) {
           out = json({ operationId: active.id, targetVersion: active.targetVersion, inProgress: true }, 202);
@@ -575,14 +604,18 @@ export function createWebServer(db, options = {}) {
           res.end(out.body);
           return;
         }
-        const update = await checkForUpdate(appConfig);
-        if (!update.updateAvailable) throw new UpdateError('BT-UPD-005', '目前已是最新版本。');
-        validateUpdateConfirmation(confirmation, update.manifest);
         const id = randomBytes(18).toString('base64url');
-        const operation = { id, targetVersion: update.manifest.version, phase: 'downloading', received: 0, total: Number(update.manifest.size), errorCode: null };
+        const operation = {
+          id, targetVersion: confirmation.targetVersion, phase: 'checking', received: 0, total: 0,
+          errorCode: null, createdAt: now(), completedAt: null,
+        };
         updateOperations.set(id, operation);
         void (async () => {
           try {
+            const update = await checkForUpdate(appConfig);
+            if (!update.updateAvailable) throw new UpdateError('BT-UPD-005', '目前已是最新版本。');
+            validateUpdateConfirmation(confirmation, update.manifest);
+            Object.assign(operation, { targetVersion: update.manifest.version, phase: 'downloading', total: Number(update.manifest.size) });
             const prepared = await prepareConfirmedUpdate(db, appConfig, update.manifest, confirmation, {
               onProgress: ({ received, total }) => Object.assign(operation, { phase: 'downloading', received, total }),
             });
@@ -592,10 +625,13 @@ export function createWebServer(db, options = {}) {
           } catch (error) {
             operation.phase = 'failed';
             operation.errorCode = error instanceof UpdateError ? error.code : 'BT-UPD-005';
+          } finally {
+            if (!ACTIVE_UPDATE_PHASES.has(operation.phase)) operation.completedAt = now();
           }
         })();
         out = json({ operationId: id, targetVersion: operation.targetVersion }, 202);
       } else if (req.method === 'GET' && /^\/api\/update\/progress\/[A-Za-z0-9_-]+$/.test(url.pathname)) {
+        pruneUpdateOperations(updateOperations, now());
         const id = url.pathname.split('/').at(-1);
         const operation = updateOperations.get(id);
         if (!operation) out = response(requestT('api.notFound'), 'text/plain; charset=utf-8', 404);

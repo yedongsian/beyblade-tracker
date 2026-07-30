@@ -7,6 +7,9 @@
 - BT-UPD-001 follow-up: reversible defer, stable in-progress update controls, retry without discarding a verified manifest, rollback status reset per apply, and service-start-confirmed rollback status with `BT-UPD-007` priority.
 - BT-UPD-001 remaining fixes: retain rollback failure evidence until update preparation completes, preserve verified update state on manual-check failure, schedule from the remaining cadence, and expose only safe active-operation progress so Settings can resume after reload without overlapping apply or poll requests.
 - BT-UPD-001 Windows packaging hardening: silent setup suppresses the optional browser prompt without suppressing service restart; uninstall waits for the launcher to stop the service; isolated packaged E2E now verifies install, health, uninstall, and user-data preservation with bounded Inno Setup cleanup.
+- BT-UPD-001 concurrency and packaging follow-up: reserve update operations before manifest I/O, retain bounded terminal progress, make silent uninstall default to preserving data, and validate the installed service PID/status/8787 health during packaged E2E with strict cleanup failures.
+- BT-UPD-001 P2 follow-up: present manifest checking separately from download progress, verify process ownership before a forced Windows stop, and keep E2E cleanup scoped to the current run after graceful-stop failures.
+- BT-UPD-001 uninstall and process-ownership follow-up: give the launcher an explicit non-interactive mode with bounded waits and safe exit codes, make a hidden non-interactive service stop a precondition of uninstall, let `unknown` ownership still request a graceful stop while force kill requires re-verified `owned`, teach the start path to tell `owned`, `other` and `unknown` apart, and add a negative packaged E2E for the silent stop-failure path.
 
 ### Fixed
 
@@ -16,6 +19,10 @@
 - BT-UPD-001：更新只接受 signed stable manifest，並要求使用者以 target version 與 manifest digest 明確確認後，才下載、備份或啟動 installer；加入 defer、24h cadence、進度、post-update health 與 rollback flow。
 - BT-UPD-001 follow-up：修正持續服務的 recurring update check、資料庫 network pause、冪等 health marker、非同步 installer spawn failure，以及 Web rollback 的安全停機 handoff。
 - BT-UPD-001 follow-up：silent installer 現在完成後重啟服務；補齊 defer、single-flight、health／rollback 結果 UI、`publishReady` 驗證、manifest error mapping 與英日介面文字。
+- BT-UPD-001：修正 silent uninstall 在 stop 失敗時開啟 WinForms 視窗並造成 90 秒 timeout；launcher 新增 `-NonInteractive` bounded 模式（新代碼 `BT-LCH-006`），uninstaller 以 non-interactive stop 為前置條件，失敗即中止移除。
+- BT-UPD-001：修正 non-interactive launcher 因 `Start-Process -PassThru` 回傳 null exit code，把成功的 service stop 判成 `BT-LCH-003`；改用自有 process handle 讀取 exit code。
+- BT-UPD-001：修正 packaged cold start（process 建立到 `startedAt` 可超過 6 秒）被 ±10 秒對稱 creation-time 視窗誤判為 `other`；改為方向性檢查——process 不得在紀錄的 `startedAt` 之後建立（PID reuse 容忍 2 秒 clock skew），startup 視窗放寬至 120 秒。
+- BT-UPD-001：修正 uninstall stop 前置條件在 `launcher.ps1` 遺失時 fail open（回傳 stop success 後繼續移除執行中的安裝）；改為 fail closed，並新增 `MissingLauncherMode` packaged E2E 與精確的 installer static contract test。
 
 ### Documentation
 

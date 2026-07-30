@@ -1,10 +1,17 @@
-﻿param([ValidateSet('open','start','restart','stop','status','export','import','update','rollback')][string]$Action='open')
+﻿param(
+  [ValidateSet('open','start','restart','stop','status','export','import','update','rollback')][string]$Action='open',
+  [switch]$NonInteractive
+)
 $ErrorActionPreference = 'Stop'
+# Actions callable by the installer, uninstaller, startup automation and tests: never GUI, always bounded.
+$nonInteractiveActions = @('start','restart','stop','status')
+# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 15s) plus overhead.
+$controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' = 20 }
 
 function Throw-LauncherError([string]$Code) {
-  $error = New-Object System.Exception($Code)
-  $error.Data['BeybladeCode'] = $Code
-  throw $error
+  $launcherError = New-Object System.Exception($Code)
+  $launcherError.Data['BeybladeCode'] = $Code
+  throw $launcherError
 }
 
 function Show-LauncherError([string]$Code) {
@@ -16,6 +23,7 @@ function Show-LauncherError([string]$Code) {
     'BT-LCH-003' = @('背景服務啟動失敗', 'Beyblade Tracker 無法完成背景服務啟動。', '查看服務狀態後，稍後再試一次。')
     'BT-LCH-004' = @('等待服務逾時', 'Beyblade Tracker 等待服務回應逾時。', '等候一分鐘後再試，並確認 8787 port 未被其他程式占用。')
     'BT-LCH-005' = @('無法開啟管理頁', '背景服務已啟動，但無法開啟本機管理頁。', '稍後再試，或查看服務狀態。')
+    'BT-LCH-006' = @('此操作需要互動模式', '這個操作需要視窗介面，無法在自動化模式執行。', '請從開始選單手動執行該功能。')
     'BT-LCH-999' = @('發生未預期的錯誤', 'Beyblade Tracker 發生未預期的內部錯誤。', '稍後再試；若持續發生，複製錯誤資訊後回報。')
   }
   if (-not $details.ContainsKey($Code)) { $Code = 'BT-LCH-999' }
@@ -46,6 +54,7 @@ function Show-LauncherError([string]$Code) {
 }
 
 try {
+if ($NonInteractive -and ($nonInteractiveActions -notcontains $Action)) { Throw-LauncherError 'BT-LCH-006' }
 $installRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $currentPath = Join-Path $installRoot 'current.json'
 if (-not (Test-Path -LiteralPath $currentPath)) { Throw-LauncherError 'BT-LCH-001' }
@@ -65,8 +74,29 @@ $env:BEYBLADE_USER_ROOT = $userRoot
 Set-Location -LiteralPath $appRoot
 
 function Run-Control([string]$command) {
-  & $node '--no-warnings' (Join-Path $appRoot 'scripts\service-control.js') $command
-  if ($LASTEXITCODE -ne 0) { Throw-LauncherError 'BT-LCH-003' }
+  $controlScript = Join-Path $appRoot 'scripts\service-control.js'
+  if (-not $NonInteractive) {
+    & $node '--no-warnings' $controlScript $command
+    if ($LASTEXITCODE -ne 0) { Throw-LauncherError 'BT-LCH-003' }
+    return
+  }
+  $timeout = if ($controlTimeoutSeconds.ContainsKey($command)) { [int]$controlTimeoutSeconds[$command] } else { 60 }
+  # Own the process handle directly: Start-Process -PassThru can report a null ExitCode for a hidden child.
+  $control = New-Object System.Diagnostics.Process
+  $control.StartInfo.FileName = $node
+  $control.StartInfo.Arguments = '--no-warnings "' + $controlScript + '" ' + $command
+  $control.StartInfo.WorkingDirectory = $appRoot
+  $control.StartInfo.UseShellExecute = $false
+  $control.StartInfo.CreateNoWindow = $true
+  [void]$control.Start()
+  try {
+    if (-not $control.WaitForExit($timeout * 1000)) {
+      try { $control.Kill() } catch { }
+      Throw-LauncherError 'BT-LCH-003'
+    }
+    $exitCode = $control.ExitCode
+  } finally { $control.Dispose() }
+  if ($exitCode -ne 0) { Throw-LauncherError 'BT-LCH-003' }
 }
 
 function Wait-ForManagementPage {
@@ -83,7 +113,7 @@ switch ($Action) {
   'start' { Run-Control 'start'; Wait-ForManagementPage }
   'restart' { Run-Control 'restart'; Wait-ForManagementPage }
   'stop' { Run-Control 'stop' }
-  'status' { Run-Control 'status'; Read-Host '按 Enter 關閉' }
+  'status' { Run-Control 'status'; if (-not $NonInteractive) { Read-Host '按 Enter 關閉' } }
   'export' {
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = New-Object System.Windows.Forms.SaveFileDialog
@@ -105,6 +135,13 @@ switch ($Action) {
 }
 } catch {
   $code = $_.Exception.Data['BeybladeCode']
-  if ($code -notmatch '^BT-LCH-00[1-5]$') { $code = 'BT-LCH-999' }
+  if ($code -notmatch '^BT-LCH-00[1-6]$') { $code = 'BT-LCH-999' }
+  # Non-interactive callers get only the safe error code on stderr: no dialog, no paths, no stack trace.
+  if ($NonInteractive) {
+    [Console]::Error.WriteLine($code)
+    exit 1
+  }
   Show-LauncherError $code
+  exit 1
 }
+exit 0

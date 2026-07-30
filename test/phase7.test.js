@@ -127,15 +127,69 @@ test('Windows installer declares per-user install, startup task, shortcuts, and 
   assert.match(installer, /Flags: nowait runhidden/);
   assert.doesNotMatch(installer, /skipifsilent/);
   assert.match(installer, /not WizardSilent/);
-  assert.match(installer, /\[UninstallRun\][\s\S]*powershell\.exe[\s\S]*launcher\.ps1[\s\S]*waituntilterminated/);
+  assert.match(installer, /launcher\.vbs"" start noninteractive/);
+  assert.match(installer, /launcher\.vbs"" restart noninteractive[\s\S]*?Check: WizardSilent/);
+  assert.doesNotMatch(installer, /\[UninstallRun\]/);
+  assert.match(installer, /-Action stop -NonInteractive/);
+
+  // The stop precondition must fail closed: a missing launcher proves only that the helper cannot run.
+  const stopFunction = installer.match(/function StopTrackerService\(\): Boolean;[\s\S]*?\nend;/)?.[0] || '';
+  assert.ok(stopFunction, 'StopTrackerService must exist');
+  assert.match(stopFunction, /ewWaitUntilTerminated, ResultCode\) and \(ResultCode = 0\)/);
+  assert.doesNotMatch(stopFunction, /Result := True/);
+  const missingLauncherBlock = stopFunction.match(/if not FileExists\(LauncherPath\) then begin[\s\S]*?end;/)?.[0] || '';
+  assert.ok(missingLauncherBlock, 'the missing-launcher branch must exist');
+  assert.match(missingLauncherBlock, /Result := False;/);
+  assert.doesNotMatch(missingLauncherBlock, /Result := True/);
   const e2e = readFileSync(new URL('../scripts/phase7-e2e.ps1', import.meta.url), 'utf8');
   assert.match(e2e, /function Wait-E2ePathAbsent/);
   assert.match(e2e, /Wait-E2ePathAbsent \$installRoot 'Uninstaller'/);
   const releaseBuilder = readFileSync(new URL('../scripts/build-windows-release.js', import.meta.url), 'utf8');
   assert.ok(releaseBuilder.indexOf('manifest.publishReady = true') < releaseBuilder.indexOf('manifest.signature = sign'));
   assert.match(installer, /PreserveUserData/);
+  assert.match(installer, /SuppressibleMsgBox\([\s\S]*MB_YESNO, IDYES\) = IDYES/);
+  const uninstallPrompt = installer.match(/function InitializeUninstall\(\): Boolean;[\s\S]*?end;/)?.[0] || '';
+  assert.doesNotMatch(uninstallPrompt, /(?:^|[^A-Za-z])MsgBox\(/);
+  assert.match(uninstallPrompt, /Result := StopTrackerService\(\);[\s\S]*if not Result then begin/);
   assert.match(installer, /\[UninstallDelete\][\s\S]*\{app\}\\current\.json/);
   assert.match(installer, /google\.com\/chrome/);
+  assert.match(e2e, /function Wait-E2eServiceHealthy/);
+  assert.match(e2e, /runtime\\tracker\.pid/);
+  assert.match(e2e, /runtime\\tracker-status\.json/);
+  assert.match(e2e, /127\.0\.0\.1:8787\/health/);
+  assert.match(e2e, /Wait-E2eServiceStopped \$servicePid/);
+  assert.doesNotMatch(e2e, /bin\\health-check\.js/);
+  assert.match(e2e, /function Stop-E2eProcesses/);
+  assert.match(e2e, /Get-CimInstance Win32_Process/);
+  assert.match(e2e, /\$stopErrors = @\(\)/);
+  assert.match(e2e, /\$attempt -lt 3/);
+  assert.match(e2e, /CommandLine\.Contains\(\$runId\).*CommandLine\.Contains\(\$installRoot\)/);
+  assert.match(e2e, /Packaged service-control stop failed with exit code/);
+  assert.match(e2e, /E2E process cleanup failed/);
+  assert.match(e2e, /E2E cleanup failed/);
+  assert.match(e2e, /\[switch\]\$StopFailureMode/);
+  assert.match(e2e, /\[switch\]\$MissingLauncherMode/);
+  assert.match(e2e, /Choose either -StopFailureMode or -MissingLauncherMode, not both/);
+  assert.match(e2e, /function Wait-E2eProcessFailure/);
+  assert.match(e2e, /function Assert-E2eNoLauncherDialog/);
+  assert.match(e2e, /function Set-E2eMissingLauncher/);
+  assert.match(e2e, /function Restore-E2eMissingLauncher/);
+  assert.match(e2e, /Refusing to modify a control script outside this run/);
+  assert.match(e2e, /Refusing to move a launcher outside this run/);
+  assert.match(e2e, /Failed uninstall removed program files while the service was still running/);
+  assert.match(e2e, /Uninstall without a launcher removed program files it could not prove were idle/);
+  assert.match(e2e, /Uninstall without a launcher stopped or killed the running service/);
+  assert.match(e2e, /Wait-E2eProcessFailure \$process 'Uninstaller without a launcher' 15/);
+  assert.match(e2e, /try \{ Restore-E2eMissingLauncher \} catch \{ \$cleanupErrors \+= \$_ \}/);
+  assert.match(e2e, /try \{ Restore-E2eStopFailure \} catch \{ \$cleanupErrors \+= \$_ \}/);
+
+  const serviceControl = readFileSync(new URL('../scripts/service-control.js', import.meta.url), 'utf8');
+  assert.match(serviceControl, /runStopSequence/);
+  assert.match(serviceControl, /runStartSequence/);
+  assert.match(serviceControl, /ExecutablePath/);
+  assert.match(serviceControl, /CreationDate/);
+  assert.match(serviceControl, /System32', 'WindowsPowerShell', 'v1\.0', 'powershell\.exe'/);
+  assert.doesNotMatch(serviceControl, /\/IM/);
 });
 
 test('Windows PowerShell 5.1 launcher uses a UTF-8 BOM for localized text', () => {
@@ -158,6 +212,24 @@ test('hidden Windows launcher maps startup failures to safe dialogs with copy an
   assert.match(source, /複製錯誤資訊/);
   assert.match(source, /問題回報/);
   assert.doesNotMatch(source, /Show-LauncherError \$_.Exception.Message/);
+});
+
+test('non-interactive launcher callers get a bounded exit code instead of a dialog', () => {
+  const source = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url)).subarray(3).toString('utf8');
+  assert.match(source, /\[switch\]\$NonInteractive/);
+  assert.match(source, /BT-LCH-006/);
+  assert.match(source, /\$nonInteractiveActions = @\('start','restart','stop','status'\)/);
+  assert.match(source, /if \(\$NonInteractive -and \(\$nonInteractiveActions -notcontains \$Action\)\)/);
+  assert.match(source, /if \(-not \$NonInteractive\) \{ Read-Host/);
+  assert.match(source, /WaitForExit\(\$timeout \* 1000\)/);
+  // The non-interactive branch must short-circuit the dialog and every path must set an explicit exit code.
+  assert.ok(source.indexOf('[Console]::Error.WriteLine($code)') < source.lastIndexOf('Show-LauncherError $code'));
+  assert.match(source, /\[Console\]::Error\.WriteLine\(\$code\)\s*\r?\n\s*exit 1/);
+  assert.match(source, /Show-LauncherError \$code\s*\r?\n\s*exit 1\s*\r?\n\}\s*\r?\nexit 0/);
+
+  const vbs = readFileSync(new URL('../release/windows/launcher.vbs', import.meta.url), 'utf8');
+  assert.match(vbs, /mode = "noninteractive"/);
+  assert.match(vbs, /-NonInteractive/);
 });
 
 test('diagnostics require consent and exclude credentials, URLs, logs, and product history', () => {

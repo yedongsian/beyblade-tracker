@@ -233,4 +233,8 @@ HTTP status 應區分 validation、policy、conflict、not found 與 internal fa
 }
 ```
 
+The server first validates the confirmation shape (`confirmed:true`, semantic target version, 64-hex manifest digest), then synchronously reserves a `checking` operation. A concurrent valid request returns that operation ID with `inProgress:true`; it does not start another manifest request, download, backup, or installer launch. Safe summaries omit URLs, paths, signatures, and exception details. Terminal progress is retained for ten minutes, capped at twenty records, then returns 404.
+
+`checking` is an active phase with `received:0` and `total:0`; clients should show it as indeterminate rather than as a 0% download. The phase transitions to `downloading`, then `installing`, and finally `completed` or `failed`.
+
 Server 必須拒絕 `confirmed != true`、target／digest 不符、network disabled、signature／hash 無效或 backup 失敗。UI 的 background check 不可直接呼叫 apply；使用者 confirmation 也不能被保存為未來版本的永久同意。

@@ -54,6 +54,7 @@
 | GET | `/review?status=` | Candidate Review Queue；status 預設 `pending`。 |
 | GET | `/exclusions?status=` | Listing exclusion review；status 預設 `all`。 |
 | GET | `/sources` | Source、Discovery settings、network control。 |
+| GET | `/operations` | Local-first 可觀測性：各 component 成功率、parser failure rate、佇列、freshness 與各來源健康。 |
 | GET | `/settings` | Language、notification、transfer、diagnostics、update settings。 |
 | GET | `/privacy` | Privacy policy。 |
 | GET | `/source-policy` | Source use policy。 |
@@ -103,6 +104,7 @@
 | GET | `/api/watchlists` | — | `{watchlists: Watchlist[], alerts: WatchlistAlert[]}` |
 | GET | `/api/official-sources` | — | `{sources: OfficialSource[], announcements: OfficialAnnouncement[]}` |
 | GET | `/api/community` | — | `{sources: CommunitySource[], posts: CommunityPost[]}` |
+| GET | `/api/operations` | — | Local-first 可觀測性 metrics（`components`、`parserFailureRate`、`sources`、`freshness`、`queues`、`recentErrorClasses`）加上最近 50 筆 `recentEvents`。所有欄位皆為安全欄位：correlation ID、component、operation、source key、status、duration 與 bounded `error_class`；不含 credentials、完整 URL、log 內文或商品歷史。 |
 | GET | `/api/update` | — | 驗證 stable manifest，回傳 update availability、release notes、publisher、size、manifest digest 與 defer state；只檢查，不下載。 |
 
 ## 6. Settings、privacy 與 notification

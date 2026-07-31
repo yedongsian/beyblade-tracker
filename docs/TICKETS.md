@@ -24,7 +24,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Blocked | 完成 Windows 公開發佈閘門 | 憑證、hosting、key owner、clean VM |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
-| BT-P1-002 | P1 | Proposed | 建立 local-first 可觀測性 | 產品指標與 UI scope 決策 |
+| BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
 | BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
 | BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Windows native dialog 實機驗收 |
@@ -78,7 +78,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-P1-002 — 建立 local-first 可觀測性
 
 - Priority：P1
-- Status：Proposed
+- Status：Done
 - Owner：待指定
 - 背景：現有 `/health` 與 text log 可提供基本資訊，但沒有一致 event schema、歷史成功率、parser failure rate 或 queue 趨勢。
 - Scope：structured logs、本機 operations page、source／parser／notification／update metrics、SLO 與 diagnostics summary。
@@ -88,6 +88,9 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - UI 可查最後成功、連續失敗、parse failure、queue、stale／archived counts。
   - Runbook 能以這些資料完成三個演練：source parser failure、notification failure、stale data。
   - Diagnostics 仍不含 credentials、full URLs、logs 或 product history。
+- Verification evidence（2026-07-30）：新增 schema 11 的 `operation_events`（correlation ID、component、operation、source key、status、duration、bounded `error_class`），bounded local retention。已於 source／parser／notification／update 路徑埋點：`runOfferMonitors`（source＋parser，含每項解析失敗計數）、`flushNotifications`（每次送出）、`recordUpdateCheck` 與更新 apply 終態。新增 `/operations` 頁與 `GET /api/operations`（最後成功、連續失敗、parser failure rate、佇列、stale／archived 計數、各來源最近錯誤類別），並加入 zh-TW／en／ja 標籤。`safeErrorClass` 保證只輸出 bounded label，永不外洩 message／URL／token；診斷匯出新增 `operations` 安全區塊。Runbook §18 補上三個演練。新增 `test/operations.test.js` focused 測試。仍待 `npm test` 全綠與 UI 實機驗收後才可標記 Done。
+- FIX verification（2026-07-31）：parser 會拒絕無 URL／無有效商品欄位的 row，JSON-LD／browser connector 以 page-level empty／maintenance outcome 隔離不會進入 pipeline；parser、notification、queue、freshness、source health 的 SLO 門檻會共同決定整體狀態。operation event 欄位均受 allowlist／長度限制，diagnostics 遮蔽一般 URL、query 與 credential/token 模式；manual、scheduled、defer 與 apply internal check 都記錄安全 update event。`npm test` 192/192 通過；本機 `/operations` zh-TW、en、ja 各為 HTTP 200。Runbook parser／notification／stale 三項演練皆由相對應 regression 情境驗證。
+- FIX-11–FIX-39 verification（2026-07-31）：schema 12 寫入 valid／item-invalid／item-failed／page counts；為保留既有 migration checksum，以 schema 13 新增 `page_failed_count`。Parser 分開計算 legacy event／item／page failure rate；1 valid + 99 empty pages 與 1 valid + 99 item exceptions 都為 `degraded`。Rollback accepted／running／succeeded／failed lifecycle 以 runtime sidecar 保存，共用 correlation ID 與實際 duration，runner 不會開啟或升級已還原的舊 schema DB。Rollback restore 與舊版服務啟動失敗皆保留 `BT-UPD-007` 與 duration，且每次只寫入一筆 terminal event。Rollback endpoint 必須先成功寫入 accepted sidecar 才觸發 service stop；sidecar 寫入失敗會回傳 `BT-UPD-007` 且不啟動 handoff，並以 single-flight reservation 拒絕第二個請求而不修改既有 lifecycle。accepted／running sidecar 以 5 分鐘 bounded lease 保護；service 與 rollback runner owner 都以 PID、executable、command line 與建立時間嚴格驗證，PID reuse 或無法讀取程序資訊不會誤鎖 retry。逾期但 owner 存活時仍保持鎖定；只有 owner 已消失時，才以舊 ID 寫入安全 failed 終態並以新 ID 接受 retry。running lifecycle 保存 runner identity；live runner 會跨 lease 阻擋第二個 rollback，且 service start 僅接受該 runner 的 PID＋correlation ID 授權。Web→service handoff 使用實際 service `startedAt` 與 process identity；跨程序 `rollback.lock` 以原子 owner publication 實作 single-flight，初始化中的 owner fail-closed 並允許 bounded orphan recovery。stale lifecycle 僅會在成功取得 lock 後 finalize；安裝根目錄 launcher 也會驗證 live rollback lock，避免跨版本切回 legacy control 時繞過守門。直接 CLI rollback 在沒有既有 sidecar 時會產生安全 correlation ID，僅會延續 accepted／running attempt；failed 或 succeeded 後的 retry 會建立新的 ID。API 與 diagnostics 會拒絕惡意 DB timestamp、source key、counter 與 error class；聚合計數不再截斷。`npm test` **219/219 passed**。
 
 ### BT-P1-003 — 修正 Windows PowerShell 5.1 Launcher 編碼
 

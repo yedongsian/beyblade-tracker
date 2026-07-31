@@ -1,12 +1,15 @@
 import { createHash, verify as verifySignature } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { createBackup, restoreBackup } from '../maintenance/backup.js';
 import { getNetworkState } from '../core/network-control.js';
+import { newCorrelationId, recordOperationEvent, safeErrorClass } from '../core/operations.js';
+import { classifyServiceProcess, inspectProcessIdentity } from './service-process.js';
 import { APP_VERSION } from './version.js';
 
 export const UPDATE_STARTUP_DELAY_MS = 5000;
+export const ROLLBACK_ACTIVE_LEASE_MS = 5 * 60 * 1000;
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const UPDATE_RETRY_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -190,7 +193,7 @@ function readUpdateStatus(path, failureCode) {
   try {
     const record = JSON.parse(readFileSync(path, 'utf8'));
     return {
-      status: record.status === 'succeeded' ? 'succeeded' : record.status === 'healthy' ? 'healthy' : record.status === 'failed' ? 'failed' : 'running',
+      status: record.status === 'accepted' ? 'accepted' : record.status === 'succeeded' ? 'succeeded' : record.status === 'healthy' ? 'healthy' : record.status === 'failed' ? 'failed' : 'running',
       code: record.code || null, rollbackOffered: record.rollbackOffered === true,
       targetVersion: record.targetVersion || null, version: record.version || null,
       checkedAt: record.checkedAt || record.completedAt || null,
@@ -208,14 +211,245 @@ export function getRollbackStatus(config) {
   return readUpdateStatus(config.update?.rollbackStatusFile, 'BT-UPD-007');
 }
 
+function safeRollbackTimestamp(value) {
+  const raw = String(value || '');
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(raw) ? raw : null;
+}
+
+function safeRollbackPhase(value) {
+  return ['accepted', 'running', 'succeeded', 'failed'].includes(value) ? value : 'running';
+}
+
+function safeRollbackCode(value) {
+  const raw = String(value || '');
+  return /^BT-[A-Z]+-\d+$/.test(raw) ? raw : null;
+}
+
+function safeRollbackDuration(value) {
+  return Number.isFinite(Number(value)) ? Math.min(86_400_000, Math.max(0, Math.round(Number(value)))) : 0;
+}
+
+function safeRollbackRunner(value) {
+  const raw = value && typeof value === 'object' ? value : {};
+  const pid = Number(raw.pid);
+  const boundedPath = (path) => typeof path === 'string' && path.length > 0 && path.length <= 512 ? path : null;
+  return Number.isInteger(pid) && pid > 0 && pid <= 2_147_483_647
+    ? {
+      pid, executablePath: boundedPath(raw.executablePath), runnerFile: boundedPath(raw.runnerFile),
+      startedAt: safeRollbackTimestamp(raw.startedAt),
+    }
+    : null;
+}
+
+function safeRollbackLifecycle(events) {
+  return Array.isArray(events) ? events.map((event) => ({
+    phase: safeRollbackPhase(event?.phase), at: safeRollbackTimestamp(event?.at),
+    durationMs: safeRollbackDuration(event?.durationMs),
+    correlationId: /^[A-Za-z0-9_-]{1,64}$/.test(String(event?.correlationId || '')) ? event.correlationId : null,
+    errorCode: safeRollbackCode(event?.errorCode),
+  })).filter((event) => event.at).slice(-8) : [];
+}
+
+// This sidecar remains outside the restored database, so it preserves the
+// accepted -> running -> terminal rollback history without migrating a DB that
+// must remain compatible with the previous application version.
+export function getRollbackLifecycle(config) {
+  const file = config.update?.rollbackStatusFile;
+  if (!file || !existsSync(file)) return [];
+  try { return safeRollbackLifecycle(JSON.parse(readFileSync(file, 'utf8')).events); } catch { return []; }
+}
+
+function hasLiveRollbackServiceOwner(config, inspectProcess = inspectProcessIdentity) {
+  const file = config.statusFile;
+  if (!file || !existsSync(file)) return false;
+  try {
+    const status = JSON.parse(readFileSync(file, 'utf8'));
+    const pid = Number(status?.pid);
+    if (!(status?.service === 'beyblade-tracker'
+      && status?.status === 'stopping'
+      && status?.rollbackRequested === true
+      && Number.isInteger(pid) && pid > 0)) return false;
+    return classifyServiceProcess(inspectProcess(pid), {
+      pid, status, executablePath: status.executablePath, serviceFile: status.serviceFile, startedAt: status.startedAt,
+    }) === 'owned';
+  } catch { return false; }
+}
+
+function hasLiveRollbackRunnerOwner(last, runner, inspectProcess = inspectProcessIdentity) {
+  if (last?.phase !== 'running' || !runner?.pid || !runner.executablePath || !runner.runnerFile || !runner.startedAt) return false;
+  const status = { service: 'beyblade-tracker', pid: runner.pid, status: 'running', startedAt: runner.startedAt };
+  try {
+    return classifyServiceProcess(inspectProcess(runner.pid), {
+      pid: runner.pid, status, executablePath: runner.executablePath, serviceFile: runner.runnerFile, startedAt: runner.startedAt,
+    }) === 'owned';
+  } catch { return false; }
+}
+
+// accepted/running sidecars are only authoritative for a bounded lease.  This
+// lets a newly started service recover safely if the prior process died before
+// the rollback runner could write its terminal state.
+export function getRollbackLeaseStatus(config, {
+  now = Date.now(), leaseMs = ROLLBACK_ACTIVE_LEASE_MS, inspectProcess,
+} = {}) {
+  let stored = {};
+  try { stored = JSON.parse(readFileSync(config.update?.rollbackStatusFile, 'utf8')); } catch { /* absent/malformed */ }
+  let last = getRollbackLifecycle(config).at(-1) || null;
+  // Older sidecars had only status/requestedAt.  Treat them as active too so
+  // a current control script cannot become a bypass during a legacy handoff.
+  if (!last && ['accepted', 'running'].includes(stored?.status)) {
+    last = { phase: stored.status, at: safeRollbackTimestamp(stored.at || stored.startedAt || stored.requestedAt), correlationId: stored.correlationId || null };
+  }
+  if (!last || !['accepted', 'running'].includes(last.phase)) return { active: false, stale: false, last };
+  const serviceOwnerActive = hasLiveRollbackServiceOwner(config, inspectProcess);
+  const runner = safeRollbackRunner(stored.runner);
+  const runnerOwnerActive = hasLiveRollbackRunnerOwner(last, runner, inspectProcess);
+  if (serviceOwnerActive || runnerOwnerActive) {
+    return { active: true, stale: false, ownerActive: true, serviceOwnerActive, runnerOwnerActive, runner, last };
+  }
+  const at = Date.parse(last.at || '');
+  const current = Number(now);
+  const boundedLease = Number.isFinite(Number(leaseMs)) ? Math.max(1, Math.min(86_400_000, Number(leaseMs))) : ROLLBACK_ACTIVE_LEASE_MS;
+  const active = Number.isFinite(at) && Number.isFinite(current) && current >= at && current - at <= boundedLease;
+  // An active legacy record without a trustworthy timestamp is not safe to
+  // expire automatically.  It needs an explicit runner recovery/finalization.
+  const unknownAge = !Number.isFinite(at) || !Number.isFinite(current) || current < at;
+  return { active: active || unknownAge, stale: !active && !unknownAge, ownerActive: false, serviceOwnerActive: false, runnerOwnerActive: false, runner, last };
+}
+
+export function canStartServiceDuringRollback(config, {
+  now = Date.now(), inspectProcess, runnerPid = null, correlationId = null,
+} = {}) {
+  const lease = getRollbackLeaseStatus(config, { now, inspectProcess });
+  // A sidecar is a lease, not a hint.  In particular, a transient CIM failure
+  // must not turn an accepted/running rollback into permission to open the DB.
+  // The rollback runner is the sole exception and it has to prove both its
+  // OS identity and the handoff correlation.
+  if (!lease.active) return true;
+  return lease.runnerOwnerActive && Number(runnerPid) === lease.runner?.pid &&
+    String(correlationId || '') === String(lease.last?.correlationId || '');
+}
+
+function rollbackLockPath(config) {
+  const configured = config.update?.rollbackLockFile;
+  if (configured) return configured;
+  const statusFile = config.update?.rollbackStatusFile;
+  return statusFile ? join(dirname(statusFile), 'rollback.lock') : null;
+}
+
+function safeRollbackLockOwner(value) {
+  const raw = value && typeof value === 'object' ? value : {};
+  const pid = Number(raw.pid);
+  const token = /^[A-Za-z0-9_-]{8,128}$/.test(String(raw.token || '')) ? String(raw.token) : null;
+  const correlationId = /^[A-Za-z0-9_-]{1,64}$/.test(String(raw.correlationId || '')) ? String(raw.correlationId) : null;
+  if (!Number.isInteger(pid) || pid <= 0 || !token || !correlationId) return null;
+  return {
+    pid, token, correlationId,
+    executablePath: typeof raw.executablePath === 'string' ? raw.executablePath : null,
+    runnerFile: typeof raw.runnerFile === 'string' ? raw.runnerFile : null,
+    startedAt: safeRollbackTimestamp(raw.startedAt), kind: raw.kind === 'handoff' ? 'handoff' : 'runner',
+  };
+}
+
+function readRollbackLock(lockPath) {
+  try { return safeRollbackLockOwner(JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'))); } catch { return null; }
+}
+
+function rollbackLockCanRecoverIncompleteOwner(lockPath, {
+  nowMs = Date.now, initializationGraceMs = 5000,
+} = {}) {
+  try {
+    const ageMs = Number(nowMs()) - statSync(lockPath).mtimeMs;
+    const graceMs = Number.isFinite(Number(initializationGraceMs))
+      ? Math.max(1000, Math.min(60_000, Number(initializationGraceMs))) : 5000;
+    return Number.isFinite(ageMs) && ageMs >= graceMs;
+  } catch { return false; }
+}
+
+function lockOwnerIsLive(owner, { inspectProcess = inspectProcessIdentity, isProcessAlive = (pid) => {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+} } = {}) {
+  if (!owner?.pid) return false;
+  // A process which no longer exists is safe to reclaim.  If it exists but
+  // CIM is unavailable/ambiguous, keep the lock: unknown is deliberately not
+  // equivalent to dead.
+  if (!isProcessAlive(owner.pid)) return false;
+  if (!owner.executablePath || !owner.runnerFile || !owner.startedAt) return true;
+  const status = { service: 'beyblade-tracker', status: 'running', pid: owner.pid, startedAt: owner.startedAt };
+  const ownership = classifyServiceProcess(inspectProcess(owner.pid), {
+    pid: owner.pid, status, executablePath: owner.executablePath, serviceFile: owner.runnerFile, startedAt: owner.startedAt,
+  });
+  return ownership !== 'other';
+}
+
+// A directory creation is atomic on the supported filesystems.  It avoids the
+// read/overwrite race of a JSON sidecar and survives a runner crash so a later
+// invocation can reclaim it only after proving the prior PID is gone/reused.
+export function acquireRollbackLock(config, {
+  correlationId, handoffToken = null, runnerFile = null, kind = 'runner', now = () => new Date().toISOString(),
+  startedAt = null, inspectProcess, isProcessAlive, pid = process.pid, executablePath = process.execPath,
+  nowMs = Date.now, initializationGraceMs = 5000,
+} = {}) {
+  const lockPath = rollbackLockPath(config);
+  if (!lockPath || !/^[A-Za-z0-9_-]{1,64}$/.test(String(correlationId || ''))) return null;
+  try { mkdirSync(dirname(lockPath), { recursive: true }); } catch { return null; }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const token = newCorrelationId();
+    const owner = { pid, token, correlationId, executablePath, runnerFile, startedAt: startedAt || now(), kind };
+    try {
+      mkdirSync(lockPath, { recursive: false });
+      const ownerTemp = join(lockPath, `owner.${pid}.${token}.tmp`);
+      writeFileSync(ownerTemp, JSON.stringify(owner, null, 2));
+      renameSync(ownerTemp, join(lockPath, 'owner.json'));
+      return { path: lockPath, owner };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') return null;
+    }
+    const existing = readRollbackLock(lockPath);
+    // Another process can observe the directory after its atomic mkdir but
+    // before owner.json is atomically published.  Never reclaim that
+    // initialization window; only an old orphaned directory is recoverable.
+    if (!existing && !rollbackLockCanRecoverIncompleteOwner(lockPath, { nowMs, initializationGraceMs })) return null;
+    // The web service hands a capability to its shutdown child.  A normal CLI
+    // has no token and cannot take this path; it therefore cannot overwrite an
+    // accepted handoff or its sidecar.
+    const mayAdopt = existing && handoffToken && existing.kind === 'handoff' &&
+      existing.correlationId === correlationId && existing.token === handoffToken;
+    if (!mayAdopt && lockOwnerIsLive(existing, { inspectProcess, isProcessAlive })) return null;
+    try { rmSync(lockPath, { recursive: true, force: true }); } catch { return null; }
+  }
+  return null;
+}
+
+export function releaseRollbackLock(lock) {
+  if (!lock?.path || !lock?.owner?.token) return;
+  const current = readRollbackLock(lock.path);
+  if (current?.token === lock.owner.token) rmSync(lock.path, { recursive: true, force: true });
+}
+
 export function writeRollbackStatus(config, patch) {
   const file = config.update?.rollbackStatusFile;
   if (!file) return null;
   mkdirSync(dirname(file), { recursive: true });
+  let previous = {};
+  try { previous = JSON.parse(readFileSync(file, 'utf8')); } catch { /* no previous state */ }
+  const correlationId = /^[A-Za-z0-9_-]{1,64}$/.test(String(patch.correlationId || previous.correlationId || ''))
+    ? String(patch.correlationId || previous.correlationId) : null;
+  const now = safeRollbackTimestamp(patch.at) || new Date().toISOString();
+  const requestedAt = safeRollbackTimestamp(patch.requestedAt) || safeRollbackTimestamp(previous.requestedAt);
+  const startedAt = safeRollbackTimestamp(patch.startedAt) || safeRollbackTimestamp(previous.startedAt);
+  const phase = safeRollbackPhase(patch.phase || patch.status);
+  const elapsedSinceStart = Date.parse(startedAt || requestedAt || '');
+  const durationMs = patch.durationMs == null
+    ? (Number.isFinite(elapsedSinceStart) ? Math.max(0, Date.parse(now) - elapsedSinceStart) : 0)
+    : safeRollbackDuration(patch.durationMs);
+  const events = [...safeRollbackLifecycle(previous.events), {
+    phase, at: now, durationMs, correlationId, errorCode: safeRollbackCode(patch.code),
+  }].slice(-8);
   const safe = {
-    status: patch.status === 'succeeded' ? 'succeeded' : patch.status === 'failed' ? 'failed' : 'running',
-    code: patch.code || null, version: patch.version || null,
-    completedAt: patch.completedAt || null,
+    status: patch.status === 'accepted' ? 'accepted' : patch.status === 'succeeded' ? 'succeeded' : patch.status === 'failed' ? 'failed' : 'running',
+    code: safeRollbackCode(patch.code), version: typeof patch.version === 'string' && patch.version.length <= 64 ? patch.version : null,
+    completedAt: safeRollbackTimestamp(patch.completedAt), correlationId, requestedAt, startedAt,
+    runner: patch.runner === null ? null : safeRollbackRunner(patch.runner || previous.runner), events,
   };
   const temp = `${file}.${process.pid}.tmp`;
   writeFileSync(temp, JSON.stringify(safe, null, 2));
@@ -227,6 +461,16 @@ export function writeRollbackStatus(config, patch) {
 export function clearRollbackStatus(config) {
   const file = config.update?.rollbackStatusFile;
   if (file) rmSync(file, { force: true });
+}
+
+// Keep every terminal rollback failure in one place.  The runner and the
+// service shutdown path can both use this without producing a second event.
+export function finishRollbackFailure(config, error, { now = () => new Date().toISOString() } = {}) {
+  const completedAt = now();
+  return writeRollbackStatus(config, {
+    status: 'failed', phase: 'failed', code: error?.code || 'BT-UPD-007',
+    completedAt, at: completedAt,
+  });
 }
 
 export function validateUpdateConfirmation(confirmation, manifest) {
@@ -292,11 +536,15 @@ function updateResultForDisplay(result, checkedAt) {
   };
 }
 
-export function recordUpdateCheck(db, result = null, { now = new Date().toISOString() } = {}) {
+export function recordUpdateCheck(db, result = null, { now = new Date().toISOString(), correlationId = null, durationMs = null } = {}) {
   const checkedAt = checkedAtIso(now);
   const display = updateResultForDisplay(result, checkedAt);
   writeSetting(db, 'updateLastCheckedAt', checkedAt, checkedAt);
   writeSetting(db, 'updateLatestResult', display, checkedAt);
+  recordOperationEvent(db, {
+    correlationId, component: 'update',
+    operation: display.updateAvailable ? 'check_available' : 'check', status: 'success', durationMs,
+  }, { now: checkedAt });
   return display;
 }
 
@@ -325,9 +573,16 @@ export async function prepareConfirmedUpdate(db, config, manifest, confirmation,
 
 export async function runScheduledUpdateCheck(db, config, options = {}) {
   if (!getNetworkState(db, config).enabled || !config.update?.manifestUrl || !isUpdateCheckDue(db, options)) return null;
-  const result = await checkForUpdate(config, options);
-  recordUpdateCheck(db, result, options);
-  return result;
+  const correlationId = options.correlationId || newCorrelationId();
+  const started = Date.now();
+  try {
+    const result = await checkForUpdate(config, options);
+    recordUpdateCheck(db, result, { ...options, correlationId, durationMs: Date.now() - started });
+    return result;
+  } catch (error) {
+    recordOperationEvent(db, { correlationId, component: 'update', operation: 'check', status: 'failed', durationMs: Date.now() - started, errorClass: safeErrorClass(error) });
+    throw error;
+  }
 }
 
 export function scheduleRecurringUpdateCheck(db, config, {
@@ -403,4 +658,44 @@ export function rollbackUpdate(config, { pidFile } = {}) {
   renameSync(temp, config.update.currentFile);
   if (config.update.healthFile) rmSync(config.update.healthFile, { force: true });
   return { version: record.previousVersion, restored };
+}
+
+// The runner owns running and terminal lifecycle transitions.  Keeping this
+// outside the restored database preserves a coherent sidecar history even
+// when rollback replaces the application database with an older schema.
+export async function runRollbackLifecycle(config, {
+  pidFile,
+  startService,
+  runnerFile = null,
+  handoffToken = null,
+  now = () => new Date().toISOString(),
+  inspectProcess,
+  isProcessAlive,
+} = {}) {
+  const startedAt = now();
+  const previous = getRollbackLifecycle(config).at(-1);
+  const correlationId = ['accepted', 'running'].includes(previous?.phase) && previous.correlationId
+    ? previous.correlationId : newCorrelationId();
+  const runner = { pid: process.pid, executablePath: process.execPath, runnerFile, startedAt };
+  const lock = acquireRollbackLock(config, {
+    correlationId, handoffToken, runnerFile, now, startedAt, inspectProcess, isProcessAlive,
+  });
+  if (!lock) throw updateError('BT-UPD-007', 'A rollback runner is already active.');
+  try {
+    writeRollbackStatus(config, { status: 'running', phase: 'running', correlationId, runner, startedAt, at: startedAt });
+    const result = rollbackUpdate(config, { pidFile });
+    if (typeof startService !== 'function') throw updateError('BT-UPD-007', 'Rollback service runner is unavailable.');
+    await startService(result.version, { correlationId, runner });
+    const completedAt = now();
+    writeRollbackStatus(config, {
+      status: 'succeeded', phase: 'succeeded', version: result.version,
+      completedAt, at: completedAt,
+    });
+    return result;
+  } catch (error) {
+    finishRollbackFailure(config, error, { now });
+    throw error;
+  } finally {
+    releaseRollbackLock(lock);
+  }
 }

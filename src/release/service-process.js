@@ -1,4 +1,31 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 const STATUS_PHASES = new Set(['starting', 'running', 'stopping']);
+
+function systemPowerShell(env = process.env) {
+  const root = env.SystemRoot || env.windir;
+  if (!root) return 'powershell.exe';
+  const absolute = join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  return existsSync(absolute) ? absolute : 'powershell.exe';
+}
+
+// Returns enough immutable OS metadata for classifyServiceProcess to reject a
+// reused PID. Unsupported platforms and unavailable CIM metadata are unknown,
+// never implicitly owned.
+export function inspectProcessIdentity(pid, {
+  platform = process.platform, execFile = execFileSync, env = process.env,
+} = {}) {
+  if (!Number.isInteger(pid) || pid <= 0 || platform !== 'win32') return null;
+  try {
+    const json = execFile(systemPowerShell(env), [
+      '-NoProfile', '-Command',
+      `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object @{N='processId';E={$_.ProcessId}},@{N='executablePath';E={$_.ExecutablePath}},@{N='commandLine';E={$_.CommandLine}},@{N='createdAt';E={if ($_.CreationDate) {$_.CreationDate.ToUniversalTime().ToString('o')}}} | ConvertTo-Json -Compress)`,
+    ], { encoding: 'utf8', windowsHide: true }).trim();
+    return json ? JSON.parse(json) : null;
+  } catch { return null; }
+}
 
 /**
  * A matching status file only proves the Tracker itself published this PID, so it may authorize a

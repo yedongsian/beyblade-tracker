@@ -83,6 +83,56 @@ export function hasEnabledBuyButton(html, selector) {
   return enabledBuyButtonCount($, selector) > 0;
 }
 
+/**
+ * A parsed listing is only usable if the parser recovered at least one field
+ * that identifies or prices the product. A row with only boilerplate is a
+ * page-level parse failure, not a real product, and must never be handed to the
+ * pipeline as if it were a valid listing.
+ */
+export function isUsableListing(listing) {
+  if (!listing) return false;
+  return Boolean(
+    listing.title
+    || listing.model
+    || listing.sku
+    || listing.barcode
+    || listing.price != null
+    || listing.priceText
+    || listing.availabilityRaw
+    || listing.availabilityText
+  );
+}
+
+// Multilingual "site is down for maintenance" markers. Kept intentionally
+// specific so an ordinary product page never trips them.
+const MAINTENANCE_PATTERNS = /(?:under\s+maintenance|scheduled\s+maintenance|site\s+maintenance|we['’]?ll\s+be\s+back|temporarily\s+unavailable|service\s+temporarily\s+unavailable|service\s+unavailable|メンテナンス|ただいま[^。]{0,20}(?:メンテ|調整)|臨時休業|システム[^。]{0,10}(?:停止|メンテ)|系統維護|網站維護|服務維護|維護中|暫停(?:服務|營業)|施工中)/i;
+
+/**
+ * Detect a maintenance/temporarily-unavailable page from its visible text so a
+ * transient outage is reported distinctly from a genuine parse failure.
+ */
+export function detectMaintenance(html) {
+  if (!html) return false;
+  const $ = cheerio.load(html);
+  const title = $('title').text() || '';
+  const heading = $('h1, h2').first().text() || '';
+  const body = ($('body').text() || '').slice(0, 2000);
+  return MAINTENANCE_PATTERNS.test(`${title} ${heading} ${body}`);
+}
+
+/**
+ * Classify a fetched page's parse outcome so connectors can signal a page-level
+ * result to the pipeline instead of pushing a bogus listing:
+ *   'ok'          -> at least one usable product field was recovered
+ *   'maintenance' -> nothing usable and the page reads as a maintenance notice
+ *   'empty'       -> nothing usable (blocked, layout change, or truly empty)
+ */
+export function classifyParsedPage(html, listing) {
+  if (isUsableListing(listing)) return 'ok';
+  if (detectMaintenance(html)) return 'maintenance';
+  return 'empty';
+}
+
 function firstString(v) {
   if (v == null) return undefined;
   if (Array.isArray(v)) return firstString(v[0]);

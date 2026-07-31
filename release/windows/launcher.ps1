@@ -73,7 +73,110 @@ $env:BEYBLADE_APP_ROOT = $appRoot
 $env:BEYBLADE_USER_ROOT = $userRoot
 Set-Location -LiteralPath $appRoot
 
+function Normalize-RollbackProcessPath([string]$value) {
+  if ([string]::IsNullOrWhiteSpace($value)) { return '' }
+  return $value.Trim().Trim('"').Replace('/', '\').ToLowerInvariant()
+}
+
+function Remove-StaleRollbackLock([string]$lockPath) {
+  try { Remove-Item -LiteralPath $lockPath -Recurse -Force -ErrorAction Stop }
+  catch { Throw-LauncherError 'BT-LCH-003' }
+}
+
+function Test-RollbackLockActive {
+  $lockPath = Join-Path $userRoot 'runtime\rollback.lock'
+  if (-not (Test-Path -LiteralPath $lockPath)) { return $false }
+  $ownerPath = Join-Path $lockPath 'owner.json'
+  try {
+    $owner = Get-Content -LiteralPath $ownerPath -Raw -ErrorAction Stop | ConvertFrom-Json
+    $ownerPid = 0
+    if (-not [int]::TryParse([string]$owner.pid, [ref]$ownerPid) -or $ownerPid -le 0) { return $true }
+  } catch {
+    # Missing or partially published owner metadata can be an acquisition in
+    # progress.  Give atomic publication a bounded grace period, then recover
+    # an orphan which can no longer belong to a synchronous acquisition.
+    try {
+      $lockAge = [DateTime]::UtcNow - (Get-Item -LiteralPath $lockPath -ErrorAction Stop).LastWriteTimeUtc
+      if ($lockAge.TotalSeconds -ge 5) {
+        Remove-StaleRollbackLock $lockPath
+        return $false
+      }
+    } catch { }
+    return $true
+  }
+
+  try {
+    $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction Stop
+  } catch {
+    # Unknown process identity fails closed.  A later retry can recover after
+    # CIM is available again or the process has exited.
+    return $true
+  }
+  if (-not $processInfo) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+
+  $actualExecutable = Normalize-RollbackProcessPath ([string]$processInfo.ExecutablePath)
+  $expectedExecutable = Normalize-RollbackProcessPath ([string]$owner.executablePath)
+  $commandLine = Normalize-RollbackProcessPath ([string]$processInfo.CommandLine)
+  $expectedRunner = Normalize-RollbackProcessPath ([string]$owner.runnerFile)
+  if ($actualExecutable -and $expectedExecutable -and $actualExecutable -ne $expectedExecutable) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+  if ($commandLine -and $expectedRunner -and -not $commandLine.Contains($expectedRunner)) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+  if (-not $actualExecutable -or -not $expectedExecutable -or -not $commandLine -or -not $expectedRunner) {
+    return $true
+  }
+
+  try {
+    $processStartedAt = ([DateTime]$processInfo.CreationDate).ToUniversalTime()
+    $recordedStartedAt = [DateTime]::Parse(
+      [string]$owner.startedAt,
+      [Globalization.CultureInfo]::InvariantCulture,
+      [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    )
+  } catch {
+    return $true
+  }
+  $startupDelayMs = ($recordedStartedAt - $processStartedAt).TotalMilliseconds
+  if ($startupDelayMs -lt -2000 -or $startupDelayMs -gt 120000) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+  return $true
+}
+
+function Assert-RollbackStartAllowed {
+  # This file is installed at {app}, outside versions/<current>.  It is the
+  # bootstrap guard for a rollback into a version which predates the JS guard.
+  if (Test-RollbackLockActive) { Throw-LauncherError 'BT-LCH-003' }
+  $sidecar = Join-Path $userRoot 'runtime\rollback-status.json'
+  if (-not (Test-Path -LiteralPath $sidecar)) { return }
+  try {
+    $record = Get-Content -LiteralPath $sidecar -Raw | ConvertFrom-Json
+    $last = $null
+    if ($record.events -and $record.events.Count -gt 0) { $last = $record.events[$record.events.Count - 1] }
+    $phase = if ($last) { [string]$last.phase } else { [string]$record.status }
+    $at = if ($last) { [string]$last.at } else { [string]$record.requestedAt }
+    if ($phase -notin @('accepted','running')) { return }
+    $when = [DateTime]::Parse($at, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
+    if ($when -gt [DateTime]::UtcNow -or ([DateTime]::UtcNow - $when).TotalMinutes -le 5) {
+      Throw-LauncherError 'BT-LCH-003'
+    }
+  } catch {
+    # If an active sidecar cannot be verified, fail closed.  The runner itself
+    # is launched before current.json changes and does not come through here.
+    Throw-LauncherError 'BT-LCH-003'
+  }
+}
+
 function Run-Control([string]$command) {
+  if ($command -in @('start','restart')) { Assert-RollbackStartAllowed }
   $controlScript = Join-Path $appRoot 'scripts\service-control.js'
   if (-not $NonInteractive) {
     & $node '--no-warnings' $controlScript $command

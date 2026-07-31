@@ -35,11 +35,14 @@ import { assertNetworkEnabled, getNetworkState, setNetworkEnabled } from '../cor
 import { TelegramNotifier } from '../notify/telegram.js';
 import { createTransferBundle, stageTransferImport } from '../maintenance/transfer.js';
 import {
-  checkForUpdate, clearDeferredUpdate, deferUpdate, getPostUpdateHealth, getRollbackStatus, getUpdateState, isDeferredUpdate, launchPreparedUpdate,
-  prepareConfirmedUpdate, recordUpdateCheck, UpdateError, validateUpdateConfirmation,
+  acquireRollbackLock, checkForUpdate, clearDeferredUpdate, deferUpdate, getPostUpdateHealth, getRollbackLeaseStatus, getRollbackLifecycle, getRollbackStatus, getUpdateState, isDeferredUpdate, launchPreparedUpdate,
+  finishRollbackFailure, prepareConfirmedUpdate, recordUpdateCheck, releaseRollbackLock, UpdateError, validateUpdateConfirmation, writeRollbackStatus,
 } from '../release/update.js';
 import { releaseInfo } from '../release/version.js';
 import { createDiagnosticsBundle } from '../maintenance/diagnostics.js';
+import {
+  listRecentOperationEvents, newCorrelationId, operationsMetrics, recordOperationEvent, safeErrorClass,
+} from '../core/operations.js';
 import { errorEnvelope } from '../errors/registry.js';
 
 function stateBadge(state, t) {
@@ -161,6 +164,59 @@ function overviewPage(db, base) {
     esc(source.name), esc(t(source.enabled ? 'common.yes' : 'common.no')), esc(source.lastSuccessAt || t('common.never')), esc(source.consecutiveFailures),
   ]), t)}</section>`;
   return layout({ ...page, title: t('nav.overview'), current: '/', body });
+}
+
+function operationsData(db, appConfig) {
+  refreshOfferFreshness(db);
+  return { ...operationsMetrics(db), rollbackLifecycle: getRollbackLifecycle(appConfig) };
+}
+
+function percent(rate) {
+  return `${(Number(rate || 0) * 100).toFixed(1)}%`;
+}
+
+function componentCard(metrics, component, t) {
+  const data = metrics.components[component];
+  return `<article class="card"><div class="section-head"><div><h2>${esc(t(`operations.comp.${component}`))}</h2></div><span class="pill ${data.failed ? 'warn' : 'good'}">${esc(t('operations.failureRate'))} ${esc(percent(data.failureRate))}</span></div>
+    <div class="meta"><span>${esc(t('operations.latestSuccess'))}：${esc(data.latestSuccessAt || t('common.never'))}</span><span>${esc(t('operations.total'))}：${esc(data.total)}</span><span>${esc(t('operations.failed'))}：${esc(data.failed)}</span>${data.lastErrorClass ? `<span>${esc(t('operations.lastError'))}：<code>${esc(data.lastErrorClass)}</code></span>` : ''}</div></article>`;
+}
+
+function operationsPage(db, base) {
+  const page = pageOptions(db, base);
+  const { t } = page;
+  const metrics = operationsData(db, base.appConfig);
+  const sourceRows = metrics.sources.map((source) => [
+    esc(source.display), esc(t(source.enabled ? 'common.yes' : 'common.no')),
+    esc(source.lastSuccessAt || t('common.never')), esc(source.consecutiveFailures),
+    source.lastErrorClass ? `<code>${esc(source.lastErrorClass)}</code>` : '—',
+  ]);
+  const errorRows = metrics.recentErrorClasses.map((row) => [
+    esc(t(`operations.comp.${row.component}`)), `<code>${esc(row.errorClass)}</code>`, esc(row.count),
+  ]);
+  const rollbackRows = metrics.rollbackLifecycle.map((event) => [
+    esc(event.phase), esc(event.at), esc(`${event.durationMs} ms`), event.errorCode ? `<code>${esc(event.errorCode)}</code>` : '—',
+  ]);
+  const q = metrics.queues;
+  const f = metrics.freshness;
+  const body = `<div class="section-head"><div><p class="eyebrow">${esc(t('operations.eyebrow'))}</p><h1>${esc(t('operations.title'))}</h1><p>${esc(t('operations.intro'))}</p></div><span class="pill ${metrics.status === 'ok' ? 'good' : 'bad'}">${esc(t(metrics.status === 'ok' ? 'overview.ok' : 'overview.attention'))}</span></div>
+  <section class="notice"><strong>${esc(t('operations.parserFailureRate'))}</strong>：${esc(percent(metrics.parserFailureRate))} · <strong>${esc(t('operations.parserItemFailureRate'))}</strong>：${esc(percent(metrics.parserItemFailureRate))} · <strong>${esc(t('operations.parserPageFailureRate'))}</strong>：${esc(percent(metrics.parserPageFailureRate))} · <span class="muted">${esc(t('operations.windowHint'))}</span></section>
+  <div class="grid two-col">${componentCard(metrics, 'source', t)}${componentCard(metrics, 'parser', t)}${componentCard(metrics, 'notification', t)}${componentCard(metrics, 'update', t)}</div>
+  <section class="card" style="margin-top:1rem"><h2>${esc(t('operations.queues'))}</h2><div class="grid stats">
+    <article class="card stat"><strong>${esc(q.pendingNotifications)}</strong><span>${esc(t('operations.pendingNotifications'))}</span></article>
+    <article class="card stat"><strong>${esc(q.failedNotifications)}</strong><span>${esc(t('operations.failedNotifications'))}</span></article>
+    <article class="card stat"><strong>${esc(q.monitorQueued + q.monitorRunning)}</strong><span>${esc(t('operations.monitorQueue'))}</span></article>
+    <article class="card stat"><strong>${esc(q.pendingCandidates)}</strong><span>${esc(t('operations.pendingCandidates'))}</span></article>
+  </div></section>
+  <section class="card" style="margin-top:1rem"><h2>${esc(t('operations.freshness'))}</h2><div class="grid stats">
+    <article class="card stat"><strong>${esc(f.fresh)}</strong><span>${esc(t('freshness.fresh'))}</span></article>
+    <article class="card stat"><strong>${esc(f.stale)}</strong><span>${esc(t('freshness.stale'))}</span></article>
+    <article class="card stat"><strong>${esc(f.archived)}</strong><span>${esc(t('freshness.archived'))}</span></article>
+    <article class="card stat"><strong>${esc(f.unknown)}</strong><span>${esc(t('freshness.unknown'))}</span></article>
+  </div></section>
+  <section class="card" style="margin-top:1rem"><h2>${esc(t('operations.sourcesTitle'))}</h2>${table([t('table.source'), t('table.enabled'), t('table.lastSuccess'), t('table.failures'), t('operations.lastError')], sourceRows, t)}</section>
+  <section class="card" style="margin-top:1rem"><h2>${esc(t('operations.rollbackLifecycle'))}</h2>${rollbackRows.length ? table([t('operations.phase'), t('table.time'), t('operations.duration'), t('operations.errorClass')], rollbackRows, t) : `<p class="muted">${esc(t('operations.noErrors'))}</p>`}</section>
+  <section class="card" style="margin-top:1rem"><h2>${esc(t('operations.recentErrors'))}</h2>${errorRows.length ? table([t('operations.component'), t('operations.errorClass'), t('operations.count')], errorRows, t) : `<p class="muted">${esc(t('operations.noErrors'))}</p>`}</section>`;
+  return layout({ ...page, title: t('operations.title'), current: '/operations', body });
 }
 
 function productsPage(db, base) {
@@ -492,6 +548,7 @@ export function createWebServer(db, options = {}) {
   const nonce = randomBytes(16).toString('base64url');
   const appConfig = options.appConfig || {};
   const updateOperations = new Map();
+  let rollbackReserved = false;
   const now = options.now || Date.now;
   const base = { csrfToken, nonce, appConfig, secretStore: options.secretStore, updateOperations };
   return createServer(async (req, res) => {
@@ -518,7 +575,12 @@ export function createWebServer(db, options = {}) {
       else if (req.method === 'GET' && url.pathname === '/settings') out = response(settingsPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/privacy') out = response(policyPage(db, base, 'privacy'));
       else if (req.method === 'GET' && url.pathname === '/source-policy') out = response(policyPage(db, base, 'source'));
+      else if (req.method === 'GET' && url.pathname === '/operations') out = response(operationsPage(db, base));
       else if (req.method === 'GET' && url.pathname === '/health') out = json(healthData(db, appConfig));
+      else if (req.method === 'GET' && url.pathname === '/api/operations') {
+        refreshOfferFreshness(db);
+        out = json({ ...operationsMetrics(db), rollbackLifecycle: getRollbackLifecycle(appConfig), recentEvents: listRecentOperationEvents(db, { limit: 50 }) });
+      }
       else if (req.method === 'GET' && url.pathname === '/api/sources') out = json({ sources: listManagedSources(db) });
       else if (req.method === 'GET' && url.pathname === '/api/settings') out = json(readSettings(db));
       else if (req.method === 'GET' && url.pathname === '/api/candidates') out = json({ candidates: listCandidates(db, { status: url.searchParams.get('status') || 'pending' }) });
@@ -571,8 +633,16 @@ export function createWebServer(db, options = {}) {
         out = response(bundle, 'application/gzip', 200, { 'Content-Disposition': 'attachment; filename="beyblade-diagnostics.json.gz"' });
       } else if (req.method === 'GET' && url.pathname === '/api/update') {
         assertNetworkEnabled(db, appConfig);
-        const update = await checkForUpdate(appConfig);
-        recordUpdateCheck(db, update);
+        const correlationId = newCorrelationId();
+        const started = Date.now();
+        let update;
+        try {
+          update = await checkForUpdate(appConfig);
+          recordUpdateCheck(db, update, { correlationId, durationMs: Date.now() - started });
+        } catch (error) {
+          recordOperationEvent(db, { correlationId, component: 'update', operation: 'check', status: 'failed', durationMs: Date.now() - started, errorClass: safeErrorClass(error) });
+          throw error;
+        }
         const state = getUpdateState(db);
         out = json({ ...state.latestResult, state, deferred: isDeferredUpdate(state, state.latestResult?.manifest),
           health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
@@ -585,13 +655,36 @@ export function createWebServer(db, options = {}) {
       } else if (req.method === 'POST' && url.pathname === '/api/update/defer') {
         assertNetworkEnabled(db, appConfig);
         const confirmation = await readJson(req);
-        const update = await checkForUpdate(appConfig);
+        const correlationId = newCorrelationId();
+        const started = Date.now();
+        try {
+          let update;
+        try {
+          update = await checkForUpdate(appConfig);
+          recordUpdateCheck(db, update, { correlationId, durationMs: Date.now() - started });
+        } catch (error) {
+          recordOperationEvent(db, { correlationId, component: 'update', operation: 'check', status: 'failed', durationMs: Date.now() - started, errorClass: safeErrorClass(error) });
+          throw error;
+        }
         if (!update.updateAvailable) throw new UpdateError('BT-UPD-005', '目前沒有可延後的更新。');
         out = json({ deferred: deferUpdate(db, confirmation, update.manifest) });
+        recordOperationEvent(db, { correlationId, component: 'update', operation: 'defer', status: 'success', durationMs: Date.now() - started });
+        } catch (error) {
+          recordOperationEvent(db, { correlationId, component: 'update', operation: 'defer', status: 'failed', durationMs: Date.now() - started, errorClass: safeErrorClass(error) });
+          throw error;
+        }
       } else if (req.method === 'POST' && url.pathname === '/api/update/resume') {
-        clearDeferredUpdate(db);
-        const state = getUpdateState(db);
-        out = json({ resumed: true, state, deferred: false });
+        const correlationId = newCorrelationId();
+        const started = Date.now();
+        try {
+          clearDeferredUpdate(db);
+          const state = getUpdateState(db);
+          out = json({ resumed: true, state, deferred: false });
+          recordOperationEvent(db, { correlationId, component: 'update', operation: 'resume', status: 'success', durationMs: Date.now() - started });
+        } catch (error) {
+          recordOperationEvent(db, { correlationId, component: 'update', operation: 'resume', status: 'failed', durationMs: Date.now() - started, errorClass: safeErrorClass(error) });
+          throw error;
+        }
       } else if (req.method === 'POST' && url.pathname === '/api/update/apply') {
         assertNetworkEnabled(db, appConfig);
         const confirmation = await readJson(req);
@@ -612,7 +705,15 @@ export function createWebServer(db, options = {}) {
         updateOperations.set(id, operation);
         void (async () => {
           try {
-            const update = await checkForUpdate(appConfig);
+            const checkStarted = now();
+            let update;
+            try {
+              update = await checkForUpdate(appConfig);
+              recordUpdateCheck(db, update, { correlationId: id, durationMs: now() - checkStarted });
+            } catch (error) {
+              recordOperationEvent(db, { correlationId: id, component: 'update', operation: 'check', status: 'failed', durationMs: now() - checkStarted, errorClass: safeErrorClass(error) });
+              throw error;
+            }
             if (!update.updateAvailable) throw new UpdateError('BT-UPD-005', '目前已是最新版本。');
             validateUpdateConfirmation(confirmation, update.manifest);
             Object.assign(operation, { targetVersion: update.manifest.version, phase: 'downloading', total: Number(update.manifest.size) });
@@ -626,7 +727,15 @@ export function createWebServer(db, options = {}) {
             operation.phase = 'failed';
             operation.errorCode = error instanceof UpdateError ? error.code : 'BT-UPD-005';
           } finally {
-            if (!ACTIVE_UPDATE_PHASES.has(operation.phase)) operation.completedAt = now();
+            if (!ACTIVE_UPDATE_PHASES.has(operation.phase)) {
+              operation.completedAt = now();
+              recordOperationEvent(db, {
+                correlationId: operation.id, component: 'update', operation: 'apply',
+                status: operation.phase === 'completed' ? 'success' : 'failed',
+                durationMs: operation.completedAt - operation.createdAt,
+                errorClass: operation.errorCode || null,
+              });
+            }
           }
         })();
         out = json({ operationId: id, targetVersion: operation.targetVersion }, 202);
@@ -637,8 +746,67 @@ export function createWebServer(db, options = {}) {
         if (!operation) out = response(requestT('api.notFound'), 'text/plain; charset=utf-8', 404);
         else out = json(updateOperationSummary(operation));
       } else if (req.method === 'POST' && url.pathname === '/api/update/rollback') {
-        if (!options.onRollbackRequested?.()) throw new UpdateError('BT-UPD-007', '無法安全地排程回滾。');
-        out = json({ accepted: true, message: '服務將停止並執行回滾。' }, 202);
+        const correlationId = newCorrelationId();
+        const started = Date.now();
+        let acceptedPersisted = false;
+        let ownsRollbackReservation = false;
+        let handoffLock = null;
+        let handoffAccepted = false;
+        try {
+          const lease = getRollbackLeaseStatus(appConfig, { now: now(), inspectProcess: options.inspectRollbackProcess });
+          if (rollbackReserved || lease.active) {
+            throw new UpdateError('BT-UPD-007', 'A rollback is already in progress.');
+          }
+          rollbackReserved = true;
+          ownsRollbackReservation = true;
+          const requestedAt = new Date().toISOString();
+          const handoffOwner = options.rollbackHandoffOwner || {};
+          handoffLock = acquireRollbackLock(appConfig, {
+            correlationId, kind: 'handoff',
+            pid: handoffOwner.pid, executablePath: handoffOwner.executablePath,
+            runnerFile: handoffOwner.runnerFile || process.argv[1] || null,
+            startedAt: handoffOwner.startedAt,
+            now: () => requestedAt, inspectProcess: options.inspectRollbackProcess,
+          });
+          if (!handoffLock) throw new UpdateError('BT-UPD-007', 'A rollback is already in progress.');
+          if (lease.stale) {
+            try {
+              finishRollbackFailure(appConfig, new UpdateError('BT-UPD-007', 'Rollback lease expired.'));
+            } catch {
+              throw new UpdateError('BT-UPD-007', 'Stale rollback lifecycle could not be finalized.');
+            }
+          }
+          try {
+            const accepted = writeRollbackStatus(appConfig, {
+              status: 'accepted', phase: 'accepted', correlationId, requestedAt, at: requestedAt,
+              durationMs: Date.now() - started,
+            });
+            if (!accepted) throw new Error('rollback sidecar is unavailable');
+            acceptedPersisted = true;
+          } catch {
+            throw new UpdateError('BT-UPD-007', 'Rollback lifecycle could not be persisted.');
+          }
+          const result = await options.onRollbackRequested?.({
+            correlationId, handoffToken: handoffLock.owner.token, lock: handoffLock,
+          });
+          if (!result || result.accepted === false) throw new UpdateError('BT-UPD-007', 'Rollback handoff was rejected.');
+          if (typeof result === 'object' && result.status === 'failed') {
+            const error = new UpdateError('BT-UPD-007', 'Rollback runner failed.');
+            error.errorClass = result.errorClass;
+            throw error;
+          }
+          handoffAccepted = true;
+          out = json({ accepted: true, message: 'Rollback handoff accepted.' }, 202);
+        } catch (error) {
+          if (acceptedPersisted) {
+            try { finishRollbackFailure(appConfig, error); } catch { /* accepted lifecycle remains durable */ }
+          }
+          recordOperationEvent(db, { correlationId, component: 'update', operation: 'rollback_failed', status: 'failed', durationMs: Date.now() - started, errorClass: safeErrorClass(error.errorClass || error) });
+          throw error;
+        } finally {
+          if (handoffLock && !handoffAccepted) releaseRollbackLock(handoffLock);
+          if (ownsRollbackReservation) rollbackReserved = false;
+        }
       } else if (req.method === 'POST' && url.pathname === '/api/sources/preview') {
         assertNetworkEnabled(db, appConfig);
         const body = await readJson(req);

@@ -71,6 +71,7 @@ export function getConfig() {
     releaseDir: paths.releaseDir,
     pendingImportFile: paths.pendingImportFile,
     pidFile: paths.pidFile,
+    statusFile: paths.statusFile,
     runtimeDir: paths.runtimeDir,
     debugDir: paths.debugDir,
     debugHtml: process.env.DEBUG_HTML === '1',

@@ -9,6 +9,7 @@ import { projectPaths } from '../src/paths.js';
 import {
   runStartSequence, runStopSequence, START_TIMEOUT_MS, STOP_TIMEOUT_MS,
 } from '../src/release/service-lifecycle.js';
+import { canStartServiceDuringRollback } from '../src/release/update.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PATHS = projectPaths(ROOT);
@@ -107,6 +108,15 @@ function lifecycleDependencies() {
 async function start() {
   mkdirSync(PATHS.runtimeDir, { recursive: true });
   mkdirSync(PATHS.logDir, { recursive: true });
+  const rollbackConfig = { statusFile: STATUS_FILE, update: { rollbackStatusFile: PATHS.rollbackStatusFile } };
+  if (!canStartServiceDuringRollback(rollbackConfig, {
+    inspectProcess: processIdentity,
+    runnerPid: process.env.BEYBLADE_ROLLBACK_RUNNER_PID,
+    correlationId: process.env.BEYBLADE_ROLLBACK_CORRELATION_ID,
+  })) {
+    console.error('Rollback runner is still active; service start is deferred.');
+    return false;
+  }
   const result = await runStartSequence({ ...lifecycleDependencies(), spawnService, timeoutMs: START_TIMEOUT_MS });
   if (result.outcome === 'already-running') {
     console.log(`Tracker 已在執行中 (PID=${result.pid})`);

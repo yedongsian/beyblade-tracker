@@ -1,8 +1,8 @@
 # Operations Runbook — Beyblade Tracker
 
 > 狀態：Active
-> 適用版本：1.0.0／schema 10
-> 最後更新：2026-07-29
+> 適用版本：1.0.0／schema 13
+> 最後更新：2026-07-30
 
 ## 1. 服務摘要
 
@@ -326,3 +326,33 @@ GitHub 是否寄 Email 由個人 notification delivery 設定決定；只建立 
 | 每週 | 檢查連續失敗、stale／archived 異常、backup 是否持續產生。 |
 | 每月 | Restore drill、retention、dependency／source policy review、X budget 保持符合預期。 |
 | 每次 release | Full tests、schema／DB integrity、clean install／upgrade／rollback、docs／CHANGELOG。 |
+
+## 18. Local observability 與演練
+
+可觀測性只保存在本機：structured operation events 寫入 `operation_events`（bounded retention），並在 `/operations` 頁與 `GET /api/operations` 以安全欄位呈現。每筆事件僅含 correlation ID、component、operation、source key（適用時）、status、duration 與 bounded `error_class`；不含 credentials、完整 URL、log 內文或商品歷史。
+
+`/operations` 提供：各 component 的最後成功、總次數與失敗率、parser failure rate、佇列狀態（待送／失敗通知、監控佇列、待審候選）、stale／archived 計數，以及各來源的連續失敗與最近錯誤類別。診斷匯出（`POST /api/diagnostics/export`）的 `operations` 區塊沿用相同安全欄位。
+
+健康狀態在任一門檻觸發時為 degraded：任一 enabled source 連續失敗 3 次、parser 或 notification 七日失敗率至少 10%、任一 failed notification、monitor queue（queued＋running）至少 50，或非 archived offer 的 stale 比率至少 20%。來源的 `lastErrorClass` 只看 source／parser 事件；後續成功事件會清除舊錯誤歸屬。
+
+### 演練 A：Source parser failure
+
+1. 開啟 `/operations`，看 Parser 卡的 failure rate 與「近期錯誤類別」是否出現 `parse`。
+2. 在「各來源健康」找出 `lastErrorClass=parse` 且連續失敗上升的來源。
+3. 對照 `/sources` 的 last error 與 Test source；HTTP 可讀但 0 items 代表 selector／JSON-LD 失效。
+4. 依 §6「Source failure triage」修復 Recipe，建立 Ticket、fixture 與 regression test；不提高 retry 頻率。
+5. 修復後於 `/operations` 確認該來源恢復 `source`／`parser` 成功且 parser failure rate 下降。
+
+### 演練 B：Notification failure
+
+1. 在 `/operations` 看 Notification 卡失敗率與佇列的「失敗待重試通知」數。
+2. 錯誤類別為 `timeout`／`connection`／`http_4xx` 時，先確認 network 未暫停與 Telegram 憑證有效（§11）。
+3. 於 `/settings` 用「傳送測試」驗證憑證；失敗事件保留在佇列，修好後下輪 flush 只重試該 channel。
+4. 確認 `pendingNotifications` 未持續累積；必要時以 network pause 阻斷後再排查。
+
+### 演練 C：Stale data
+
+1. 在 `/operations` 看 Freshness 卡的 stale／archived 是否異常升高。
+2. stale 上升通常代表監控落後或來源連續失敗：檢查各來源最後成功時間與監控佇列。
+3. archived 上升代表連續 miss 或 terminal signal；對照商品頁確認是否真的下架，避免誤判。
+4. 依需要於 `/sources` 觸發「立即重新檢查」；不要把舊資料重新標為 fresh。留意 network pause 期間 freshness 只會過期、不會回復。

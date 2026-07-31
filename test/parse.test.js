@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { parseProductPage, extractJsonLd } from '../src/connectors/parse.js';
+import {
+  parseProductPage, extractJsonLd, isUsableListing, detectMaintenance, classifyParsedPage,
+} from '../src/connectors/parse.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => readFileSync(join(__dirname, '..', 'fixtures', 'html', name), 'utf8');
@@ -57,4 +59,34 @@ test('disabled and aria-disabled buy buttons are not availability signals', () =
     { url: 'https://example.com/bx-97', selectors: { title: 'h1', buyButton: '.buy' } }
   );
   assert.equal(enabled.hasBuyButton, true);
+});
+
+test('isUsableListing requires at least one identifying or pricing field', () => {
+  assert.equal(isUsableListing(null), false);
+  assert.equal(isUsableListing({ url: 'https://x/1', rawText: 'welcome' }), false);
+  assert.equal(isUsableListing({ url: 'https://x/1', title: 'BX-38' }), true);
+  assert.equal(isUsableListing({ url: 'https://x/1', price: 0 }), true);
+  assert.equal(isUsableListing({ url: 'https://x/1', availabilityText: 'In stock' }), true);
+});
+
+test('detectMaintenance flags multilingual outage pages but not product pages', () => {
+  assert.equal(detectMaintenance('<title>メンテナンス中</title>'), true);
+  assert.equal(detectMaintenance('<html><body><h1>網站維護中</h1></body></html>'), true);
+  assert.equal(detectMaintenance('<html><body>We\'ll be back soon</body></html>'), true);
+  assert.equal(detectMaintenance('<html><body><h1>Beyblade X BX-38</h1><p>In stock</p></body></html>'), false);
+  assert.equal(detectMaintenance(''), false);
+});
+
+test('classifyParsedPage distinguishes ok, maintenance and empty pages', () => {
+  const ok = parseProductPage(
+    '<script type="application/ld+json">{"@type":"Product","name":"BX-38","offers":{"@type":"Offer","price":"1080","priceCurrency":"JPY","availability":"https://schema.org/InStock"}}</script>',
+    { url: 'https://x/1' }
+  );
+  assert.equal(classifyParsedPage('<h1>BX-38</h1>', ok), 'ok');
+
+  const maintenanceHtml = '<html><head><title>ただいまメンテナンス中です</title></head><body></body></html>';
+  assert.equal(classifyParsedPage(maintenanceHtml, parseProductPage(maintenanceHtml, { url: 'https://x/2' })), 'maintenance');
+
+  const emptyHtml = '<html><head><title>Store</title></head><body><p>Welcome</p></body></html>';
+  assert.equal(classifyParsedPage(emptyHtml, parseProductPage(emptyHtml, { url: 'https://x/3' })), 'empty');
 });

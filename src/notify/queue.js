@@ -1,5 +1,6 @@
 import { logger } from '../util/logger.js';
 import { STATES } from '../core/classify.js';
+import { recordOperationEvent, safeErrorClass } from '../core/operations.js';
 
 const now = () => new Date().toISOString();
 
@@ -58,7 +59,7 @@ function buildSummary(db, productId, events) {
  * every configured notifier. Events are grouped so multiple stores collapse
  * into one message. Idempotent per (channel, dedup_key).
  */
-export async function flushNotifications(db, notifiers, { dryRun = false } = {}) {
+export async function flushNotifications(db, notifiers, { dryRun = false, correlationId = null } = {}) {
   const allPending = db.all('SELECT * FROM events WHERE notified = 0 ORDER BY created_at ASC, id ASC');
   const stale = [];
   const pending = allPending.filter((event) => {
@@ -121,12 +122,19 @@ export async function flushNotifications(db, notifiers, { dryRun = false } = {})
       }
 
       let result;
+      const startedMs = Date.now();
       try {
         result = await notifier.send({ title, body });
       } catch (err) {
         result = { status: 'failed', detail: `notifier threw: ${err.message}` };
       }
       upsertNotification(db, notifier.name, dedupKey, productId, ids, title, body, result.status, result.detail);
+      recordOperationEvent(db, {
+        correlationId, component: 'notification', operation: 'send', sourceKey: notifier.name,
+        status: result.status === 'sent' ? 'success' : result.status === 'failed' ? 'failed' : 'skipped',
+        durationMs: Date.now() - startedMs,
+        errorClass: result.status === 'failed' ? safeErrorClass(result.detail) : null,
+      });
       if (result.status === 'sent') {
         sent += 1;
       } else if (result.status === 'failed') {

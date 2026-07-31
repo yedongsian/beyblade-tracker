@@ -163,3 +163,19 @@ test('fixture connector replays frames and drives the pipeline', async () => {
   // No new products created on the second frame (same items).
   assert.equal(db.get('SELECT COUNT(*) c FROM products').c, products0);
 });
+
+test('invalid parser rows never create products, offers, or discovery events', async () => {
+  const { db, sourceA } = setup();
+  const connector = { fetchListings: async () => [
+    { title: 'Beyblade X without a URL', price: 100 },
+    { url: 'https://a.example/maintenance' },
+    { url: 'https://a.example/ok', title: 'Beyblade X BX-99', price: 100, availabilityRaw: 'https://schema.org/InStock' },
+  ] };
+  const stats = await crawlSource(db, sourceA, connector, OPTS, null);
+  assert.equal(stats.itemsParsed, 3);
+  assert.equal(stats.itemsInvalid, 2);
+  assert.equal(stats.itemsSeen, 1);
+  assert.equal(db.get('SELECT COUNT(*) c FROM products').c, 1);
+  assert.equal(db.get('SELECT COUNT(*) c FROM offers').c, 1);
+  assert.equal(db.get('SELECT COUNT(*) c FROM events').c, 1);
+});

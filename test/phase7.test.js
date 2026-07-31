@@ -2,11 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { DatabaseSync } from 'node:sqlite';
 import { Database } from '../src/db/database.js';
 import { detectSupportedBrowser } from '../src/release/browser.js';
 import { SecretStore } from '../src/security/secret-store.js';
@@ -106,6 +108,34 @@ test('rollback switches the version pointer and restores the pre-update database
   assert.equal(db.get("SELECT COUNT(*) count FROM sources WHERE key='before-update'").count, 1);
   assert.equal(db.get("SELECT COUNT(*) count FROM sources WHERE key='after-update'").count, 0);
   db.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('rollback leaves a legacy backup schema untouched for the rolled-back service', () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-rollback-legacy-'));
+  const dbPath = join(root, 'user', 'data', 'tracker.db');
+  mkdirSync(join(root, 'user', 'data'), { recursive: true });
+  let legacy = new DatabaseSync(dbPath);
+  legacy.exec("PRAGMA user_version=10; CREATE TABLE legacy_marker (value TEXT); INSERT INTO legacy_marker VALUES ('before-update');");
+  legacy.close();
+  const backup = createBackup(dbPath, join(root, 'user', 'backups'), { prefix: 'legacy' });
+  legacy = new DatabaseSync(dbPath);
+  legacy.exec("DELETE FROM legacy_marker; INSERT INTO legacy_marker VALUES ('after-update');");
+  legacy.close();
+  const installRoot = join(root, 'program');
+  mkdirSync(join(installRoot, 'versions', '1.0.0'), { recursive: true });
+  const currentFile = join(installRoot, 'current.json');
+  writeFileSync(currentFile, JSON.stringify({ version: '1.1.0' }));
+  const rollbackFile = join(root, 'user', 'runtime', 'rollback.json');
+  mkdirSync(join(root, 'user', 'runtime'), { recursive: true });
+  writeFileSync(rollbackFile, JSON.stringify({ previousVersion: '1.0.0', targetVersion: '1.1.0', databaseBackup: backup.path }));
+
+  rollbackUpdate({ dbPath, installRoot, update: { rollbackFile, currentFile } });
+  const restored = new DatabaseSync(dbPath, { readOnly: true });
+  assert.equal(restored.prepare('PRAGMA user_version').get().user_version, 10);
+  assert.equal(restored.prepare('SELECT value FROM legacy_marker').get().value, 'before-update');
+  assert.equal(restored.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='operation_events'").get().count, 0);
+  restored.close();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -230,6 +260,66 @@ test('non-interactive launcher callers get a bounded exit code instead of a dial
   const vbs = readFileSync(new URL('../release/windows/launcher.vbs', import.meta.url), 'utf8');
   assert.match(vbs, /mode = "noninteractive"/);
   assert.match(vbs, /-NonInteractive/);
+});
+
+test('stable launcher guard blocks a rollback into a legacy service-control without a guard', { skip: process.platform !== 'win32' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-legacy-rollback-'));
+  const installRoot = join(root, 'program');
+  const userRoot = join(root, 'user');
+  const appRoot = join(installRoot, 'versions', '0.9.0');
+  const marker = join(root, 'legacy-control-ran.txt');
+  try {
+    mkdirSync(join(appRoot, 'runtime'), { recursive: true });
+    copyFileSync(process.execPath, join(appRoot, 'runtime', 'node.exe'));
+    copyFileSync(new URL('../release/windows/launcher.ps1', import.meta.url), join(installRoot, 'launcher.ps1'));
+    mkdirSync(join(appRoot, 'scripts'), { recursive: true });
+    // Deliberately a pre-FIX-32 control script: it has no rollback schema code.
+    writeFileSync(join(appRoot, 'scripts', 'service-control.js'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'started');`);
+    writeFileSync(join(installRoot, 'current.json'), JSON.stringify({ version: '0.9.0' }));
+    mkdirSync(join(userRoot, 'runtime'), { recursive: true });
+    writeFileSync(join(userRoot, 'runtime', 'rollback-status.json'), JSON.stringify({
+      status: 'accepted', requestedAt: new Date().toISOString(),
+    }));
+    const launcher = join(installRoot, 'launcher.ps1');
+    const runLegacyStart = () => {
+      try {
+        execFileSync('powershell.exe', [
+          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', launcher, '-Action', 'start', '-NonInteractive',
+        ], { cwd: installRoot, env: { ...process.env, BEYBLADE_USER_ROOT: userRoot }, stdio: 'pipe' });
+        return null;
+      } catch (error) { return error; }
+    };
+    const freshFailure = runLegacyStart();
+    assert.ok(freshFailure);
+    assert.match(String(freshFailure.stderr), /BT-LCH-003/);
+    assert.equal(existsSync(marker), false);
+
+    const oldAt = new Date(Date.now() - (10 * 60 * 1000)).toISOString();
+    writeFileSync(join(userRoot, 'runtime', 'rollback-status.json'), JSON.stringify({
+      status: 'running', events: [{ phase: 'running', at: oldAt }],
+    }));
+    const lockDir = join(userRoot, 'runtime', 'rollback.lock');
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({
+      pid: process.pid, token: 'live_runner_token', correlationId: 'live-runner',
+    }));
+    const liveRunnerFailure = runLegacyStart();
+    assert.ok(liveRunnerFailure);
+    assert.match(String(liveRunnerFailure.stderr), /BT-LCH-003/);
+    assert.equal(existsSync(marker), false);
+
+    rmSync(lockDir, { recursive: true, force: true });
+    const futureAt = new Date(Date.now() + (10 * 60 * 1000)).toISOString();
+    writeFileSync(join(userRoot, 'runtime', 'rollback-status.json'), JSON.stringify({
+      status: 'running', events: [{ phase: 'running', at: futureAt }],
+    }));
+    const futureFailure = runLegacyStart();
+    assert.ok(futureFailure);
+    assert.match(String(futureFailure.stderr), /BT-LCH-003/);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('diagnostics require consent and exclude credentials, URLs, logs, and product history', () => {

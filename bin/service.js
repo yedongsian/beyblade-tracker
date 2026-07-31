@@ -11,9 +11,10 @@ import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 import { projectPaths } from '../src/paths.js';
 import { getNetworkState } from '../src/core/network-control.js';
-import { finalizePostUpdateHealth, scheduleRecurringUpdateCheck, writeRollbackStatus } from '../src/release/update.js';
+import { finalizePostUpdateHealth, scheduleRecurringUpdateCheck, finishRollbackFailure, releaseRollbackLock } from '../src/release/update.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const SERVICE_FILE = fileURLToPath(import.meta.url);
 process.chdir(ROOT);
 
 const PATHS = projectPaths(ROOT);
@@ -32,6 +33,7 @@ let stopping = false;
 let finishing = false;
 let stopUpdateChecks;
 let rollbackRequested = false;
+let rollbackHandoff = null;
 const startedAt = new Date().toISOString();
 
 function writeStatus(patch) {
@@ -42,6 +44,8 @@ function writeStatus(patch) {
     service: 'beyblade-tracker',
     pid: process.pid,
     startedAt,
+    executablePath: process.execPath,
+    serviceFile: SERVICE_FILE,
     updatedAt: new Date().toISOString(),
     ...patch,
   }, null, 2));
@@ -69,9 +73,12 @@ async function finishShutdown(reason) {
   if (rollbackRequested) {
     const rollback = join(ROOT, 'bin', 'rollback.js');
     try {
-      writeRollbackStatus(app.config, { status: 'running' });
       const child = spawn(process.execPath, ['--no-warnings', rollback], {
-        cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: process.env,
+        cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: {
+          ...process.env,
+          BEYBLADE_ROLLBACK_CORRELATION_ID: rollbackHandoff?.correlationId || '',
+          BEYBLADE_ROLLBACK_HANDOFF_TOKEN: rollbackHandoff?.handoffToken || '',
+        },
       });
       await new Promise((resolve, reject) => {
         child.once('spawn', resolve);
@@ -79,11 +86,12 @@ async function finishShutdown(reason) {
       });
       child.unref();
     } catch {
-      writeRollbackStatus(app.config, { status: 'failed', code: 'BT-UPD-007', completedAt: new Date().toISOString() });
+      finishRollbackFailure(app.config, { code: 'BT-UPD-007' });
+      releaseRollbackLock(rollbackHandoff?.lock);
       logger.warn('rollback runner could not start: code=BT-UPD-007');
     }
   }
-  writeStatus({ status: 'stopped', pid: null, stoppedAt: new Date().toISOString(), reason });
+  writeStatus({ status: 'stopped', pid: null, stoppedAt: new Date().toISOString(), reason, rollbackRequested: false });
   process.exit(0);
 }
 
@@ -91,7 +99,7 @@ function requestStop(reason) {
   if (stopping) return;
   stopping = true;
   if (nextTimer) clearTimeout(nextTimer);
-  writeStatus({ status: 'stopping', reason });
+  writeStatus({ status: 'stopping', reason, rollbackRequested });
   if (!tickInProgress) finishShutdown(reason);
 }
 
@@ -118,8 +126,9 @@ function requestRestart(reason) {
   child.unref();
 }
 
-function requestRollback() {
+function requestRollback(handoff = {}) {
   if (stopping) return false;
+  rollbackHandoff = handoff;
   rollbackRequested = true;
   requestStop('update rollback requested');
   return true;
@@ -148,7 +157,7 @@ async function tick() {
 async function main() {
   writeFileSync(PID_FILE, String(process.pid));
   try { unlinkSync(STOP_FILE); } catch { /* absent */ }
-  writeStatus({ status: 'starting', webUrl: null, stoppedAt: null, reason: null, error: null });
+  writeStatus({ status: 'starting', webUrl: null, stoppedAt: null, reason: null, error: null, rollbackRequested: false });
 
   try {
     app = createApp();
@@ -157,6 +166,9 @@ async function main() {
     syncSources(app);
     server = await startWebServer(app.db, {
       ...app.config.web, appConfig: app.config, secretStore: app.secretStore,
+      rollbackHandoffOwner: {
+        pid: process.pid, executablePath: process.execPath, runnerFile: SERVICE_FILE, startedAt,
+      },
       onMonitorRequested: wakeMonitor,
       onNotificationSettingsChanged: () => refreshNotificationConfiguration(app),
       onRestartRequested: requestRestart,

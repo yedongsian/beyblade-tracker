@@ -56,7 +56,7 @@ function nav(current, t) {
   const items = [
     ['/', t('nav.overview')], ['/products', t('nav.products')], ['/offers', t('nav.offers')],
     ['/events', t('nav.events')], ['/catalog', t('nav.catalog')], ['/watchlist', t('nav.watchlist')], ['/community', t('nav.community')], ['/review', t('nav.review')],
-    ['/exclusions', t('nav.exclusions')], ['/sources', t('nav.sources')], ['/settings', t('nav.settings')],
+    ['/exclusions', t('nav.exclusions')], ['/operations', t('nav.operations')], ['/sources', t('nav.sources')], ['/settings', t('nav.settings')],
   ];
   return items.map(([href, label]) => `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
 }

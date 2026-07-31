@@ -4,6 +4,7 @@
 
 ## [Unreleased]
 
+- BT-P1-002: local-first observability — schema 13 `operation_events` now stores distinct valid, item-invalid, item-failed, page and page-failed counts. Parser SLOs independently evaluate item and page failure rates; operation, API and diagnostics timestamps are strictly projected ISO-8601 UTC values; defer/resume/rollback lifecycle events use a shared correlation ID and safe error class. No external telemetry; error classes never carry messages, URLs, credentials, or database-injected fields.
 - BT-UPD-001 follow-up: reversible defer, stable in-progress update controls, retry without discarding a verified manifest, rollback status reset per apply, and service-start-confirmed rollback status with `BT-UPD-007` priority.
 - BT-UPD-001 remaining fixes: retain rollback failure evidence until update preparation completes, preserve verified update state on manual-check failure, schedule from the remaining cadence, and expose only safe active-operation progress so Settings can resume after reload without overlapping apply or poll requests.
 - BT-UPD-001 Windows packaging hardening: silent setup suppresses the optional browser prompt without suppressing service restart; uninstall waits for the launcher to stop the service; isolated packaged E2E now verifies install, health, uninstall, and user-data preservation with bounded Inno Setup cleanup.

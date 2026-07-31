@@ -25,6 +25,9 @@ export function createTestEnvironment(source = process.env) {
       return true;
     })
     .join(',');
+  // Structured operation logs are covered by their persisted-event tests; do
+  // not emit thousands of records during the retention test.
+  env.OPERATION_LOGS = '0';
   return env;
 }
 

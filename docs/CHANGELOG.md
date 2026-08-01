@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+> 目前驗證基線：`codex/bt-upd-001` 於 2026-08-02 執行 `npm test` 通過 **219/219**（0 fail／0 skip／0 todo）。下方 Development history 保留各階段當時的歷史數字。
+
 - BT-P1-002: local-first observability — schema 13 `operation_events` now stores distinct valid, item-invalid, item-failed, page and page-failed counts. Parser SLOs independently evaluate item and page failure rates; operation, API and diagnostics timestamps are strictly projected ISO-8601 UTC values; defer/resume/rollback lifecycle events use a shared correlation ID and safe error class. No external telemetry; error classes never carry messages, URLs, credentials, or database-injected fields.
 - BT-UPD-001 follow-up: reversible defer, stable in-progress update controls, retry without discarding a verified manifest, rollback status reset per apply, and service-start-confirmed rollback status with `BT-UPD-007` priority.
 - BT-UPD-001 remaining fixes: retain rollback failure evidence until update preparation completes, preserve verified update state on manual-check failure, schedule from the remaining cadence, and expose only safe active-operation progress so Settings can resume after reload without overlapping apply or poll requests.
@@ -36,6 +38,11 @@
 - 新增 `BT-UX-001`、`BT-UX-002`、`BT-UPD-001`、`BT-SUP-001` 與 `BT-DOC-002` 的範圍、依賴及驗收條件。
 - 建立公開 repository `yedongsian/beyblade-tracker`、繁中 GitHub Issue Form、privacy confirmation 與使用教學／錯誤代碼入口。
 - 完成 GitHub Issue Form 實際渲染驗收、問題分類 labels，以及 owner 的 `Custom → Issues` 與 Email notification 設定。
+- 修正 `USER_GUIDE.md` §8 過期敘述：固定錯誤代碼（registry、管理頁安全錯誤對話框、Launcher 原生對話框 `BT-LCH-001`～`006`、保留代碼 `BT-LCH-999`）已由 `BT-UX-002` 實作，僅尚未隨公開 release 發布；原文誤稱「目前版本尚未實作」。
+- 統一 `BT-SUP-001` 狀態：摘要表與 Ticket 內文原為 `In Review` 與 `Ready` 不一致，一律更正為 `In Review`（剩餘條件為第二帳號 Issue 通知 end-to-end 驗收）。
+- 更新 `BT-DOC-002` 依賴欄：Support／Issues／Release URL 已補齊，依賴改為「發布前確認文件進入 release payload」，並補上驗收證據。
+- 於 Roadmap、CHANGELOG 與 Tickets 標示目前驗證基線 `npm test` 219/219；各階段歷史數字維持原樣不回頭改寫。
+- 新增 `BT-API-001`（P2、Proposed）：細分 Local Web API 的 HTTP status mapping，取代目前把多數 exception 折成 `400` 的行為；本次僅建立 Ticket，未實作。
 
 ## [1.0.0] — 2026-07-18
 

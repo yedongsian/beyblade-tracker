@@ -1,8 +1,9 @@
 # Delivery Tickets／Backlog
 
 > 狀態：Active
-> 最後更新：2026-07-29
+> 最後更新：2026-08-02
 > 規則：本檔是正式 backlog；Roadmap 只保存優先順序與里程碑。
+> 目前驗證基線：`codex/bt-upd-001` 於 2026-08-02 執行 `npm test` 通過 **219/219**（0 fail／0 skip／0 todo）。各 Ticket 內文保留當時的歷史測試數字，不回頭改寫。
 
 ## 1. 工作流程
 
@@ -30,10 +31,11 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Windows native dialog 實機驗收 |
 | BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
-| BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | Support／Release URL 待填 |
+| BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | 發布前確認文件進入 release payload |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
 | BT-P2-002 | P2 | Proposed | Chrome browser pool 與 concurrency control | 效能基準 |
 | BT-P2-003 | P2 | Proposed | Queue backpressure、priority 與效能基準 | BT-P1-002 |
+| BT-API-001 | P2 | Proposed | 細分 Local Web API 的 HTTP status mapping | BT-UX-002 error registry |
 | BT-EXT-001 | P1 | Blocked | Takara Tomy Mall 真實 Discovery 驗收 | Queue-it 自然解除 |
 | BT-EXT-002 | P2 | Blocked | X 社群來源付費 API 啟用 | 使用者費用同意與 Developer Project |
 | BT-FUT-001 | P3 | Proposed | 跨裝置同步 threat model | 明確產品需求 |
@@ -170,7 +172,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-SUP-001 — 建立公開 GitHub Issues 與繁中問題回報表單
 
 - Priority：P1
-- Status：Ready
+- Status：In Review
 - Owner：Repository Owner
 - 決策：程式碼 repository 可公開，使用同一 repository 的 Issues；不另建 support-only repo。
 - Scope：GitHub remote、public visibility、Issues、Issue Form、labels、privacy warning、watching／Email notifications、App／docs URLs。
@@ -195,6 +197,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Error codes 有 meaning、safe recovery 與 privacy guidance。
   - Support spec 有 GitHub Form fields、notification setup、triage 與 end-to-end acceptance。
   - Public repo／Issues／Release URL 已補齊；發布前確認文件進入 release payload。
+- Verification evidence（2026-08-02）：`SUPPORT.md` §「公開 URL」已填入正式 repository、Issues 與 Releases URL，`USER_GUIDE.md` §10 的問題回報連結同步指向 Issue Form；表格依賴欄的「Support／Release URL 待填」已過時並移除。`USER_GUIDE.md` §8 原本仍寫「目前版本尚未實作固定錯誤代碼」，與 `BT-UX-002` 已交付的 registry／Web envelope／Launcher dialog 不符，已改為「已實作但尚未隨公開 release 發布」。剩餘唯一條件為發布時確認 `USER_GUIDE.md`、`ERROR_CODES.md`、`SUPPORT.md` 實際進入 release payload。
 
 ### BT-P2-001 — HTTP conditional request 與 bounded cache
 
@@ -216,6 +219,31 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 - Status：Proposed
 - Scope：Discovery／Monitor／Notification queue limits、Watchlist priority、memory／CPU／bytes／duration benchmark。
 - Acceptance criteria：負載超限時可預測降載；不丟失 audit／notification state；priority 不造成一般來源永久 starvation；基準可重現。
+
+### BT-API-001 — 細分 Local Web API 的 HTTP status mapping
+
+- Priority：P2
+- Status：Proposed
+- Owner：待指定
+- 背景：`docs/API_SPEC.md` §12 與 §13 已記錄此限制——目前實作把 validation、policy、network 及多數 internal error 統一回傳 `400`，只有 route／Product／被辨識為 not found 的 error message 會回 `404`。`BT-UX-002` 交付的中央 error registry 已提供穩定的 `BT-<AREA>-<NNN>` 代碼與安全 envelope，因此 status code 已不是識別錯誤類別的唯一手段，但仍讓「使用者輸入錯誤」與「伺服器內部失敗」在 HTTP 層無法區分。
+- 使用者影響：一般使用者不直接受影響（Local Web UI 讀的是 envelope 內的錯誤代碼）。影響的是除錯、log 判讀與未來任何以 status code 做重試決策的客戶端——目前 `500` 級失敗會被誤判為可由使用者修正的 `400`。
+- Scope：
+  - 由 error code registry 推導 status class，而非在各 route 手寫。
+  - validation／輸入格式錯誤 → `400`；policy 拒絕（network paused、來源政策、consent 未給）→ `403`；狀態衝突（single-flight 已在執行、冷卻中、重複 apply）→ `409`；找不到資源 → `404`；未知內部錯誤 → `500`。
+  - 更新 `docs/API_SPEC.md` §12／§13 與受影響的 route 表。
+  - 前端錯誤處理改以錯誤代碼為準，確保不因 status 改變而退化。
+- Out of scope：新增 endpoint、改變 error envelope 結構、改變既有錯誤代碼字串、加入 remote authN／authZ。
+- Dependencies／Blockers：`BT-UX-002` 的 error registry 需維持為單一事實來源。
+- Security／Privacy／Data impact：不得因細分 status 而洩漏 route 是否存在、內部路徑或例外訊息；`500` 仍只回傳保留代碼與 `supportRef`，不含 stack。
+- Acceptance criteria：
+  - [ ] 每個公開錯誤代碼在 registry 中有明確且唯一的 status class。
+  - [ ] validation、policy、conflict、not found、internal 各至少一項 route-level 回歸測試斷言正確 status。
+  - [ ] 未知例外回傳 `500` 與保留代碼，且 body 不含 message／stack／path。
+  - [ ] Local Web UI 在新 status 下錯誤顯示與 recovery 動作不退化，三語文案不變。
+  - [ ] `docs/API_SPEC.md` 的已知限制條目移除或改寫為 as-built 行為。
+  - [ ] `npm test` 全數通過。
+- Verification evidence：待實作。
+- Related PR／release／post-mortem：待建立。
 
 ### BT-EXT-001 — Takara Tomy Mall 真實 Discovery 驗收
 

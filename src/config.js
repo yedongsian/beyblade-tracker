@@ -70,6 +70,8 @@ export function getConfig() {
     exportDir: paths.exportDir,
     releaseDir: paths.releaseDir,
     pendingImportFile: paths.pendingImportFile,
+    pidFile: paths.pidFile,
+    statusFile: paths.statusFile,
     runtimeDir: paths.runtimeDir,
     debugDir: paths.debugDir,
     debugHtml: process.env.DEBUG_HTML === '1',
@@ -93,6 +95,8 @@ export function getConfig() {
       publicKey: process.env.UPDATE_PUBLIC_KEY || '',
       currentFile: join(paths.installRoot, 'current.json'),
       rollbackFile: paths.rollbackFile,
+      rollbackStatusFile: paths.rollbackStatusFile,
+      healthFile: paths.updateHealthFile,
     },
     backup: {
       enabled: process.env.AUTO_BACKUP !== '0',

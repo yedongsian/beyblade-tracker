@@ -1,8 +1,8 @@
 # Operations Runbook — Beyblade Tracker
 
 > 狀態：Active
-> 適用版本：1.0.0／schema 10
-> 最後更新：2026-07-28
+> 適用版本：1.0.0／schema 13
+> 最後更新：2026-07-30
 
 ## 1. 服務摘要
 
@@ -200,7 +200,7 @@ npm run db:restore -- --from backups\manual-YYYYMMDD-HHMMSSZ.db --to C:\test\dat
 3. 若仍出現 proxy 403，只讀檢查 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 與 npm proxy 設定；不要把含帳密的 proxy URL 貼進文件。
 4. 若 loopback 已 bypass 仍失敗，依第一個 application stack／assertion 建立 Bug Ticket。
 
-2026-07-29 驗收：Windows／Node v25.7.0、ambient proxy variables 存在且 `NO_PROXY` 原為空值；一般 `npm test` 通過 139/139。修正追蹤於 `BT-P1-001`。
+2026-07-29 驗收：Windows／Node v25.7.0、ambient proxy variables 存在且 `NO_PROXY` 原為空值；一般 `npm test` 通過 139/139。修正追蹤於 `BT-P1-001`。此為修正當時的數字；目前 suite 基線為 219/219（2026-08-02），以 `docs/TICKETS.md` 檔頭為準。
 
 ## 13. Windows release procedure
 
@@ -246,6 +246,45 @@ npm run update:rollback
 
 驗證 current version pointer、pre-update DB restore、schema compatibility、health、source counts 與 UI。若新 migration 不可逆，必須使用 release 前 DB backup，不可只切換 binary。
 
+### Update defer and rollback recovery
+
+1. A deferred verified update may be resumed in Settings without downloading.
+2. Retain the last verified manifest after a transient scheduled-check failure and retry in five minutes.
+3. Treat rollback as complete only after the previous service starts; handle `BT-UPD-007` before any stale `BT-UPD-006` marker.
+4. Do not clear a previous rollback failure until the next update has fully prepared its verified installer, backup, rollback record, and pending health marker. A failed download, validation, hash, or backup step must retain it.
+5. A manual update-check error must preserve the last verified result and timestamp. Settings may safely resume an active apply from the status summary after reload; no file locations or URLs appear in that summary.
+6. Concurrent apply requests must return the same reserved `checking` operation. Terminal progress is available for up to ten minutes (maximum twenty records), after which `/api/update/progress/:operationId` returns 404.
+7. Packaged Windows E2E verifies the installed service PID/status and `http://127.0.0.1:8787/health`; do not substitute the standalone health-check smoke test. Silent uninstall uses `/SUPPRESSMSGBOXES` and retains user data by default.
+8. If E2E graceful stop fails, continue only with bounded cleanup of processes whose command line contains both the current run ID and install root. Report the graceful-stop and cleanup failures together; never stop all Node or PowerShell processes.
+9. Silent uninstall stops the service through the launcher in `-NonInteractive` mode. No path may open a window: a stop failure must abort the uninstall with a non-zero exit code and leave the running install in place, never delete files while the service is up.
+9a. The uninstall stop precondition fails closed. A missing `{app}\launcher.ps1` proves only that the stop helper cannot run — never that the service stopped — so the uninstall aborts non-zero and keeps the program files, startup entry and user data. Do not reintroduce a `Result := True` shortcut for a missing helper, and do not treat an absent PID file or a free port 8787 as proof that the service is gone.
+10. `unknown` process ownership may write the Tracker's own `stop.request`, but only re-verified `owned` ownership may force kill, and only that exact PID. `other` is never signalled or terminated, and a live PID that is not verifiably the Tracker is never reported as "already running".
+11. An unreadable child exit code is a verification failure, not a success: read exit codes from an owned process handle.
+
+### Update consent 與健康檢查
+
+1. Update check 只讀 signed stable manifest；不會下載 installer。
+2. 使用者先檢視 target version、release notes、publisher、size 與 manifest digest，再選擇「稍後更新」或「下載並安裝」。
+3. 確認必須綁定該 target version 與 manifest digest；manifest 變更後要求重新確認。
+4. 下載完成並驗證 SHA-256 後才建立 update 前 backup、啟動 installer 與寫入 rollback record。
+5. 新版服務啟動後檢查 target version 與 SQLite integrity。健康結果一旦寫入即保持不變；失敗顯示 `BT-UPD-006`，並依既有 rollback procedure 回復。
+6. Web rollback 會先接受請求並安全停止服務，之後由外部 rollback runner 還原資料與 version pointer；不得在仍開啟 Tracker DB 的 Web process 中直接執行還原。
+7. 不在 Ticket、Issue 或 log 分享 manifest URL、backup 位置、簽章資料或完整診斷資料。
+8. 若 Settings 顯示 `BT-UPD-006`，使用者可選擇回滾；rollback runner 的結果會保存在安全狀態摘要中。若結果為 `BT-UPD-007`，重新開啟 Tracker 後查看 Settings，再依既有 backup procedure 處理。
+9. Windows release candidate 至少執行 `npm run release:windows`、`npm run test:release:windows`、`npm run test:release:windows:stopfail` 與 `npm run test:release:windows:missing-launcher`。三個 packaged E2E 共用 8787，必須依序執行，不可平行。前者以隔離資料目錄驗證 silent install、服務啟動、packaged health、同步 stop、uninstall 與 user-data preservation；Inno Setup 自清理最多等待 60 秒，逾時即視為驗收失敗。`:stopfail` 只在本次隔離安裝目錄注入 stop failure（不得修改工作區 source 或正式安裝目錄），要求 uninstaller 在 60 秒內非零失敗、不顯示視窗、保留仍在執行的安裝，之後還原並完成一次正常 uninstall。`:missing-launcher` 只把本次隔離安裝的 `launcher.ps1` 移到同目錄 backup，要求 uninstaller 在 15 秒內非零失敗、不顯示視窗、保留 `current.json`／版本目錄／原 service PID／8787 health／user data，之後還原並完成一次正常 uninstall。兩種 negative mode 不可同時指定。三種 E2E 結束後都必須確認 8787 已釋放且本次 runId 無程序或目錄殘留。
+
+### 損壞安裝無法解除安裝時的處理
+
+若解除安裝回報無法確認背景服務已停止，或安裝檔案不完整（例如 `launcher.ps1` 被防毒隔離、更新中斷）：
+
+1. 不要手動終止所有 `node.exe`，也不要在未確認 PID ownership 前強制終止任何程序。
+2. 重新安裝相同或較新的正式版本，以修復 `launcher.ps1` 與 `scripts/service-control.js`。
+3. 從開始選單執行「停止背景追蹤」。
+4. 再次執行解除安裝。
+5. 若仍失敗，收集安全錯誤代碼與 support reference 後回報。
+
+不可建議或執行：`taskkill /IM node.exe /F`、`Get-Process node | Stop-Process`、刪除整個 `%LOCALAPPDATA%`、手動刪除 data／backup／credentials，或把完整 log、路徑、Token、webhook 貼到公開 issue。
+
 ## 15. GitHub Support operations
 
 公開 repository 建立後，Repository Owner 執行：
@@ -287,3 +326,33 @@ GitHub 是否寄 Email 由個人 notification delivery 設定決定；只建立 
 | 每週 | 檢查連續失敗、stale／archived 異常、backup 是否持續產生。 |
 | 每月 | Restore drill、retention、dependency／source policy review、X budget 保持符合預期。 |
 | 每次 release | Full tests、schema／DB integrity、clean install／upgrade／rollback、docs／CHANGELOG。 |
+
+## 18. Local observability 與演練
+
+可觀測性只保存在本機：structured operation events 寫入 `operation_events`（bounded retention），並在 `/operations` 頁與 `GET /api/operations` 以安全欄位呈現。每筆事件僅含 correlation ID、component、operation、source key（適用時）、status、duration 與 bounded `error_class`；不含 credentials、完整 URL、log 內文或商品歷史。
+
+`/operations` 提供：各 component 的最後成功、總次數與失敗率、parser failure rate、佇列狀態（待送／失敗通知、監控佇列、待審候選）、stale／archived 計數，以及各來源的連續失敗與最近錯誤類別。診斷匯出（`POST /api/diagnostics/export`）的 `operations` 區塊沿用相同安全欄位。
+
+健康狀態在任一門檻觸發時為 degraded：任一 enabled source 連續失敗 3 次、parser 或 notification 七日失敗率至少 10%、任一 failed notification、monitor queue（queued＋running）至少 50，或非 archived offer 的 stale 比率至少 20%。來源的 `lastErrorClass` 只看 source／parser 事件；後續成功事件會清除舊錯誤歸屬。
+
+### 演練 A：Source parser failure
+
+1. 開啟 `/operations`，看 Parser 卡的 failure rate 與「近期錯誤類別」是否出現 `parse`。
+2. 在「各來源健康」找出 `lastErrorClass=parse` 且連續失敗上升的來源。
+3. 對照 `/sources` 的 last error 與 Test source；HTTP 可讀但 0 items 代表 selector／JSON-LD 失效。
+4. 依 §6「Source failure triage」修復 Recipe，建立 Ticket、fixture 與 regression test；不提高 retry 頻率。
+5. 修復後於 `/operations` 確認該來源恢復 `source`／`parser` 成功且 parser failure rate 下降。
+
+### 演練 B：Notification failure
+
+1. 在 `/operations` 看 Notification 卡失敗率與佇列的「失敗待重試通知」數。
+2. 錯誤類別為 `timeout`／`connection`／`http_4xx` 時，先確認 network 未暫停與 Telegram 憑證有效（§11）。
+3. 於 `/settings` 用「傳送測試」驗證憑證；失敗事件保留在佇列，修好後下輪 flush 只重試該 channel。
+4. 確認 `pendingNotifications` 未持續累積；必要時以 network pause 阻斷後再排查。
+
+### 演練 C：Stale data
+
+1. 在 `/operations` 看 Freshness 卡的 stale／archived 是否異常升高。
+2. stale 上升通常代表監控落後或來源連續失敗：檢查各來源最後成功時間與監控佇列。
+3. archived 上升代表連續 miss 或 terminal signal；對照商品頁確認是否真的下架，避免誤判。
+4. 依需要於 `/sources` 觸發「立即重新檢查」；不要把舊資料重新標為 fresh。留意 network pause 期間 freshness 只會過期、不會回復。

@@ -47,13 +47,12 @@ Name: "{group}\停止背景追蹤"; Filename: "{sys}\wscript.exe"; Parameters: "
 Name: "{group}\服務狀態"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\launcher.ps1"" -Action status"; WorkingDir: "{app}"
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "BeybladeTracker"; ValueData: """{sys}\wscript.exe"" ""{app}\launcher.vbs"" start"; Tasks: startup; Flags: uninsdeletevalue
+; Startup automation must never show a launcher dialog at logon: it runs in non-interactive mode.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "BeybladeTracker"; ValueData: """{sys}\wscript.exe"" ""{app}\launcher.vbs"" start noninteractive"; Tasks: startup; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" restart"; Description: "啟動 Beyblade Tracker"; Flags: postinstall nowait skipifsilent
-
-[UninstallRun]
-Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" stop"; RunOnceId: "StopTracker"; Flags: runhidden waituntilterminated
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" restart"; Description: "啟動 Beyblade Tracker"; Flags: nowait runhidden; Check: not WizardSilent
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"" restart noninteractive"; Description: "啟動 Beyblade Tracker"; Flags: nowait runhidden; Check: WizardSilent
 
 [UninstallDelete]
 Type: files; Name: "{app}\current.json"
@@ -75,7 +74,7 @@ var
   Choice, ErrorCode: Integer;
 begin
   Result := True;
-  if (CurPageID = wpReady) and (not ChromeInstalled) then begin
+  if (CurPageID = wpReady) and (not WizardSilent) and (not ChromeInstalled) then begin
     Choice := MsgBox('找不到 Google Chrome。一般 HTTP 商店仍可使用，但需要瀏覽器的來源將無法掃描。是否開啟官方 Chrome 下載頁？', mbConfirmation, MB_YESNO);
     if Choice = IDYES then ShellExec('open', 'https://www.google.com/chrome/', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
   end;
@@ -87,10 +86,33 @@ begin
     SaveStringToFile(ExpandConstant('{app}\current.json'), '{"version":"{#AppVersion}"}', False);
 end;
 
+{ Stopping the service is an explicit uninstall precondition: the launcher runs hidden and
+  non-interactive, so a stop failure returns a non-zero code instead of waiting for a dialog.
+  A missing launcher proves only that the stop helper cannot run, never that the service stopped,
+  so it fails closed: repair the install by reinstalling the same version, then uninstall again. }
+function StopTrackerService(): Boolean;
+var
+  LauncherPath: String;
+  ResultCode: Integer;
+begin
+  LauncherPath := ExpandConstant('{app}\launcher.ps1');
+  if not FileExists(LauncherPath) then begin
+    Result := False;
+    exit;
+  end;
+  Result := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -ExecutionPolicy Bypass -NonInteractive -File "' + LauncherPath + '" -Action stop -NonInteractive',
+    ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
 function InitializeUninstall(): Boolean;
 begin
-  PreserveUserData := MsgBox('是否保留商品、歷史、設定與備份，方便日後重新安裝？' + #13#10 + #13#10 + '選「是」保留資料；選「否」會永久刪除使用者資料。', mbConfirmation, MB_YESNO) = IDYES;
-  Result := True;
+  Result := StopTrackerService();
+  if not Result then begin
+    SuppressibleMsgBox('無法確認背景追蹤服務已停止，因此已取消移除，以免刪除正在執行的檔案。若安裝檔案不完整，請重新安裝相同或較新版本以修復，再從開始選單停止背景追蹤後重新移除。', mbError, MB_OK, IDOK);
+    exit;
+  end;
+  PreserveUserData := SuppressibleMsgBox('是否保留商品、歷史、設定與備份，方便日後重新安裝？' + #13#10 + #13#10 + '選「是」保留資料；選「否」會永久刪除使用者資料。', mbConfirmation, MB_YESNO, IDYES) = IDYES;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

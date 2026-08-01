@@ -1,5 +1,5 @@
 import { BaseConnector } from './base.js';
-import { parseProductPage } from './parse.js';
+import { parseProductPage, classifyParsedPage } from './parse.js';
 import { fetchText } from '../net/http.js';
 import { fetchPublicText } from '../net/public-http.js';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -26,17 +26,21 @@ export class JsonLdConnector extends BaseConnector {
     const selectors = cfg.selectors || {};
     const listings = [];
     for (const page of pages) {
-      const fetcher = this.source.managed_by === 'ui' ? fetchPublicText : fetchText;
+      const fetcher = this.deps.fetchText
+        || (this.source.managed_by === 'ui' ? fetchPublicText : fetchText);
       const { body, url } = await fetcher(page, {
         ...this.deps.http,
         ...(cfg.http || {}),
       });
       const listing = parseProductPage(body, { url, selectors });
+      // Signal a page-level parse result. Only 'ok' pages become listings, so a
+      // maintenance/empty page never enters the crawl pipeline as a bogus item.
+      const status = this.recordPageResult(classifyParsedPage(body, listing));
+      const usable = status === 'ok';
       // Persist raw HTML only in debug mode or when parsing failed to extract
       // anything useful, so failures can be diagnosed later.
-      const parseFailed = !listing || (!listing.title && listing.price == null && !listing.availabilityRaw && !listing.availabilityText);
-      if (this.deps.debug?.saveHtml || parseFailed) this.#saveDebug(page, body, parseFailed);
-      if (listing) listings.push(listing);
+      if (this.deps.debug?.saveHtml || !usable) this.#saveDebug(page, body, !usable);
+      if (usable) listings.push(listing);
     }
     return listings;
   }

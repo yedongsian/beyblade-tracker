@@ -126,5 +126,5 @@ Windows release package 另保留 `INSTALL.md`、`PRIVACY.md`、`SOURCE_POLICY.m
 - Takara Tomy Mall 真實 Discovery 仍等待 Queue-it 自然解除。
 - X community source 預設 disabled／zero budget，未經使用者明確費用同意不啟用。
 - 2026-07-28 設定檢查通過（3 sources），service 為 stopped。
-- `npm test` 會保留外部 proxy 設定，只在測試子程序以 `NO_PROXY` bypass loopback；含 BT-UX-002 與 runner regression coverage 的完整 suite 已在 ambient proxy 環境通過 139/139（`BT-P1-001`）。
-- 下一公開版本已核准雙擊安裝驗收、固定錯誤代碼、使用者確認後更新及公開 GitHub Issue Form；目前仍是待實作／驗收項目。
+- `npm test` 會保留外部 proxy 設定，只在測試子程序以 `NO_PROXY` bypass loopback。ambient proxy 環境的完整 suite 目前基線為 **219/219**（2026-08-02）；修正當時的驗收數字為 139/139（`BT-P1-001`）。
+- 下一公開版本已核准雙擊安裝驗收、固定錯誤代碼、使用者確認後更新及公開 GitHub Issue Form。固定錯誤代碼（`BT-UX-002`）、使用者確認後更新（`BT-UPD-001`）與 GitHub Issue Form（`BT-SUP-001`）已實作，狀態為 `In Review`，尚待簽章 release channel、乾淨 Windows VM 與通知 end-to-end 等外部驗收；雙擊安裝驗收（`BT-UX-001`）仍待執行。

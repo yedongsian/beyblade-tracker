@@ -1,18 +1,18 @@
 # Data Schema — SQLite
 
 > 狀態：Active／As-built
-> Current schema version：10
+> Current schema version：13. Migration 012 adds parser item/page totals; immutable migration 013 adds the separate `page_failed_count` required for page-failure SLOs.
 > Source of truth：`src/db/migrations/*.sql`
 > 最後更新：2026-07-28
 
 ## 1. Schema 管理規則
 
-- Runtime 依三位數檔名順序執行 `001_...sql` 到 `010_...sql`；版本必須連續。
+- Runtime 依三位數檔名順序執行 `001_...sql` 到 `013_...sql`；版本必須連續。
 - 每個 migration 的 SHA-256 記錄在 `schema_migrations`；已記錄版本若 checksum 改變，啟動會拒絕升級。
 - 每次 migration 使用 `BEGIN IMMEDIATE` transaction；成功後更新 `PRAGMA user_version`。
 - DB 版本高於程式支援版本時，舊程式拒絕開啟。
 - `src/db/schema.sql` 是早期初始 schema 參考；runtime migration chain 才是完整現況來源。
-- 不修改已發布 migration。Schema 變更必須新增 `011_<name>.sql`，並同步更新本文件、測試、CHANGELOG、backup／restore compatibility。
+- 不修改已發布 migration。Schema 變更必須新增下一個連續版本的 `NNN_<name>.sql`，並同步更新本文件、測試、CHANGELOG、backup／restore compatibility。
 - 所有應用 timestamp 使用 ISO-8601 UTC text；boolean 使用 SQLite integer `0／1`；結構化可變資料使用 JSON text。
 
 ## 2. 高階關聯
@@ -54,6 +54,9 @@ erDiagram
 | 8 | `008_community_intelligence.sql` | Community registry、posts、origin／link／match、run。 |
 | 9 | `009_identity_exclusion_audit.sql` | Normalized SKU、variant key、listing exclusions。 |
 | 10 | `010_manual_review_network_control.sql` | Product identity audit、exclusion review／override、network control。 |
+| 11 | `011_operation_events.sql` | Local-first structured operation events（可觀測性）。 |
+| 12 | `012_operation_event_counts.sql` | Parser valid／invalid／failed item 與 page count。 |
+| 13 | `013_operation_page_failure_count.sql` | Parser page failure count。 |
 
 ## 4. Core commerce 與 event tables
 
@@ -180,6 +183,7 @@ Offer freshness status：
 | `listing_exclusion_overrides` | 對 source／URL 的 allow override 與 reason；unique source／URL。 |
 | `product_identity_audit` | split／merge action、source／target／new Product、Offer IDs、before／after snapshots、note、time。刻意不使用 FK，避免刪除後失去 audit identity。 |
 | `network_control` | Singleton `id=1`；UI network switch、reason、updated time。Environment hard lock 優先。 |
+| `operation_events` | Local-first 可觀測性事件：`correlation_id`、`component`、`operation`、`source_key`（適用時）、`status`、`duration_ms`、bounded `error_class`、`valid_count`、`invalid_count`、`failed_count`、`page_count`、`page_failed_count`、`created_at`。Item invalid、item failed 與 page failed 永不合併計數；僅保留最近約 5000 筆；不含 credentials、完整 URL、log 內文或商品歷史。 |
 
 ## 11. Delete／retention 行為
 

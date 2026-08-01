@@ -1,9 +1,11 @@
 # Pull Request Description
 
-> 本檔同時保存目前文件基線變更的可用 PR 描述，以及後續 PR 模板。
-> 最後更新：2026-07-28
+> 本檔同時保存文件基線變更的 PR 描述，以及後續 PR 模板。
+> 最後更新：2026-08-02
 
-## 1. 目前文件基線變更（Draft PR Description）
+## 1. 文件基線變更（已合併：`52bfb27`）
+
+> 狀態註記（2026-08-02）：本節保留當時送出的描述原文，不回頭改寫。其中「正式 repository、Issues、Releases URL 建立後再補齊 `TBD`」已於 `BT-SUP-001` 完成——`SUPPORT.md` 與 `USER_GUIDE.md` 皆已填入正式 URL，該 `TBD` 不再是待辦。
 
 ### Title
 

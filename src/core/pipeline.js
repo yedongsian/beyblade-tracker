@@ -9,6 +9,7 @@ import {
   insertObservation, createEvent, recordListingExclusion,
 } from './store.js';
 import { logger } from '../util/logger.js';
+import { isUsableListing } from '../connectors/parse.js';
 import {
   linkProductToCatalog, matchAvailabilityOverride, queueTerminologyReview,
 } from './catalog.js';
@@ -52,11 +53,25 @@ function isTerminalListing(listing) {
 }
 
 /**
+ * A parsed listing is only usable if the parser recovered at least one field
+ * that identifies or prices a product. A row with only boilerplate (no title,
+ * model, sku, or price) is a parser failure, not a real product.
+ */
+/**
  * Process a single normalized-ish listing within a transaction-friendly
  * context. Returns a small result object for aggregation/reporting.
  */
 export function processListing(db, source, rawListing, opts, crawlRunId = null) {
+  if (!rawListing || !rawListing.url) {
+    return { invalid: true, reason: 'missing-url' };
+  }
   const url = normalizeUrl(rawListing.url, source.url || rawListing.url);
+  if (!url) {
+    return { invalid: true, reason: 'missing-url' };
+  }
+  if (!isUsableListing(rawListing)) {
+    return { invalid: true, reason: 'no-product-fields' };
+  }
   const title = normalizeWhitespace(rawListing.title);
   const model = normalizeModel({ ...rawListing, title });
   const { price, currency } = normalizePrice(rawListing.price, rawListing.currency);
@@ -165,20 +180,33 @@ export function processListing(db, source, rawListing, opts, crawlRunId = null) 
 export async function crawlSource(db, source, connector, opts, crawlRunId) {
   const listings = await connector.fetchListings();
   const stats = {
-    itemsSeen: 0, itemsExcluded: 0, eventsCreated: 0, events: [],
+    itemsParsed: 0, itemsSeen: 0, itemsInvalid: 0, itemsExcluded: 0,
+    itemsFailed: 0, eventsCreated: 0, events: [],
     seenOfferIds: [], terminalOfferIds: [],
+    // Page-level parse outcomes reported by the connector (null for connectors
+    // that do not fetch pages, e.g. the offline fixture connector).
+    parse: connector?.parseStats ? { ...connector.parseStats } : null,
   };
   for (const raw of listings) {
-    if (!raw || !raw.url) { logger.warn(`listing without url from ${source.key}, skipped`); continue; }
-    stats.itemsSeen += 1;
+    // Count everything the parser handed us so callers can compare parsed vs.
+    // invalid and flag a parser failure when too many rows are unusable.
+    stats.itemsParsed += 1;
     let result;
     try {
       result = processListing(db, source, raw, opts, crawlRunId);
     } catch (err) {
       // A single bad item must not abort the whole source.
+      stats.itemsFailed += 1;
       logger.warn(`failed to process item from ${source.key}: ${err.message}`);
       continue;
     }
+    if (result.invalid) {
+      // Missing URL or no meaningful product fields: never processed further.
+      stats.itemsInvalid += 1;
+      logger.warn(`invalid listing from ${source.key} (${result.reason}), skipped`);
+      continue;
+    }
+    stats.itemsSeen += 1;
     if (result.excluded) { stats.itemsExcluded += 1; continue; }
     stats.eventsCreated += result.events.length;
     stats.events.push(...result.events);

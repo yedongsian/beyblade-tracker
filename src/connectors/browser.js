@@ -2,7 +2,7 @@ import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BaseConnector } from './base.js';
-import { parseProductPage } from './parse.js';
+import { parseProductPage, classifyParsedPage } from './parse.js';
 
 /**
  * Browser-backed connector for public pages that reject ordinary HTTP clients
@@ -27,7 +27,8 @@ export class BrowserConnector extends BaseConnector {
       delete launch.channel;
     }
 
-    const browser = await chromium.launch(launch);
+    const browserLib = this.deps.chromium || chromium;
+    const browser = await browserLib.launch(launch);
     const listings = [];
     try {
       const context = await browser.newContext({ locale: cfg.locale || 'ja-JP' });
@@ -44,15 +45,15 @@ export class BrowserConnector extends BaseConnector {
             url: page.url(),
             selectors: cfg.selectors || {},
           });
-          const parseFailed = !listing || (
-            !listing.title && listing.price == null &&
-            !listing.availabilityRaw && !listing.availabilityText
-          );
-          if (this.deps.debug?.saveHtml || parseFailed) {
-            this.#saveDebug(requestedUrl, html, parseFailed);
+          // Signal a page-level parse result and keep crawling the remaining
+          // pages. A single maintenance/empty page must neither abort the whole
+          // source nor enter the pipeline as an invalid listing.
+          const status = this.recordPageResult(classifyParsedPage(html, listing));
+          const usable = status === 'ok';
+          if (this.deps.debug?.saveHtml || !usable) {
+            this.#saveDebug(requestedUrl, html, !usable);
           }
-          if (parseFailed) throw new Error(`browser page parsed no product data: ${requestedUrl}`);
-          listings.push(listing);
+          if (usable) listings.push(listing);
         } finally {
           await page.close();
         }

@@ -54,6 +54,7 @@
 | GET | `/review?status=` | Candidate Review Queue；status 預設 `pending`。 |
 | GET | `/exclusions?status=` | Listing exclusion review；status 預設 `all`。 |
 | GET | `/sources` | Source、Discovery settings、network control。 |
+| GET | `/operations` | Local-first 可觀測性：各 component 成功率、parser failure rate、佇列、freshness 與各來源健康。 |
 | GET | `/settings` | Language、notification、transfer、diagnostics、update settings。 |
 | GET | `/privacy` | Privacy policy。 |
 | GET | `/source-policy` | Source use policy。 |
@@ -103,7 +104,8 @@
 | GET | `/api/watchlists` | — | `{watchlists: Watchlist[], alerts: WatchlistAlert[]}` |
 | GET | `/api/official-sources` | — | `{sources: OfficialSource[], announcements: OfficialAnnouncement[]}` |
 | GET | `/api/community` | — | `{sources: CommunitySource[], posts: CommunityPost[]}` |
-| GET | `/api/update` | — | Update check result；需要 network enabled。 |
+| GET | `/api/operations` | — | Local-first 可觀測性 metrics（`components`、`parserFailureRate`、`sources`、`freshness`、`queues`、`recentErrorClasses`）加上最近 50 筆 `recentEvents`。所有欄位皆為安全欄位：correlation ID、component、operation、source key、status、duration 與 bounded `error_class`；不含 credentials、完整 URL、log 內文或商品歷史。 |
+| GET | `/api/update` | — | 驗證 stable manifest，回傳 update availability、release notes、publisher、size、manifest digest 與 defer state；只檢查，不下載。 |
 
 ## 6. Settings、privacy 與 notification
 
@@ -172,7 +174,11 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 | POST | `/api/transfer/import` | `{data:"<base64>"}` | 202 `{staged,restartRequired:true}`；驗證後 staged，稍後要求 restart。 |
 | POST | `/api/diagnostics/export` | — | gzip diagnostics；需使用者 consent，排除 credentials、URLs、logs 與 product history。 |
 | GET | `/api/update` | — | 驗證 manifest 並回傳 update availability。 |
-| POST | `/api/update/apply` | `{}` | 202；下載、驗證、stage、launch prepared update。 |
+| GET | `/api/update/status` | — | 回傳最近一次自動或手動檢查的安全摘要、defer、post-update health 與 rollback runner 結果，供 Settings UI 顯示；不會發出網路請求。 |
+| POST | `/api/update/defer` | `{targetVersion,manifestDigest}` | 保存該已驗證版本的 defer 選擇；不下載。 |
+| POST | `/api/update/apply` | `{confirmed:true,targetVersion,manifestDigest}` | 202；確認值必須匹配當前 signed manifest，才開始下載、驗證、備份與 installer launch；同時間只允許一個 operation。 |
+| GET | `/api/update/progress/:operationId` | — | 只回傳本機 operation 的安全 phase、bytes progress、target version 或公開錯誤代碼。 |
+| POST | `/api/update/rollback` | `{}` | 回傳 `202` 後由服務安全停機，再由外部 rollback runner 還原 update 前 backup 與切回前一個 version pointer；不會在仍開啟 DB 的 Web process 中直接還原。 |
 
 ## 12. API 已知限制與後續改善
 
@@ -182,9 +188,17 @@ Candidate approve 可能建立 Product／Offer／Event；defer、exclude 與 reo
 - 沒有 idempotency key；部分 mutation 依 DB unique constraints 或業務規則去重。
 - `DELETE /api/sources/:id` 實際為 disable，路由語意容易誤解，未來若變更需先提供 compatibility plan。
 
+## Deferred update control
+
+`POST /api/update/resume` accepts `{}`, clears the saved defer decision for the currently verified manifest, and returns `{resumed:true,state,deferred:false}`. It never downloads or installs an update.
+
+`GET /api/update/status` returns the last verified result without starting a network request. While an apply is active it also returns an allowlisted `operation` object with only `id`, `targetVersion`, `phase`, `received`, `total`, and optional `errorCode`; it never includes installer locations, backup locations, manifest URLs, signatures, or exception details.
+
+`GET /api/update` records a new check only after a successful verified response. `BT-UPD-002` and `BT-UPD-003` responses leave the stored verified result and `lastCheckedAt` unchanged.
+
 ## 13. Update error contract
 
-此 error envelope 已由 Local Web 實作；update confirmation flow 其餘要求仍是下一公開版本需求，不是 1.0.0 as-built API。
+此 error envelope 與 update consent API 已實作為下一個 release candidate 行為；仍不是 1.0.0 已發布能力。
 
 ### Error response
 
@@ -220,5 +234,9 @@ HTTP status 應區分 validation、policy、conflict、not found 與 internal fa
   "manifestDigest": "sha256-of-confirmed-manifest"
 }
 ```
+
+The server first validates the confirmation shape (`confirmed:true`, semantic target version, 64-hex manifest digest), then synchronously reserves a `checking` operation. A concurrent valid request returns that operation ID with `inProgress:true`; it does not start another manifest request, download, backup, or installer launch. Safe summaries omit URLs, paths, signatures, and exception details. Terminal progress is retained for ten minutes, capped at twenty records, then returns 404.
+
+`checking` is an active phase with `received:0` and `total:0`; clients should show it as indeterminate rather than as a 0% download. The phase transitions to `downloading`, then `installing`, and finally `completed` or `failed`.
 
 Server 必須拒絕 `confirmed != true`、target／digest 不符、network disabled、signature／hash 無效或 backup 失敗。UI 的 background check 不可直接呼叫 apply；使用者 confirmation 也不能被保存為未來版本的永久同意。

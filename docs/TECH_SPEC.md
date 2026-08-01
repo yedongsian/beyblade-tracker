@@ -44,7 +44,9 @@ flowchart LR
 | 路徑 | 責任 |
 |---|---|
 | `bin/` | CLI entry points：crawl、worker、web、service、health、backup／restore、transfer、update／rollback。 |
-| `scripts/service-control.js` | Windows-friendly start／restart／stop／status；只管理本專案 PID。 |
+| `scripts/service-control.js` | Windows-friendly start／restart／stop／status；只管理本專案 PID，並注入真實 OS identity 與檔案操作給 lifecycle state machine。 |
+| `src/release/service-process.js` | Process ownership 純函式：`owned`／`other`／`unknown` 分類、CIM creation time 解析、graceful-stop 與 force-kill 授權判斷。 |
+| `src/release/service-lifecycle.js` | 可注入依賴的 start／stop state machine：unknown 只允許 graceful stop，force kill 前重查 ownership，stale／reused PID 不會被當成已啟動。 |
 | `src/app.js` | 建立 app、同步來源、recover interrupted work、執行 monitor／discovery／notification／retention。 |
 | `src/config.js` | 解析及驗證環境變數與來源設定；提供安全預設。 |
 | `src/connectors/` | 統一 Listing contract；Fixture、JSON-LD／CSS、system Chrome acquisition。 |
@@ -142,6 +144,16 @@ flowchart LR
 - Diagnostics 排除 credentials、URLs、logs、product history；transfer bundle 以 hash 驗證且排除 credentials。
 - Update manifest 必須為 HTTPS、合法 semantic version、matching SHA-256 及 Ed25519 signature；正式公開發布另需 Authenticode。
 
+## Update recovery follow-up
+
+A temporary scheduled-check failure retains the last verified result and retries after five minutes. Defer is reversible without download consent. A new apply clears prior rollback status; rollback is `succeeded` only after the previous service has started, and `BT-UPD-007` overrides a stale health marker.
+
+Rollback status is cleared only after installer verification, backup creation, rollback record creation, and pending health-marker creation all succeed. The scheduler uses the remaining interval since `lastCheckedAt` rather than adding a full interval after a not-due run; paused network uses the five-minute retry delay. Active update progress is an in-memory, allowlisted summary so Settings can resume polling after a page reload.
+
+`POST /api/update/apply` synchronously reserves a `checking` operation before the manifest request. `checking`, `downloading`, and `installing` are single-flight phases. Terminal summaries retain only safe fields, expire after ten minutes, and are capped at twenty records; pruning is request-driven so it creates no background timer.
+
+Windows service control treats a process as owned only when the PID, executable path, `bin/service.js` command-line path, and OS creation time match the service status metadata. Missing OS identity is `unknown`, never permission to force-kill a PID from a stale status file.
+
 ## 9. Failure handling
 
 | Failure | 系統行為 |
@@ -165,6 +177,11 @@ flowchart LR
 - 發布單一 Authenticode-signed Setup.exe，per-user 安裝並內含 Node runtime。
 - 安裝器寫入 versioned payload 與 `current.json`，建立開始功能表入口，可選登入後自動啟動。
 - `launcher.vbs` 可繼續隱藏 PowerShell console，但 `launcher.ps1` 最外層必須攔截 exception，將原因映射到中央 error registry，顯示 native dialog。
+- Launcher 有兩種明確模式：interactive（使用者自行啟動）可顯示 error dialog；`-NonInteractive`（installer、uninstaller、登入自動啟動、測試）絕不建立任何視窗，只在 stderr 輸出 safe error code 並以非零 exit code 結束。成功路徑必須明確回傳 0。
+- Non-interactive `Run-Control` 對 service-control 使用自有 process handle 與 bounded wait（stop 45s／start 40s／restart 80s），逾時即終止該 child 並回報 `BT-LCH-003`；不可依賴 `Start-Process -PassThru` 的 exit code。
+- 需要視窗的 action（`open`、`export`、`import`、`update`、`rollback`）在 non-interactive 模式回報 `BT-LCH-006`，不得改為靜默執行。
+- Uninstaller 以 `InitializeUninstall` 的 `Exec` 呼叫 non-interactive stop 作為明確前置條件：stop 失敗即中止移除並回傳非零，不刪除仍在執行的 service files。`/SUPPRESSMSGBOXES` 不得用來間接控制 launcher GUI。
+- 該前置條件必須 fail closed：`launcher.ps1` 不存在時只能證明 stop helper 無法執行，不能證明 service 已停止，因此回傳 `False`。修復方式是重新安裝同版本，不是略過 stop。
 - Launcher error dialog 提供「再試一次」、「服務狀態」、「複製錯誤資訊」、「問題回報」；不顯示 stack trace 或 secret。
 - `launcher.ps1` 必須保持 UTF-8 with BOM；byte-level test 防止 Windows PowerShell 5.1 繁中文字串回歸。
 
@@ -209,11 +226,17 @@ stateDiagram-v2
 ```
 
 - Check 可自動，download／install 不可在沒有明確 confirmation 的情況下開始。
-- Stable channel 預設在啟動後延遲檢查，最多每 24 小時一次；manual check 不受此顯示頻率限制。
+- Stable channel 預設在啟動後延遲 5 秒檢查，並在服務持續運作時每 24 小時再次檢查；manual check 不受此顯示頻率限制。
+- Manifest 必須是 signed stable 且 `publishReady=true`；格式、版本、簽章與公鑰錯誤固定回報 `BT-UPD-003`，不會被歸類為網路錯誤。
 - Update card 顯示 current／target version、release notes、download size、publisher 與稍後／安裝選項。
 - Confirmation 綁定 manifest digest／target version，避免 manifest 在確認後被替換。
 - 開始安裝前建立 consistent DB backup；post-update 執行 schema、health、integrity check；失敗時提供 rollback。
 - `NETWORK_ENABLED=0` 時不檢查、不下載；使用者選擇稍後不視為同意。
+- 實作會保存最後一次驗證結果的安全摘要，Settings UI 會提示可用更新；資料庫 network pause 與環境 network 設定都會阻止自動檢查。自動檢查從不下載檔案。
+- Silent installer 會完成安裝後重啟 Tracker；安裝完成、post-update health、rollback runner 成功或失敗都以安全狀態摘要提供 UI 顯示。defer 對相同 target version／manifest digest 持續有效，直到 manifest 變更或使用者明確套用。
+- Manifest 必須是 signed stable channel，並包含 publisher、release notes、published time、size、HTTPS URL 與 SHA-256；confirmation 綁定 target version 與 manifest digest。
+- 使用者按「稍後更新」會保存該已驗證 manifest 的 defer 紀錄；下載進度只在 loopback UI 顯示。
+- 安裝前才建立 consistent backup 與 rollback record。更新後服務啟動會驗證 target version 與 SQLite integrity；失敗時以 `BT-UPD-006` 提供 rollback。
 
 ### 10.4 GitHub support integration
 
@@ -231,7 +254,7 @@ stateDiagram-v2
 - Release：Windows payload／installer declarations、manifest、rollback、diagnostics 與 isolated E2E。
 - Fixture acceptance：產品生命週期、Takara Discovery、community intelligence。
 
-2026-07-29 `scripts/run-tests.js` 會合併既有 `NO_PROXY` 並加入 `127.0.0.1`、`localhost`、`::1`，再啟動 Node test child process。`HTTP_PROXY`、`HTTPS_PROXY` 及其他環境設定保持不變，因此只隔離 loopback integration tests，不改 production external fetch policy。ambient proxy 環境完整 suite 通過 139/139（`BT-P1-001`）。
+2026-07-29 `scripts/run-tests.js` 會合併既有 `NO_PROXY` 並加入 `127.0.0.1`、`localhost`、`::1`，再啟動 Node test child process。`HTTP_PROXY`、`HTTPS_PROXY` 及其他環境設定保持不變，因此只隔離 loopback integration tests，不改 production external fetch policy。ambient proxy 環境完整 suite 在 `BT-P1-001` 完成時通過 139/139；目前基線為 219/219（2026-08-02）。
 
 ## 12. 變更規則
 

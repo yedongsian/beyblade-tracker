@@ -25,6 +25,9 @@ import {
   listDueMonitorSources, refreshOfferFreshness, startMonitorRequests,
 } from './core/monitor.js';
 import { getNetworkState } from './core/network-control.js';
+import {
+  newCorrelationId, parserOutcome, recordOperationEvent, safeErrorClass,
+} from './core/operations.js';
 import { projectPaths } from './paths.js';
 import { createSecretStore } from './security/secret-store.js';
 import { applyPendingTransfer } from './maintenance/transfer.js';
@@ -128,6 +131,7 @@ export function recoverInterruptedWork(app) {
  */
 export async function runOfferMonitors(app, {
   onlyKey, force = false, nowMs = Date.now(), random = Math.random,
+  correlationId = newCorrelationId(),
 } = {}) {
   const { db, config } = app;
   const network = getNetworkState(db, config);
@@ -155,6 +159,7 @@ export async function runOfferMonitors(app, {
     const source2 = { ...source, config: sourceConfig };
     const runId = startCrawlRun(db, source);
     startMonitorRequests(db, source.id, new Date(nowMs).toISOString());
+    const startedMs = Date.now();
     try {
       const httpDeps = {
         http: {
@@ -167,12 +172,34 @@ export async function runOfferMonitors(app, {
       };
       const connector = createConnector(source2, httpDeps);
       const stats = await crawlSource(db, source2, connector, pipelineOpts(config, source), runId);
+      // Classify what the parser actually produced (no URL, zero valid listings,
+      // partial, or clean) and record exactly one parser event before deciding
+      // whether the source crawl itself succeeded.
+      const parser = parserOutcome(stats);
+      recordOperationEvent(db, {
+        correlationId, component: 'parser', operation: 'extract', sourceKey: source.key,
+        status: parser.status, durationMs: Date.now() - startedMs, errorClass: parser.errorClass,
+        counts: { valid: parser.valid, invalid: parser.itemInvalid, failed: parser.itemFailed, pages: parser.pages, pageFailed: parser.pageFailed },
+      });
+      if (parser.valid === 0) {
+        // No usable listing entered the pipeline this crawl: surface it as a
+        // source failure (health/backoff) with a precise, content-free class.
+        const error = new Error(`parser produced no valid listings (${parser.errorClass})`);
+        error.errorClass = parser.errorClass;
+        error.parserRecorded = true;
+        throw error;
+      }
       recordCrawlSuccess(db, source.id);
       finishCrawlRun(db, runId, { status: 'success', ...stats });
       finalizeSuccessfulMonitor(db, source, {
         seenOfferIds: stats.seenOfferIds,
         terminalOfferIds: stats.terminalOfferIds,
         now: new Date(nowMs).toISOString(), random,
+      });
+      const durationMs = Date.now() - startedMs;
+      recordOperationEvent(db, {
+        correlationId, component: 'source', operation: 'monitor', sourceKey: source.key,
+        status: 'success', durationMs,
       });
       summary.ok += 1;
       summary.itemsSeen += stats.itemsSeen;
@@ -184,6 +211,20 @@ export async function runOfferMonitors(app, {
       finalizeFailedMonitor(db, source, err.message, {
         now: new Date(nowMs).toISOString(), random,
       });
+      const durationMs = Date.now() - startedMs;
+      const errorClass = safeErrorClass(err);
+      recordOperationEvent(db, {
+        correlationId, component: 'source', operation: 'monitor', sourceKey: source.key,
+        status: 'failed', durationMs, errorClass,
+      });
+      // The zero-valid path already recorded a precise parser event; only add a
+      // parser failure here for parse errors thrown elsewhere (e.g. a connector).
+      if (!err.parserRecorded && errorClass === 'parse') {
+        recordOperationEvent(db, {
+          correlationId, component: 'parser', operation: 'extract', sourceKey: source.key,
+          status: 'failed', durationMs, errorClass,
+        });
+      }
       summary.failed += 1;
       logger.warn(`source ${source.key} failed: ${err.message}`);
     }
@@ -203,6 +244,7 @@ export async function runDiscoveryScheduler(app, { nowMs = Date.now() } = {}) {
 /** Run the independent offer monitor and discovery schedulers, then notify. */
 export async function runOnce(app, {
   onlyKey, dueOnly = false, nowMs = Date.now(), random = Math.random,
+  correlationId = newCorrelationId(),
 } = {}) {
   syncSources(app);
   const network = getNetworkState(app.db, app.config);
@@ -217,14 +259,14 @@ export async function runOnce(app, {
     };
   }
   const summary = await runOfferMonitors(app, {
-    onlyKey, force: !dueOnly, nowMs, random,
+    onlyKey, force: !dueOnly, nowMs, random, correlationId,
   });
 
   const discovery = await runDiscoveryScheduler(app, { nowMs });
 
   const mayNotify = getNetworkState(app.db, app.config).enabled;
   const notifyResult = mayNotify
-    ? await flushNotifications(app.db, app.notifiers)
+    ? await flushNotifications(app.db, app.notifiers, { correlationId })
     : { groups: 0, sent: 0, skipped: 0, failed: 0, paused: true };
   const watchlistNotify = mayNotify
     ? await flushWatchlistAlerts(app.db, app.notifiers)

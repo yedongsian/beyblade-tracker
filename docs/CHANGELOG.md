@@ -4,11 +4,28 @@
 
 ## [Unreleased]
 
+> 目前驗證基線：`codex/bt-upd-001` 於 2026-08-02 執行 `npm test` 通過 **219/219**（0 fail／0 skip／0 todo）。下方 Development history 保留各階段當時的歷史數字。
+
+- BT-P1-002: local-first observability — schema 13 `operation_events` now stores distinct valid, item-invalid, item-failed, page and page-failed counts. Parser SLOs independently evaluate item and page failure rates; operation, API and diagnostics timestamps are strictly projected ISO-8601 UTC values; defer/resume/rollback lifecycle events use a shared correlation ID and safe error class. No external telemetry; error classes never carry messages, URLs, credentials, or database-injected fields.
+- BT-UPD-001 follow-up: reversible defer, stable in-progress update controls, retry without discarding a verified manifest, rollback status reset per apply, and service-start-confirmed rollback status with `BT-UPD-007` priority.
+- BT-UPD-001 remaining fixes: retain rollback failure evidence until update preparation completes, preserve verified update state on manual-check failure, schedule from the remaining cadence, and expose only safe active-operation progress so Settings can resume after reload without overlapping apply or poll requests.
+- BT-UPD-001 Windows packaging hardening: silent setup suppresses the optional browser prompt without suppressing service restart; uninstall waits for the launcher to stop the service; isolated packaged E2E now verifies install, health, uninstall, and user-data preservation with bounded Inno Setup cleanup.
+- BT-UPD-001 concurrency and packaging follow-up: reserve update operations before manifest I/O, retain bounded terminal progress, make silent uninstall default to preserving data, and validate the installed service PID/status/8787 health during packaged E2E with strict cleanup failures.
+- BT-UPD-001 P2 follow-up: present manifest checking separately from download progress, verify process ownership before a forced Windows stop, and keep E2E cleanup scoped to the current run after graceful-stop failures.
+- BT-UPD-001 uninstall and process-ownership follow-up: give the launcher an explicit non-interactive mode with bounded waits and safe exit codes, make a hidden non-interactive service stop a precondition of uninstall, let `unknown` ownership still request a graceful stop while force kill requires re-verified `owned`, teach the start path to tell `owned`, `other` and `unknown` apart, and add a negative packaged E2E for the silent stop-failure path.
+
 ### Fixed
 
 - 讓 `npm test` 在保留 external proxy policy 的同時，於隔離 child process 明確 bypass loopback proxy；新增環境合併回歸測試（`BT-P1-001`）。
 - 修正 Windows PowerShell 5.1 將無 BOM UTF-8 `launcher.ps1` 當成 ANSI 解碼，造成繁中錯誤訊息、狀態提示與移機對話框標籤亂碼；新增 Launcher BOM 防回歸測試（`BT-P1-003`）。
 - 新增 BT-UX-002 中央錯誤代碼 registry、safe Local Web error envelope 與 hidden Launcher native dialog；未知 internal error 使用 `BT-LCH-999`，不公開 exception message、stack、secret、private URL 或 path。
+- BT-UPD-001：更新只接受 signed stable manifest，並要求使用者以 target version 與 manifest digest 明確確認後，才下載、備份或啟動 installer；加入 defer、24h cadence、進度、post-update health 與 rollback flow。
+- BT-UPD-001 follow-up：修正持續服務的 recurring update check、資料庫 network pause、冪等 health marker、非同步 installer spawn failure，以及 Web rollback 的安全停機 handoff。
+- BT-UPD-001 follow-up：silent installer 現在完成後重啟服務；補齊 defer、single-flight、health／rollback 結果 UI、`publishReady` 驗證、manifest error mapping 與英日介面文字。
+- BT-UPD-001：修正 silent uninstall 在 stop 失敗時開啟 WinForms 視窗並造成 90 秒 timeout；launcher 新增 `-NonInteractive` bounded 模式（新代碼 `BT-LCH-006`），uninstaller 以 non-interactive stop 為前置條件，失敗即中止移除。
+- BT-UPD-001：修正 non-interactive launcher 因 `Start-Process -PassThru` 回傳 null exit code，把成功的 service stop 判成 `BT-LCH-003`；改用自有 process handle 讀取 exit code。
+- BT-UPD-001：修正 packaged cold start（process 建立到 `startedAt` 可超過 6 秒）被 ±10 秒對稱 creation-time 視窗誤判為 `other`；改為方向性檢查——process 不得在紀錄的 `startedAt` 之後建立（PID reuse 容忍 2 秒 clock skew），startup 視窗放寬至 120 秒。
+- BT-UPD-001：修正 uninstall stop 前置條件在 `launcher.ps1` 遺失時 fail open（回傳 stop success 後繼續移除執行中的安裝）；改為 fail closed，並新增 `MissingLauncherMode` packaged E2E 與精確的 installer static contract test。
 
 ### Documentation
 
@@ -21,6 +38,11 @@
 - 新增 `BT-UX-001`、`BT-UX-002`、`BT-UPD-001`、`BT-SUP-001` 與 `BT-DOC-002` 的範圍、依賴及驗收條件。
 - 建立公開 repository `yedongsian/beyblade-tracker`、繁中 GitHub Issue Form、privacy confirmation 與使用教學／錯誤代碼入口。
 - 完成 GitHub Issue Form 實際渲染驗收、問題分類 labels，以及 owner 的 `Custom → Issues` 與 Email notification 設定。
+- 修正 `USER_GUIDE.md` §8 過期敘述：固定錯誤代碼（registry、管理頁安全錯誤對話框、Launcher 原生對話框 `BT-LCH-001`～`006`、保留代碼 `BT-LCH-999`）已由 `BT-UX-002` 實作，僅尚未隨公開 release 發布；原文誤稱「目前版本尚未實作」。
+- 統一 `BT-SUP-001` 狀態：摘要表與 Ticket 內文原為 `In Review` 與 `Ready` 不一致，一律更正為 `In Review`（剩餘條件為第二帳號 Issue 通知 end-to-end 驗收）。
+- 更新 `BT-DOC-002` 依賴欄：Support／Issues／Release URL 已補齊，依賴改為「發布前確認文件進入 release payload」，並補上驗收證據。
+- 於 Roadmap、CHANGELOG 與 Tickets 標示目前驗證基線 `npm test` 219/219；各階段歷史數字維持原樣不回頭改寫。
+- 新增 `BT-API-001`（P2、Proposed）：細分 Local Web API 的 HTTP status mapping，取代目前把多數 exception 折成 `400` 的行為；本次僅建立 Ticket，未實作。
 
 ## [1.0.0] — 2026-07-18
 

@@ -11,8 +11,10 @@ import { startWebServer } from '../src/web/server.js';
 import { logger } from '../src/util/logger.js';
 import { projectPaths } from '../src/paths.js';
 import { getNetworkState } from '../src/core/network-control.js';
+import { finalizePostUpdateHealth, scheduleRecurringUpdateCheck, finishRollbackFailure, releaseRollbackLock } from '../src/release/update.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const SERVICE_FILE = fileURLToPath(import.meta.url);
 process.chdir(ROOT);
 
 const PATHS = projectPaths(ROOT);
@@ -29,6 +31,9 @@ let stopPoll;
 let tickInProgress = false;
 let stopping = false;
 let finishing = false;
+let stopUpdateChecks;
+let rollbackRequested = false;
+let rollbackHandoff = null;
 const startedAt = new Date().toISOString();
 
 function writeStatus(patch) {
@@ -39,6 +44,8 @@ function writeStatus(patch) {
     service: 'beyblade-tracker',
     pid: process.pid,
     startedAt,
+    executablePath: process.execPath,
+    serviceFile: SERVICE_FILE,
     updatedAt: new Date().toISOString(),
     ...patch,
   }, null, 2));
@@ -54,6 +61,7 @@ async function finishShutdown(reason) {
   if (finishing) return;
   finishing = true;
   if (nextTimer) clearTimeout(nextTimer);
+  stopUpdateChecks?.();
   if (stopPoll) clearInterval(stopPoll);
   logger.info(`service shutting down: ${reason}`);
   try {
@@ -62,7 +70,28 @@ async function finishShutdown(reason) {
   try { app?.db.close(); } catch { /* best effort */ }
   try { unlinkSync(STOP_FILE); } catch { /* absent */ }
   clearOwnPid();
-  writeStatus({ status: 'stopped', pid: null, stoppedAt: new Date().toISOString(), reason });
+  if (rollbackRequested) {
+    const rollback = join(ROOT, 'bin', 'rollback.js');
+    try {
+      const child = spawn(process.execPath, ['--no-warnings', rollback], {
+        cwd: ROOT, detached: true, windowsHide: true, stdio: 'ignore', env: {
+          ...process.env,
+          BEYBLADE_ROLLBACK_CORRELATION_ID: rollbackHandoff?.correlationId || '',
+          BEYBLADE_ROLLBACK_HANDOFF_TOKEN: rollbackHandoff?.handoffToken || '',
+        },
+      });
+      await new Promise((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', reject);
+      });
+      child.unref();
+    } catch {
+      finishRollbackFailure(app.config, { code: 'BT-UPD-007' });
+      releaseRollbackLock(rollbackHandoff?.lock);
+      logger.warn('rollback runner could not start: code=BT-UPD-007');
+    }
+  }
+  writeStatus({ status: 'stopped', pid: null, stoppedAt: new Date().toISOString(), reason, rollbackRequested: false });
   process.exit(0);
 }
 
@@ -70,7 +99,7 @@ function requestStop(reason) {
   if (stopping) return;
   stopping = true;
   if (nextTimer) clearTimeout(nextTimer);
-  writeStatus({ status: 'stopping', reason });
+  writeStatus({ status: 'stopping', reason, rollbackRequested });
   if (!tickInProgress) finishShutdown(reason);
 }
 
@@ -97,6 +126,14 @@ function requestRestart(reason) {
   child.unref();
 }
 
+function requestRollback(handoff = {}) {
+  if (stopping) return false;
+  rollbackHandoff = handoff;
+  rollbackRequested = true;
+  requestStop('update rollback requested');
+  return true;
+}
+
 async function tick() {
   if (stopping) return;
   tickInProgress = true;
@@ -120,7 +157,7 @@ async function tick() {
 async function main() {
   writeFileSync(PID_FILE, String(process.pid));
   try { unlinkSync(STOP_FILE); } catch { /* absent */ }
-  writeStatus({ status: 'starting', webUrl: null, stoppedAt: null, reason: null, error: null });
+  writeStatus({ status: 'starting', webUrl: null, stoppedAt: null, reason: null, error: null, rollbackRequested: false });
 
   try {
     app = createApp();
@@ -129,11 +166,25 @@ async function main() {
     syncSources(app);
     server = await startWebServer(app.db, {
       ...app.config.web, appConfig: app.config, secretStore: app.secretStore,
+      rollbackHandoffOwner: {
+        pid: process.pid, executablePath: process.execPath, runnerFile: SERVICE_FILE, startedAt,
+      },
       onMonitorRequested: wakeMonitor,
       onNotificationSettingsChanged: () => refreshNotificationConfiguration(app),
       onRestartRequested: requestRestart,
+      onRollbackRequested: requestRollback,
     });
+    const updateHealth = finalizePostUpdateHealth(app.config, {
+      integrity: app.db.get('PRAGMA integrity_check').integrity,
+    });
+    if (updateHealth?.rollbackOffered) logger.warn('post-update health failed: code=BT-UPD-006');
     writeStatus({ status: 'running', webUrl: `http://${app.config.web.host}:${app.config.web.port}` });
+    stopUpdateChecks = scheduleRecurringUpdateCheck(app.db, app.config, {
+      onResult: (update) => {
+        if (update?.updateAvailable) logger.info(`scheduled update available: ${update.manifest.version}`);
+      },
+      onError: (err) => logger.warn(`scheduled update check failed: ${err.code || 'BT-UPD-002'}`),
+    });
     stopPoll = setInterval(() => {
       if (existsSync(STOP_FILE)) requestStop('stop.request');
     }, 500);

@@ -40,6 +40,24 @@ export class BaseConnector {
     this.source = source;
     this.config = config;
     this.deps = deps;
+    // Page-level parse outcomes accumulated during fetchListings(), read by the
+    // pipeline for observability. A fresh connector is created per crawl, so
+    // these counters describe exactly one crawl of this source.
+    this.parseStats = { pages: 0, ok: 0, empty: 0, maintenance: 0, failed: 0 };
+  }
+
+  /**
+   * Record one page-level parse outcome ('ok' | 'empty' | 'maintenance' |
+   * 'failed'). Only 'ok' pages should be turned into listings; the rest signal a
+   * page-level failure so no invalid result enters the crawl pipeline.
+   */
+  recordPageResult(status) {
+    this.parseStats.pages += 1;
+    if (status === 'ok') this.parseStats.ok += 1;
+    else if (status === 'maintenance') this.parseStats.maintenance += 1;
+    else if (status === 'failed') this.parseStats.failed += 1;
+    else this.parseStats.empty += 1;
+    return status;
   }
 
   // eslint-disable-next-line class-methods-use-this

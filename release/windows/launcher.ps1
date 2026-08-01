@@ -1,10 +1,17 @@
-﻿param([ValidateSet('open','start','restart','stop','status','export','import','update','rollback')][string]$Action='open')
+﻿param(
+  [ValidateSet('open','start','restart','stop','status','export','import','update','rollback')][string]$Action='open',
+  [switch]$NonInteractive
+)
 $ErrorActionPreference = 'Stop'
+# Actions callable by the installer, uninstaller, startup automation and tests: never GUI, always bounded.
+$nonInteractiveActions = @('start','restart','stop','status')
+# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 15s) plus overhead.
+$controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' = 20 }
 
 function Throw-LauncherError([string]$Code) {
-  $error = New-Object System.Exception($Code)
-  $error.Data['BeybladeCode'] = $Code
-  throw $error
+  $launcherError = New-Object System.Exception($Code)
+  $launcherError.Data['BeybladeCode'] = $Code
+  throw $launcherError
 }
 
 function Show-LauncherError([string]$Code) {
@@ -16,6 +23,7 @@ function Show-LauncherError([string]$Code) {
     'BT-LCH-003' = @('背景服務啟動失敗', 'Beyblade Tracker 無法完成背景服務啟動。', '查看服務狀態後，稍後再試一次。')
     'BT-LCH-004' = @('等待服務逾時', 'Beyblade Tracker 等待服務回應逾時。', '等候一分鐘後再試，並確認 8787 port 未被其他程式占用。')
     'BT-LCH-005' = @('無法開啟管理頁', '背景服務已啟動，但無法開啟本機管理頁。', '稍後再試，或查看服務狀態。')
+    'BT-LCH-006' = @('此操作需要互動模式', '這個操作需要視窗介面，無法在自動化模式執行。', '請從開始選單手動執行該功能。')
     'BT-LCH-999' = @('發生未預期的錯誤', 'Beyblade Tracker 發生未預期的內部錯誤。', '稍後再試；若持續發生，複製錯誤資訊後回報。')
   }
   if (-not $details.ContainsKey($Code)) { $Code = 'BT-LCH-999' }
@@ -46,6 +54,7 @@ function Show-LauncherError([string]$Code) {
 }
 
 try {
+if ($NonInteractive -and ($nonInteractiveActions -notcontains $Action)) { Throw-LauncherError 'BT-LCH-006' }
 $installRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $currentPath = Join-Path $installRoot 'current.json'
 if (-not (Test-Path -LiteralPath $currentPath)) { Throw-LauncherError 'BT-LCH-001' }
@@ -54,15 +63,143 @@ if ([string]::IsNullOrWhiteSpace($version)) { Throw-LauncherError 'BT-LCH-001' }
 $appRoot = Join-Path (Join-Path $installRoot 'versions') $version
 $node = Join-Path $appRoot 'runtime\node.exe'
 if (-not (Test-Path -LiteralPath $node)) { Throw-LauncherError 'BT-LCH-002' }
-$userRoot = Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
+$userRoot = if ([string]::IsNullOrWhiteSpace($env:BEYBLADE_USER_ROOT)) {
+  Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
+} else {
+  $env:BEYBLADE_USER_ROOT
+}
 $env:BEYBLADE_INSTALL_ROOT = $installRoot
 $env:BEYBLADE_APP_ROOT = $appRoot
 $env:BEYBLADE_USER_ROOT = $userRoot
 Set-Location -LiteralPath $appRoot
 
+function Normalize-RollbackProcessPath([string]$value) {
+  if ([string]::IsNullOrWhiteSpace($value)) { return '' }
+  return $value.Trim().Trim('"').Replace('/', '\').ToLowerInvariant()
+}
+
+function Remove-StaleRollbackLock([string]$lockPath) {
+  try { Remove-Item -LiteralPath $lockPath -Recurse -Force -ErrorAction Stop }
+  catch { Throw-LauncherError 'BT-LCH-003' }
+}
+
+function Test-RollbackLockActive {
+  $lockPath = Join-Path $userRoot 'runtime\rollback.lock'
+  if (-not (Test-Path -LiteralPath $lockPath)) { return $false }
+  $ownerPath = Join-Path $lockPath 'owner.json'
+  try {
+    $owner = Get-Content -LiteralPath $ownerPath -Raw -ErrorAction Stop | ConvertFrom-Json
+    $ownerPid = 0
+    if (-not [int]::TryParse([string]$owner.pid, [ref]$ownerPid) -or $ownerPid -le 0) { return $true }
+  } catch {
+    # Missing or partially published owner metadata can be an acquisition in
+    # progress.  Give atomic publication a bounded grace period, then recover
+    # an orphan which can no longer belong to a synchronous acquisition.
+    try {
+      $lockAge = [DateTime]::UtcNow - (Get-Item -LiteralPath $lockPath -ErrorAction Stop).LastWriteTimeUtc
+      if ($lockAge.TotalSeconds -ge 5) {
+        Remove-StaleRollbackLock $lockPath
+        return $false
+      }
+    } catch { }
+    return $true
+  }
+
+  try {
+    $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction Stop
+  } catch {
+    # Unknown process identity fails closed.  A later retry can recover after
+    # CIM is available again or the process has exited.
+    return $true
+  }
+  if (-not $processInfo) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+
+  $actualExecutable = Normalize-RollbackProcessPath ([string]$processInfo.ExecutablePath)
+  $expectedExecutable = Normalize-RollbackProcessPath ([string]$owner.executablePath)
+  $commandLine = Normalize-RollbackProcessPath ([string]$processInfo.CommandLine)
+  $expectedRunner = Normalize-RollbackProcessPath ([string]$owner.runnerFile)
+  if ($actualExecutable -and $expectedExecutable -and $actualExecutable -ne $expectedExecutable) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+  if ($commandLine -and $expectedRunner -and -not $commandLine.Contains($expectedRunner)) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+  if (-not $actualExecutable -or -not $expectedExecutable -or -not $commandLine -or -not $expectedRunner) {
+    return $true
+  }
+
+  try {
+    $processStartedAt = ([DateTime]$processInfo.CreationDate).ToUniversalTime()
+    $recordedStartedAt = [DateTime]::Parse(
+      [string]$owner.startedAt,
+      [Globalization.CultureInfo]::InvariantCulture,
+      [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    )
+  } catch {
+    return $true
+  }
+  $startupDelayMs = ($recordedStartedAt - $processStartedAt).TotalMilliseconds
+  if ($startupDelayMs -lt -2000 -or $startupDelayMs -gt 120000) {
+    Remove-StaleRollbackLock $lockPath
+    return $false
+  }
+  return $true
+}
+
+function Assert-RollbackStartAllowed {
+  # This file is installed at {app}, outside versions/<current>.  It is the
+  # bootstrap guard for a rollback into a version which predates the JS guard.
+  if (Test-RollbackLockActive) { Throw-LauncherError 'BT-LCH-003' }
+  $sidecar = Join-Path $userRoot 'runtime\rollback-status.json'
+  if (-not (Test-Path -LiteralPath $sidecar)) { return }
+  try {
+    $record = Get-Content -LiteralPath $sidecar -Raw | ConvertFrom-Json
+    $last = $null
+    if ($record.events -and $record.events.Count -gt 0) { $last = $record.events[$record.events.Count - 1] }
+    $phase = if ($last) { [string]$last.phase } else { [string]$record.status }
+    $at = if ($last) { [string]$last.at } else { [string]$record.requestedAt }
+    if ($phase -notin @('accepted','running')) { return }
+    $when = [DateTime]::Parse($at, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
+    if ($when -gt [DateTime]::UtcNow -or ([DateTime]::UtcNow - $when).TotalMinutes -le 5) {
+      Throw-LauncherError 'BT-LCH-003'
+    }
+  } catch {
+    # If an active sidecar cannot be verified, fail closed.  The runner itself
+    # is launched before current.json changes and does not come through here.
+    Throw-LauncherError 'BT-LCH-003'
+  }
+}
+
 function Run-Control([string]$command) {
-  & $node '--no-warnings' (Join-Path $appRoot 'scripts\service-control.js') $command
-  if ($LASTEXITCODE -ne 0) { Throw-LauncherError 'BT-LCH-003' }
+  if ($command -in @('start','restart')) { Assert-RollbackStartAllowed }
+  $controlScript = Join-Path $appRoot 'scripts\service-control.js'
+  if (-not $NonInteractive) {
+    & $node '--no-warnings' $controlScript $command
+    if ($LASTEXITCODE -ne 0) { Throw-LauncherError 'BT-LCH-003' }
+    return
+  }
+  $timeout = if ($controlTimeoutSeconds.ContainsKey($command)) { [int]$controlTimeoutSeconds[$command] } else { 60 }
+  # Own the process handle directly: Start-Process -PassThru can report a null ExitCode for a hidden child.
+  $control = New-Object System.Diagnostics.Process
+  $control.StartInfo.FileName = $node
+  $control.StartInfo.Arguments = '--no-warnings "' + $controlScript + '" ' + $command
+  $control.StartInfo.WorkingDirectory = $appRoot
+  $control.StartInfo.UseShellExecute = $false
+  $control.StartInfo.CreateNoWindow = $true
+  [void]$control.Start()
+  try {
+    if (-not $control.WaitForExit($timeout * 1000)) {
+      try { $control.Kill() } catch { }
+      Throw-LauncherError 'BT-LCH-003'
+    }
+    $exitCode = $control.ExitCode
+  } finally { $control.Dispose() }
+  if ($exitCode -ne 0) { Throw-LauncherError 'BT-LCH-003' }
 }
 
 function Wait-ForManagementPage {
@@ -79,7 +216,7 @@ switch ($Action) {
   'start' { Run-Control 'start'; Wait-ForManagementPage }
   'restart' { Run-Control 'restart'; Wait-ForManagementPage }
   'stop' { Run-Control 'stop' }
-  'status' { Run-Control 'status'; Read-Host '按 Enter 關閉' }
+  'status' { Run-Control 'status'; if (-not $NonInteractive) { Read-Host '按 Enter 關閉' } }
   'export' {
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = New-Object System.Windows.Forms.SaveFileDialog
@@ -101,6 +238,13 @@ switch ($Action) {
 }
 } catch {
   $code = $_.Exception.Data['BeybladeCode']
-  if ($code -notmatch '^BT-LCH-00[1-5]$') { $code = 'BT-LCH-999' }
+  if ($code -notmatch '^BT-LCH-00[1-6]$') { $code = 'BT-LCH-999' }
+  # Non-interactive callers get only the safe error code on stderr: no dialog, no paths, no stack trace.
+  if ($NonInteractive) {
+    [Console]::Error.WriteLine($code)
+    exit 1
+  }
   Show-LauncherError $code
+  exit 1
 }
+exit 0

@@ -1,8 +1,9 @@
 # Delivery Tickets／Backlog
 
 > 狀態：Active
-> 最後更新：2026-07-28
+> 最後更新：2026-08-02
 > 規則：本檔是正式 backlog；Roadmap 只保存優先順序與里程碑。
+> 目前驗證基線：`codex/bt-upd-001` 於 2026-08-02 執行 `npm test` 通過 **219/219**（0 fail／0 skip／0 todo）。各 Ticket 內文保留當時的歷史測試數字，不回頭改寫。
 
 ## 1. 工作流程
 
@@ -24,16 +25,17 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Blocked | 完成 Windows 公開發佈閘門 | 憑證、hosting、key owner、clean VM |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
-| BT-P1-002 | P1 | Proposed | 建立 local-first 可觀測性 | 產品指標與 UI scope 決策 |
+| BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
 | BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
 | BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Windows native dialog 實機驗收 |
-| BT-UPD-001 | P0 | Ready | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel |
+| BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
-| BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | Support／Release URL 待填 |
+| BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | 發布前確認文件進入 release payload |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
 | BT-P2-002 | P2 | Proposed | Chrome browser pool 與 concurrency control | 效能基準 |
 | BT-P2-003 | P2 | Proposed | Queue backpressure、priority 與效能基準 | BT-P1-002 |
+| BT-API-001 | P2 | Proposed | 細分 Local Web API 的 HTTP status mapping | BT-UX-002 error registry |
 | BT-EXT-001 | P1 | Blocked | Takara Tomy Mall 真實 Discovery 驗收 | Queue-it 自然解除 |
 | BT-EXT-002 | P2 | Blocked | X 社群來源付費 API 啟用 | 使用者費用同意與 Developer Project |
 | BT-FUT-001 | P3 | Proposed | 跨裝置同步 threat model | 明確產品需求 |
@@ -78,7 +80,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-P1-002 — 建立 local-first 可觀測性
 
 - Priority：P1
-- Status：Proposed
+- Status：Done
 - Owner：待指定
 - 背景：現有 `/health` 與 text log 可提供基本資訊，但沒有一致 event schema、歷史成功率、parser failure rate 或 queue 趨勢。
 - Scope：structured logs、本機 operations page、source／parser／notification／update metrics、SLO 與 diagnostics summary。
@@ -88,6 +90,9 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - UI 可查最後成功、連續失敗、parse failure、queue、stale／archived counts。
   - Runbook 能以這些資料完成三個演練：source parser failure、notification failure、stale data。
   - Diagnostics 仍不含 credentials、full URLs、logs 或 product history。
+- Verification evidence（2026-07-30）：新增 schema 11 的 `operation_events`（correlation ID、component、operation、source key、status、duration、bounded `error_class`），bounded local retention。已於 source／parser／notification／update 路徑埋點：`runOfferMonitors`（source＋parser，含每項解析失敗計數）、`flushNotifications`（每次送出）、`recordUpdateCheck` 與更新 apply 終態。新增 `/operations` 頁與 `GET /api/operations`（最後成功、連續失敗、parser failure rate、佇列、stale／archived 計數、各來源最近錯誤類別），並加入 zh-TW／en／ja 標籤。`safeErrorClass` 保證只輸出 bounded label，永不外洩 message／URL／token；診斷匯出新增 `operations` 安全區塊。Runbook §18 補上三個演練。新增 `test/operations.test.js` focused 測試。仍待 `npm test` 全綠與 UI 實機驗收後才可標記 Done。
+- FIX verification（2026-07-31）：parser 會拒絕無 URL／無有效商品欄位的 row，JSON-LD／browser connector 以 page-level empty／maintenance outcome 隔離不會進入 pipeline；parser、notification、queue、freshness、source health 的 SLO 門檻會共同決定整體狀態。operation event 欄位均受 allowlist／長度限制，diagnostics 遮蔽一般 URL、query 與 credential/token 模式；manual、scheduled、defer 與 apply internal check 都記錄安全 update event。`npm test` 192/192 通過；本機 `/operations` zh-TW、en、ja 各為 HTTP 200。Runbook parser／notification／stale 三項演練皆由相對應 regression 情境驗證。
+- FIX-11–FIX-39 verification（2026-07-31）：schema 12 寫入 valid／item-invalid／item-failed／page counts；為保留既有 migration checksum，以 schema 13 新增 `page_failed_count`。Parser 分開計算 legacy event／item／page failure rate；1 valid + 99 empty pages 與 1 valid + 99 item exceptions 都為 `degraded`。Rollback accepted／running／succeeded／failed lifecycle 以 runtime sidecar 保存，共用 correlation ID 與實際 duration，runner 不會開啟或升級已還原的舊 schema DB。Rollback restore 與舊版服務啟動失敗皆保留 `BT-UPD-007` 與 duration，且每次只寫入一筆 terminal event。Rollback endpoint 必須先成功寫入 accepted sidecar 才觸發 service stop；sidecar 寫入失敗會回傳 `BT-UPD-007` 且不啟動 handoff，並以 single-flight reservation 拒絕第二個請求而不修改既有 lifecycle。accepted／running sidecar 以 5 分鐘 bounded lease 保護；service 與 rollback runner owner 都以 PID、executable、command line 與建立時間嚴格驗證，PID reuse 或無法讀取程序資訊不會誤鎖 retry。逾期但 owner 存活時仍保持鎖定；只有 owner 已消失時，才以舊 ID 寫入安全 failed 終態並以新 ID 接受 retry。running lifecycle 保存 runner identity；live runner 會跨 lease 阻擋第二個 rollback，且 service start 僅接受該 runner 的 PID＋correlation ID 授權。Web→service handoff 使用實際 service `startedAt` 與 process identity；跨程序 `rollback.lock` 以原子 owner publication 實作 single-flight，初始化中的 owner fail-closed 並允許 bounded orphan recovery。stale lifecycle 僅會在成功取得 lock 後 finalize；安裝根目錄 launcher 也會驗證 live rollback lock，避免跨版本切回 legacy control 時繞過守門。直接 CLI rollback 在沒有既有 sidecar 時會產生安全 correlation ID，僅會延續 accepted／running attempt；failed 或 succeeded 後的 retry 會建立新的 ID。API 與 diagnostics 會拒絕惡意 DB timestamp、source key、counter 與 error class；聚合計數不再截斷。`npm test` **219/219 passed**。
 
 ### BT-P1-003 — 修正 Windows PowerShell 5.1 Launcher 編碼
 
@@ -136,8 +141,22 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
 ### BT-UPD-001 — 實作使用者確認後的自動更新 UX
 
+> Follow-up verification (2026-07-29): defer can be reversed; active apply controls stay hidden; temporary scheduled failure preserves the verified manifest and retries in five minutes; each new apply clears stale rollback status; rollback success requires the previous service to start and `BT-UPD-007` overrides stale health UI. Regression coverage added. Status remains In Review pending release-channel and clean-Windows-VM update/rollback acceptance.
+
+> Remaining-fixes verification (2026-07-29): rollback status is now retained through failed preparation and cleared only after all preparation artifacts succeed. Manual check failures preserve the verified state and timestamp. Scheduling uses remaining delay and safe active-operation summaries allow Settings reload recovery; apply controls are guarded and polling is non-overlapping. Status remains In Review pending external release-channel and clean-Windows-VM acceptance.
+
+> Packaged Windows verification (2026-07-29): rebuilt installer passed isolated silent install, service start, packaged health, synchronous stop, uninstall, and user-data preservation E2E. Silent setup does not show the optional browser prompt, while service restart remains enabled. Status remains In Review: this is not a substitute for signed release-channel and clean-Windows-VM upgrade/rollback acceptance.
+
+> Fix-plan implementation (2026-07-30): apply now reserves a `checking` operation before manifest I/O, terminal operations have bounded retention, silent uninstall uses `SuppressibleMsgBox(..., IDYES)`, and E2E validates the installed 8787 service before uninstall. Status remains In Review pending a release artifact and clean-VM upgrade/rollback verification.
+
+> P2 follow-up implementation (2026-07-30): Settings renders `checking` as an indeterminate active phase; Windows service force-stop requires verified PID/executable/service-path/creation-time ownership; E2E continues with bounded run-ID-scoped fallback cleanup after a graceful-stop failure. Status remains In Review pending external release gates.
+
+> Uninstall and process-ownership follow-up (2026-07-30): the launcher has an explicit `-NonInteractive` mode with bounded waits, safe stderr codes (including the new `BT-LCH-006`) and explicit exit codes; the uninstaller runs that hidden stop as a precondition and aborts non-zero instead of deleting a running install; `unknown` ownership may request a graceful stop while force kill requires re-verified `owned` on that exact PID; the start path distinguishes `owned`, `other` and `unknown` so a stale or reused PID neither blocks startup nor kills a foreign process. Two real defects surfaced during packaged verification and were fixed: `Start-Process -PassThru` reported a null exit code, turning a successful stop into `BT-LCH-003`; and the symmetric ±10s creation-time window misread a >6s packaged cold start as `other`, so the check is now directional (process creation must precede the recorded `startedAt` within a 2s clock-skew tolerance and a 120s startup window). Verification: 182 Node tests, `config:check`, PowerShell 5.1 parser, rebuilt installer, normal packaged E2E, and a new negative stop-failure E2E that fails in ~3s with no UI and a protected install; both runs left port 8787 free and no run-ID processes or directories. Status remains In Review pending signed release channel and clean-Windows-VM upgrade/rollback acceptance.
+
+> Missing-launcher fail-closed fix (2026-07-30): the uninstall stop precondition no longer treats a missing `{app}\launcher.ps1` as a completed stop. It now returns `False`, so a partially damaged install (antivirus quarantine, interrupted update, manual deletion) aborts the uninstall non-zero and keeps program files, the startup entry, the running service and user data; the documented recovery is to reinstall the same or a newer version, stop background tracking from the Start Menu, then uninstall. Covered by a precise static contract test scoped to `StopTrackerService()` (verified to fail on a simulated `Result := True` regression) and by a new `MissingLauncherMode` packaged E2E. Verification: 182 Node tests, `config:check`, PowerShell 5.1 parser, rebuilt installer, and all three packaged E2E runs in sequence — missing-launcher failed closed in 1s with PID preserved on 8787, normal E2E passed, stop-failure E2E failed in 4s; all three runs left port 8787 free with no run-ID processes or directories. Status remains In Review pending external release gates.
+
 - Priority：P0
-- Status：Ready
+- Status：In Review
 - Owner：待指定
 - 背景：現有 manifest／HTTPS／SHA-256／Ed25519／backup／rollback foundation 已存在，但缺少正式 channel 與 consumer consent flow。
 - Scope：startup delay、24h cadence、stable channel、version／release notes UI、defer、explicit confirmation、download progress、backup、install、post-health、rollback。
@@ -148,11 +167,12 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 更新前 consistent backup；使用者資料及 settings 保留。
   - 只接受 HTTPS、valid manifest／hash／publisher；failure 顯示 `BT-UPD-*`。
   - Clean VM 由 1.0.0 升至測試版並可 rollback。
+- Verification evidence（2026-07-29）：已實作 signed stable 且 `publishReady=true` manifest、5 秒啟動延遲與持續服務 24h cadence、資料庫 network pause、保存的可用更新 UI 提示、defer、target／manifest digest confirmation、single-flight download/install、下載進度、SHA-256 驗證、backup、silent installer 重啟服務、rollback record、冪等 post-update integrity health marker、health rollback UI，以及可觀測的 rollback runner 狀態。已新增 consent／defer／cadence／pause／signature／publishReady／hash／post-health／async launch／single-flight／rollback handoff automated tests。仍待正式 HTTPS release channel 與 clean Windows VM 升級／rollback 實機驗收；因此不可標記 Done。
 
 ### BT-SUP-001 — 建立公開 GitHub Issues 與繁中問題回報表單
 
 - Priority：P1
-- Status：Ready
+- Status：In Review
 - Owner：Repository Owner
 - 決策：程式碼 repository 可公開，使用同一 repository 的 Issues；不另建 support-only repo。
 - Scope：GitHub remote、public visibility、Issues、Issue Form、labels、privacy warning、watching／Email notifications、App／docs URLs。
@@ -177,6 +197,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Error codes 有 meaning、safe recovery 與 privacy guidance。
   - Support spec 有 GitHub Form fields、notification setup、triage 與 end-to-end acceptance。
   - Public repo／Issues／Release URL 已補齊；發布前確認文件進入 release payload。
+- Verification evidence（2026-08-02）：`SUPPORT.md` §「公開 URL」已填入正式 repository、Issues 與 Releases URL，`USER_GUIDE.md` §10 的問題回報連結同步指向 Issue Form；表格依賴欄的「Support／Release URL 待填」已過時並移除。`USER_GUIDE.md` §8 原本仍寫「目前版本尚未實作固定錯誤代碼」，與 `BT-UX-002` 已交付的 registry／Web envelope／Launcher dialog 不符，已改為「已實作但尚未隨公開 release 發布」。剩餘唯一條件為發布時確認 `USER_GUIDE.md`、`ERROR_CODES.md`、`SUPPORT.md` 實際進入 release payload。
 
 ### BT-P2-001 — HTTP conditional request 與 bounded cache
 
@@ -198,6 +219,31 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 - Status：Proposed
 - Scope：Discovery／Monitor／Notification queue limits、Watchlist priority、memory／CPU／bytes／duration benchmark。
 - Acceptance criteria：負載超限時可預測降載；不丟失 audit／notification state；priority 不造成一般來源永久 starvation；基準可重現。
+
+### BT-API-001 — 細分 Local Web API 的 HTTP status mapping
+
+- Priority：P2
+- Status：Proposed
+- Owner：待指定
+- 背景：`docs/API_SPEC.md` §12 與 §13 已記錄此限制——目前實作把 validation、policy、network 及多數 internal error 統一回傳 `400`，只有 route／Product／被辨識為 not found 的 error message 會回 `404`。`BT-UX-002` 交付的中央 error registry 已提供穩定的 `BT-<AREA>-<NNN>` 代碼與安全 envelope，因此 status code 已不是識別錯誤類別的唯一手段，但仍讓「使用者輸入錯誤」與「伺服器內部失敗」在 HTTP 層無法區分。
+- 使用者影響：一般使用者不直接受影響（Local Web UI 讀的是 envelope 內的錯誤代碼）。影響的是除錯、log 判讀與未來任何以 status code 做重試決策的客戶端——目前 `500` 級失敗會被誤判為可由使用者修正的 `400`。
+- Scope：
+  - 由 error code registry 推導 status class，而非在各 route 手寫。
+  - validation／輸入格式錯誤 → `400`；policy 拒絕（network paused、來源政策、consent 未給）→ `403`；狀態衝突（single-flight 已在執行、冷卻中、重複 apply）→ `409`；找不到資源 → `404`；未知內部錯誤 → `500`。
+  - 更新 `docs/API_SPEC.md` §12／§13 與受影響的 route 表。
+  - 前端錯誤處理改以錯誤代碼為準，確保不因 status 改變而退化。
+- Out of scope：新增 endpoint、改變 error envelope 結構、改變既有錯誤代碼字串、加入 remote authN／authZ。
+- Dependencies／Blockers：`BT-UX-002` 的 error registry 需維持為單一事實來源。
+- Security／Privacy／Data impact：不得因細分 status 而洩漏 route 是否存在、內部路徑或例外訊息；`500` 仍只回傳保留代碼與 `supportRef`，不含 stack。
+- Acceptance criteria：
+  - [ ] 每個公開錯誤代碼在 registry 中有明確且唯一的 status class。
+  - [ ] validation、policy、conflict、not found、internal 各至少一項 route-level 回歸測試斷言正確 status。
+  - [ ] 未知例外回傳 `500` 與保留代碼，且 body 不含 message／stack／path。
+  - [ ] Local Web UI 在新 status 下錯誤顯示與 recovery 動作不退化，三語文案不變。
+  - [ ] `docs/API_SPEC.md` 的已知限制條目移除或改寫為 as-built 行為。
+  - [ ] `npm test` 全數通過。
+- Verification evidence：待實作。
+- Related PR／release／post-mortem：待建立。
 
 ### BT-EXT-001 — Takara Tomy Mall 真實 Discovery 驗收
 

@@ -2,11 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { DatabaseSync } from 'node:sqlite';
 import { Database } from '../src/db/database.js';
 import { detectSupportedBrowser } from '../src/release/browser.js';
 import { SecretStore } from '../src/security/secret-store.js';
@@ -14,7 +16,7 @@ import {
   applyPendingTransfer, createTransferBundle, inspectTransferBundle, stageTransferImport,
 } from '../src/maintenance/transfer.js';
 import { createBackup } from '../src/maintenance/backup.js';
-import { compareVersions, rollbackUpdate, validateUpdateManifest } from '../src/release/update.js';
+import { compareVersions, rollbackUpdate, signedPayload, validateUpdateManifest } from '../src/release/update.js';
 import { upsertSource } from '../src/core/store.js';
 import { createDiagnosticsBundle, inspectDiagnosticsBundle } from '../src/maintenance/diagnostics.js';
 
@@ -68,13 +70,10 @@ test('update manifest requires valid semantic version, HTTPS, hash, and Ed25519 
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const manifest = {
     version: '1.1.0', installerUrl: 'https://updates.example.test/BeybladeTracker-1.1.0-Setup.exe',
-    sha256: 'a'.repeat(64), schemaVersion: 10, channel: 'stable',
+    sha256: 'a'.repeat(64), schemaVersion: 10, channel: 'stable', publisher: 'Beyblade Tracker',
+    releaseNotes: 'Test release notes', publishedAt: '2026-07-29T00:00:00.000Z', size: 1024, publishReady: true,
   };
-  const payload = Buffer.from(JSON.stringify({
-    version: manifest.version, installerUrl: manifest.installerUrl, sha256: manifest.sha256,
-    schemaVersion: manifest.schemaVersion, channel: manifest.channel,
-  }));
-  manifest.signature = sign(null, payload, privateKey).toString('base64');
+  manifest.signature = sign(null, signedPayload(manifest), privateKey).toString('base64');
   assert.equal(validateUpdateManifest(manifest, { publicKey }).updateAvailable, true);
   assert.throws(() => validateUpdateManifest({ ...manifest, sha256: 'b'.repeat(64) }, { publicKey }), /簽章/);
   assert.throws(() => validateUpdateManifest({ ...manifest, installerUrl: 'http://unsafe.example/setup.exe' }, { publicKey }), /HTTPS/);
@@ -112,6 +111,34 @@ test('rollback switches the version pointer and restores the pre-update database
   rmSync(root, { recursive: true, force: true });
 });
 
+test('rollback leaves a legacy backup schema untouched for the rolled-back service', () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-rollback-legacy-'));
+  const dbPath = join(root, 'user', 'data', 'tracker.db');
+  mkdirSync(join(root, 'user', 'data'), { recursive: true });
+  let legacy = new DatabaseSync(dbPath);
+  legacy.exec("PRAGMA user_version=10; CREATE TABLE legacy_marker (value TEXT); INSERT INTO legacy_marker VALUES ('before-update');");
+  legacy.close();
+  const backup = createBackup(dbPath, join(root, 'user', 'backups'), { prefix: 'legacy' });
+  legacy = new DatabaseSync(dbPath);
+  legacy.exec("DELETE FROM legacy_marker; INSERT INTO legacy_marker VALUES ('after-update');");
+  legacy.close();
+  const installRoot = join(root, 'program');
+  mkdirSync(join(installRoot, 'versions', '1.0.0'), { recursive: true });
+  const currentFile = join(installRoot, 'current.json');
+  writeFileSync(currentFile, JSON.stringify({ version: '1.1.0' }));
+  const rollbackFile = join(root, 'user', 'runtime', 'rollback.json');
+  mkdirSync(join(root, 'user', 'runtime'), { recursive: true });
+  writeFileSync(rollbackFile, JSON.stringify({ previousVersion: '1.0.0', targetVersion: '1.1.0', databaseBackup: backup.path }));
+
+  rollbackUpdate({ dbPath, installRoot, update: { rollbackFile, currentFile } });
+  const restored = new DatabaseSync(dbPath, { readOnly: true });
+  assert.equal(restored.prepare('PRAGMA user_version').get().user_version, 10);
+  assert.equal(restored.prepare('SELECT value FROM legacy_marker').get().value, 'before-update');
+  assert.equal(restored.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='operation_events'").get().count, 0);
+  restored.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
 test('browser detection selects only an installed system Chrome candidate', () => {
   const env = { PROGRAMFILES: 'C:\\Program Files', LOCALAPPDATA: 'C:\\Users\\Test\\AppData\\Local' };
   const expected = join(env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe');
@@ -127,9 +154,72 @@ test('Windows installer declares per-user install, startup task, shortcuts, and 
   assert.match(installer, /Name: "startup"/);
   assert.match(installer, /Microsoft\\Windows\\CurrentVersion\\Run/);
   assert.match(installer, /launcher\.vbs.*restart/);
+  assert.match(installer, /Flags: nowait runhidden/);
+  assert.doesNotMatch(installer, /skipifsilent/);
+  assert.match(installer, /not WizardSilent/);
+  assert.match(installer, /launcher\.vbs"" start noninteractive/);
+  assert.match(installer, /launcher\.vbs"" restart noninteractive[\s\S]*?Check: WizardSilent/);
+  assert.doesNotMatch(installer, /\[UninstallRun\]/);
+  assert.match(installer, /-Action stop -NonInteractive/);
+
+  // The stop precondition must fail closed: a missing launcher proves only that the helper cannot run.
+  const stopFunction = installer.match(/function StopTrackerService\(\): Boolean;[\s\S]*?\nend;/)?.[0] || '';
+  assert.ok(stopFunction, 'StopTrackerService must exist');
+  assert.match(stopFunction, /ewWaitUntilTerminated, ResultCode\) and \(ResultCode = 0\)/);
+  assert.doesNotMatch(stopFunction, /Result := True/);
+  const missingLauncherBlock = stopFunction.match(/if not FileExists\(LauncherPath\) then begin[\s\S]*?end;/)?.[0] || '';
+  assert.ok(missingLauncherBlock, 'the missing-launcher branch must exist');
+  assert.match(missingLauncherBlock, /Result := False;/);
+  assert.doesNotMatch(missingLauncherBlock, /Result := True/);
+  const e2e = readFileSync(new URL('../scripts/phase7-e2e.ps1', import.meta.url), 'utf8');
+  assert.match(e2e, /function Wait-E2ePathAbsent/);
+  assert.match(e2e, /Wait-E2ePathAbsent \$installRoot 'Uninstaller'/);
+  const releaseBuilder = readFileSync(new URL('../scripts/build-windows-release.js', import.meta.url), 'utf8');
+  assert.ok(releaseBuilder.indexOf('manifest.publishReady = true') < releaseBuilder.indexOf('manifest.signature = sign'));
   assert.match(installer, /PreserveUserData/);
+  assert.match(installer, /SuppressibleMsgBox\([\s\S]*MB_YESNO, IDYES\) = IDYES/);
+  const uninstallPrompt = installer.match(/function InitializeUninstall\(\): Boolean;[\s\S]*?end;/)?.[0] || '';
+  assert.doesNotMatch(uninstallPrompt, /(?:^|[^A-Za-z])MsgBox\(/);
+  assert.match(uninstallPrompt, /Result := StopTrackerService\(\);[\s\S]*if not Result then begin/);
   assert.match(installer, /\[UninstallDelete\][\s\S]*\{app\}\\current\.json/);
   assert.match(installer, /google\.com\/chrome/);
+  assert.match(e2e, /function Wait-E2eServiceHealthy/);
+  assert.match(e2e, /runtime\\tracker\.pid/);
+  assert.match(e2e, /runtime\\tracker-status\.json/);
+  assert.match(e2e, /127\.0\.0\.1:8787\/health/);
+  assert.match(e2e, /Wait-E2eServiceStopped \$servicePid/);
+  assert.doesNotMatch(e2e, /bin\\health-check\.js/);
+  assert.match(e2e, /function Stop-E2eProcesses/);
+  assert.match(e2e, /Get-CimInstance Win32_Process/);
+  assert.match(e2e, /\$stopErrors = @\(\)/);
+  assert.match(e2e, /\$attempt -lt 3/);
+  assert.match(e2e, /CommandLine\.Contains\(\$runId\).*CommandLine\.Contains\(\$installRoot\)/);
+  assert.match(e2e, /Packaged service-control stop failed with exit code/);
+  assert.match(e2e, /E2E process cleanup failed/);
+  assert.match(e2e, /E2E cleanup failed/);
+  assert.match(e2e, /\[switch\]\$StopFailureMode/);
+  assert.match(e2e, /\[switch\]\$MissingLauncherMode/);
+  assert.match(e2e, /Choose either -StopFailureMode or -MissingLauncherMode, not both/);
+  assert.match(e2e, /function Wait-E2eProcessFailure/);
+  assert.match(e2e, /function Assert-E2eNoLauncherDialog/);
+  assert.match(e2e, /function Set-E2eMissingLauncher/);
+  assert.match(e2e, /function Restore-E2eMissingLauncher/);
+  assert.match(e2e, /Refusing to modify a control script outside this run/);
+  assert.match(e2e, /Refusing to move a launcher outside this run/);
+  assert.match(e2e, /Failed uninstall removed program files while the service was still running/);
+  assert.match(e2e, /Uninstall without a launcher removed program files it could not prove were idle/);
+  assert.match(e2e, /Uninstall without a launcher stopped or killed the running service/);
+  assert.match(e2e, /Wait-E2eProcessFailure \$process 'Uninstaller without a launcher' 15/);
+  assert.match(e2e, /try \{ Restore-E2eMissingLauncher \} catch \{ \$cleanupErrors \+= \$_ \}/);
+  assert.match(e2e, /try \{ Restore-E2eStopFailure \} catch \{ \$cleanupErrors \+= \$_ \}/);
+
+  const serviceControl = readFileSync(new URL('../scripts/service-control.js', import.meta.url), 'utf8');
+  assert.match(serviceControl, /runStopSequence/);
+  assert.match(serviceControl, /runStartSequence/);
+  assert.match(serviceControl, /ExecutablePath/);
+  assert.match(serviceControl, /CreationDate/);
+  assert.match(serviceControl, /System32', 'WindowsPowerShell', 'v1\.0', 'powershell\.exe'/);
+  assert.doesNotMatch(serviceControl, /\/IM/);
 });
 
 test('Windows PowerShell 5.1 launcher uses a UTF-8 BOM for localized text', () => {
@@ -152,6 +242,84 @@ test('hidden Windows launcher maps startup failures to safe dialogs with copy an
   assert.match(source, /複製錯誤資訊/);
   assert.match(source, /問題回報/);
   assert.doesNotMatch(source, /Show-LauncherError \$_.Exception.Message/);
+});
+
+test('non-interactive launcher callers get a bounded exit code instead of a dialog', () => {
+  const source = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url)).subarray(3).toString('utf8');
+  assert.match(source, /\[switch\]\$NonInteractive/);
+  assert.match(source, /BT-LCH-006/);
+  assert.match(source, /\$nonInteractiveActions = @\('start','restart','stop','status'\)/);
+  assert.match(source, /if \(\$NonInteractive -and \(\$nonInteractiveActions -notcontains \$Action\)\)/);
+  assert.match(source, /if \(-not \$NonInteractive\) \{ Read-Host/);
+  assert.match(source, /WaitForExit\(\$timeout \* 1000\)/);
+  // The non-interactive branch must short-circuit the dialog and every path must set an explicit exit code.
+  assert.ok(source.indexOf('[Console]::Error.WriteLine($code)') < source.lastIndexOf('Show-LauncherError $code'));
+  assert.match(source, /\[Console\]::Error\.WriteLine\(\$code\)\s*\r?\n\s*exit 1/);
+  assert.match(source, /Show-LauncherError \$code\s*\r?\n\s*exit 1\s*\r?\n\}\s*\r?\nexit 0/);
+
+  const vbs = readFileSync(new URL('../release/windows/launcher.vbs', import.meta.url), 'utf8');
+  assert.match(vbs, /mode = "noninteractive"/);
+  assert.match(vbs, /-NonInteractive/);
+});
+
+test('stable launcher guard blocks a rollback into a legacy service-control without a guard', { skip: process.platform !== 'win32' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-legacy-rollback-'));
+  const installRoot = join(root, 'program');
+  const userRoot = join(root, 'user');
+  const appRoot = join(installRoot, 'versions', '0.9.0');
+  const marker = join(root, 'legacy-control-ran.txt');
+  try {
+    mkdirSync(join(appRoot, 'runtime'), { recursive: true });
+    copyFileSync(process.execPath, join(appRoot, 'runtime', 'node.exe'));
+    copyFileSync(new URL('../release/windows/launcher.ps1', import.meta.url), join(installRoot, 'launcher.ps1'));
+    mkdirSync(join(appRoot, 'scripts'), { recursive: true });
+    // Deliberately a pre-FIX-32 control script: it has no rollback schema code.
+    writeFileSync(join(appRoot, 'scripts', 'service-control.js'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'started');`);
+    writeFileSync(join(installRoot, 'current.json'), JSON.stringify({ version: '0.9.0' }));
+    mkdirSync(join(userRoot, 'runtime'), { recursive: true });
+    writeFileSync(join(userRoot, 'runtime', 'rollback-status.json'), JSON.stringify({
+      status: 'accepted', requestedAt: new Date().toISOString(),
+    }));
+    const launcher = join(installRoot, 'launcher.ps1');
+    const runLegacyStart = () => {
+      try {
+        execFileSync('powershell.exe', [
+          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', launcher, '-Action', 'start', '-NonInteractive',
+        ], { cwd: installRoot, env: { ...process.env, BEYBLADE_USER_ROOT: userRoot }, stdio: 'pipe' });
+        return null;
+      } catch (error) { return error; }
+    };
+    const freshFailure = runLegacyStart();
+    assert.ok(freshFailure);
+    assert.match(String(freshFailure.stderr), /BT-LCH-003/);
+    assert.equal(existsSync(marker), false);
+
+    const oldAt = new Date(Date.now() - (10 * 60 * 1000)).toISOString();
+    writeFileSync(join(userRoot, 'runtime', 'rollback-status.json'), JSON.stringify({
+      status: 'running', events: [{ phase: 'running', at: oldAt }],
+    }));
+    const lockDir = join(userRoot, 'runtime', 'rollback.lock');
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({
+      pid: process.pid, token: 'live_runner_token', correlationId: 'live-runner',
+    }));
+    const liveRunnerFailure = runLegacyStart();
+    assert.ok(liveRunnerFailure);
+    assert.match(String(liveRunnerFailure.stderr), /BT-LCH-003/);
+    assert.equal(existsSync(marker), false);
+
+    rmSync(lockDir, { recursive: true, force: true });
+    const futureAt = new Date(Date.now() + (10 * 60 * 1000)).toISOString();
+    writeFileSync(join(userRoot, 'runtime', 'rollback-status.json'), JSON.stringify({
+      status: 'running', events: [{ phase: 'running', at: futureAt }],
+    }));
+    const futureFailure = runLegacyStart();
+    assert.ok(futureFailure);
+    assert.match(String(futureFailure.stderr), /BT-LCH-003/);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('diagnostics require consent and exclude credentials, URLs, logs, and product history', () => {

@@ -54,8 +54,8 @@ Windows release builder 目前會把 `README.md`、`INSTALL.md`、`PRIVACY.md`�
 
 ## 當前證據基線
 
-- Git 最新完成基線：`51652dc`（2026-07-18，Phase 7 release and hardening）。
+- Git 最新完成基線：`51652dc`（2026-07-18，Phase 7 release and hardening）為最後一個公開 release 基線；其後 `BT-P1-001`／`BT-P1-003`／`BT-UX-002` 已併入 `main`，`BT-P1-002` 與 `BT-UPD-001` 目前仍在 `codex/bt-upd-001` 未合併。
 - 工作樹在本次文件整理前已有一項使用者修改：`ROADMAP.md` 新增 Phase 7 後暫停點；已合併至新 Roadmap，不視為本次新產品決策。
 - `npm run config:check`：2026-07-28 通過，3 個來源。
 - `npm run status:tracker`：2026-07-28 顯示服務已停止。
-- `npm test`：runner 保留外部 proxy 設定，並在測試子程序以 `NO_PROXY=127.0.0.1,localhost,::1` bypass loopback；ambient proxy 環境完整 suite 已通過 139/139（`BT-P1-001`）。
+- `npm test`：runner 保留外部 proxy 設定，並在測試子程序以 `NO_PROXY=127.0.0.1,localhost,::1` bypass loopback；ambient proxy 環境完整 suite 目前基線為 **219/219**（2026-08-02）。`BT-P1-001` 修正當時的數字為 139/139。

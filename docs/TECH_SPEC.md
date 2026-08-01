@@ -254,7 +254,7 @@ stateDiagram-v2
 - Release：Windows payload／installer declarations、manifest、rollback、diagnostics 與 isolated E2E。
 - Fixture acceptance：產品生命週期、Takara Discovery、community intelligence。
 
-2026-07-29 `scripts/run-tests.js` 會合併既有 `NO_PROXY` 並加入 `127.0.0.1`、`localhost`、`::1`，再啟動 Node test child process。`HTTP_PROXY`、`HTTPS_PROXY` 及其他環境設定保持不變，因此只隔離 loopback integration tests，不改 production external fetch policy。ambient proxy 環境完整 suite 通過 139/139（`BT-P1-001`）。
+2026-07-29 `scripts/run-tests.js` 會合併既有 `NO_PROXY` 並加入 `127.0.0.1`、`localhost`、`::1`，再啟動 Node test child process。`HTTP_PROXY`、`HTTPS_PROXY` 及其他環境設定保持不變，因此只隔離 loopback integration tests，不改 production external fetch policy。ambient proxy 環境完整 suite 在 `BT-P1-001` 完成時通過 139/139；目前基線為 219/219（2026-08-02）。
 
 ## 12. 變更規則
 

@@ -177,7 +177,7 @@ Installer、Launcher、Update、Database、Network、Browser、Source 與 Notifi
 
 | 指標 | v1 驗收基準 | 後續目標 |
 |---|---|---|
-| 自動化測試 | Phase 7 歷史基線 133；ambient proxy 隔離後目前 139/139 | Main branch 及一般 release 環境 100% 通過 |
+| 自動化測試 | Phase 7 歷史基線 133；`BT-P1-001` 完成時 139/139；目前基線 219/219（2026-08-02） | Main branch 及一般 release 環境 100% 通過 |
 | 來源隔離 | 測試證明單一來源失敗不影響其他來源 | 每來源成功率與連續失敗可查 |
 | 重複通知 | 相同事件具 cooldown／dedup 測試 | 重複通知率可量測且趨近 0 |
 | 資料完整性 | SQLite integrity `ok`、0 FK orphan 為發布閘門 | 每次 release 與 restore 自動記錄證據 |

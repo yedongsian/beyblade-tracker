@@ -200,7 +200,7 @@ npm run db:restore -- --from backups\manual-YYYYMMDD-HHMMSSZ.db --to C:\test\dat
 3. 若仍出現 proxy 403，只讀檢查 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 與 npm proxy 設定；不要把含帳密的 proxy URL 貼進文件。
 4. 若 loopback 已 bypass 仍失敗，依第一個 application stack／assertion 建立 Bug Ticket。
 
-2026-07-29 驗收：Windows／Node v25.7.0、ambient proxy variables 存在且 `NO_PROXY` 原為空值；一般 `npm test` 通過 139/139。修正追蹤於 `BT-P1-001`。
+2026-07-29 驗收：Windows／Node v25.7.0、ambient proxy variables 存在且 `NO_PROXY` 原為空值；一般 `npm test` 通過 139/139。修正追蹤於 `BT-P1-001`。此為修正當時的數字；目前 suite 基線為 219/219（2026-08-02），以 `docs/TICKETS.md` 檔頭為準。
 
 ## 13. Windows release procedure
 

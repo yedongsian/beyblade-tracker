@@ -33,18 +33,24 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 | 帳號 | 一般使用者權限即可（安裝器 `PrivilegesRequired=lowest`）。 |
 | 網路 | 項目 A-9 需要對外網路。 |
 
-### ⚠️ 開發機 `C--Dev-Beyblade-dev`（yedon）不符合前置條件
+### 開發機 `C--Dev-Beyblade-dev`（yedon）狀態
 
-2026-08-02 檢查結果，此機器**不可**用於本清單：
+2026-08-02 首次檢查時，此機器有一個裝在非預設路徑 `C:\Dev\Beyblade Tracker` 的 1.0.0 舊安裝（2026-07-28），且 `HKCU\...\Uninstall` 無對應條目、`Run\BeybladeTracker` 指向它並使用舊格式 `start`（缺 `noninteractive`）。
 
-| 發現 | 內容 |
+**已於 2026-08-02 以該安裝自身的 `unins000.exe` 移除完成**：安裝目錄、`Run` 機碼、開始功能表捷徑皆已清除（`Removed all? Yes`），使用者資料依「保留」分支完整保存並經雜湊比對與 `PRAGMA integrity_check = ok` 驗證。移除前的完整備份存於 `C:\Users\yedon\BeybladeTracker-backup-20260802\`。
+
+即便如此，此機器**仍不建議**用於本清單：`%LOCALAPPDATA%\BeybladeTracker` 保有實際使用者資料，項目 A-11 會將其永久刪除。請使用乾淨 VM。
+
+#### 附帶發現：舊版不理會 `/SUPPRESSMSGBOXES`
+
+移除舊安裝時，`/SUPPRESSMSGBOXES` **未能**抑制資料保留提示，解除安裝程序停在互動對話框等待人為點選。比對兩份 log：
+
+| 版本 | log 內容 |
 | --- | --- |
-| 孤兒安裝 | `C:\Dev\Beyblade Tracker` 內有 `versions\`、`current.json`、`launcher.ps1/vbs`、`unins000.exe`，是先前裝在非預設路徑的實例 |
-| 登錄不一致 | `HKCU\...\Uninstall` **沒有**對應條目，該安裝無法由「已安裝的應用程式」移除 |
-| 既有自動啟動 | `HKCU\...\Run\BeybladeTracker` = `"wscript.exe" "C:\Dev\Beyblade Tracker\launcher.vbs" start`（舊格式，缺 `noninteractive`） |
-| 真實使用者資料 | `%LOCALAPPDATA%\BeybladeTracker` 內有 `data\tracker.db`（638 KB）、`backups\auto-20260729-154507Z.db`、`config\sources.json`（2026-07-16）、`logs\tracker.log` |
+| 舊安裝（2026-07-28 build） | `Message box (Yes/No):` — 實際彈窗並阻塞 |
+| 現行 RC（2026-08-02 build） | `Defaulting to Yes for suppressed message box (Yes/No):` — 正確採用預設值 |
 
-在此機器執行本清單會造成：新安裝以相同 ValueName 覆寫現有 `Run` 機碼；新安裝直接接管上述既有使用者資料；**項目 A-11 會永久刪除 2026-07-29 的實際資料庫與備份**。孤兒安裝也可能占用 port 8787 或觸發 `AppMutex` 衝突，使結果無法判讀。
+舊版使用普通 `MsgBox`，現行 `installer.iss` 已改用 `SuppressibleMsgBox`。**此缺陷在現行 RC 已修正**，這也是今天三項 E2E 能全自動完成而不阻塞的原因。
 
 ---
 

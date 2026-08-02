@@ -109,7 +109,7 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 | 情境 | 預期 | 判定 | 證據 |
 | --- | --- | --- | --- |
 | 已安裝 Chrome | 精靈不顯示提示；`/health` 顯示 browser available、name = `Google Chrome` |  |  |
-| 移除 Chrome 後安裝 | 精靈在「準備安裝」頁顯示找不到 Chrome 的提示；選「是」開啟 `https://www.google.com/chrome/`；選「否」仍可完成安裝，HTTP-only 來源可正常掃描 |  |  |
+| 移除 Chrome 後安裝<br>（**僅路線 2 可測**） | 精靈在「準備安裝」頁顯示找不到 Chrome 的提示；選「是」開啟 `https://www.google.com/chrome/`；選「否」仍可完成安裝，HTTP-only 來源可正常掃描 |  |  |
 
 > 偵測路徑依序為 `CHROME_PATH`、`%PROGRAMFILES%`、`%PROGRAMFILES(X86)%`、`%LOCALAPPDATA%` 下的 `Google\Chrome\Application\chrome.exe`。
 
@@ -203,7 +203,72 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 
 ---
 
-## 2.1 建議執行順序與快照規劃
+## 2.1 路線 1：本機測試帳號（先行，覆蓋 11 項中的 10 項）
+
+本安裝器完全是 per-user 的（`PrivilegesRequired=lowest`、`DefaultDirName={localappdata}`、`Run` 機碼在 HKCU、開始功能表為 `{group}`、使用者資料在 `%LOCALAPPDATA%\BeybladeTracker`），因此**一個全新的本機帳號對本 App 而言即為乾淨環境**，可在不建 VM 的情況下先跑一輪。
+
+### 適用範圍
+
+| 可測 | A-1、A-2、A-3、A-4（有 Chrome 分支）、A-5、A-6、A-7、A-8、A-9、A-10、A-11 |
+| --- | --- |
+| **不可測** | **A-4 的「無 Chrome」分支** — Chrome 安裝於 `C:\Program Files`，全機器共用，換帳號仍可見。此項需路線 2。 |
+
+此路線**不等於** RUNBOOK 要求的 clean VM：本機另有全機器安裝的 Chrome 與 `C:\Program Files\nodejs`，因此「不需開發工具」一項無法用「機器上沒有 Node」證明，須改用下方的間接驗證。最終 gate 仍須以路線 2 補齊。
+
+### 前置
+
+1. 確認目前登入的工作帳號**沒有** Tracker 在跑（否則會搶 port 8787）：
+
+   ```powershell
+   Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue
+   ```
+
+   須無輸出。注意快速使用者切換不會結束原帳號的程序。
+
+2. 建立本機測試帳號：設定 → 帳戶 → 其他使用者 → 新增帳戶 →
+   「我沒有這位人員的登入資訊」→「新增沒有 Microsoft 帳戶的使用者」。
+3. 安裝包已置於跨帳號可讀路徑 `C:\Users\Public\BeybladeTracker-Acceptance\`。
+   在測試帳號安裝前先執行 `verify-installer.ps1` 確認雜湊。
+
+### 執行順序
+
+利用 A-11 的破壞性清空作為 A-7 匯入側的乾淨起點，可省去額外帳號：
+
+| 步驟 | 動作 |
+| --- | --- |
+| 1 | 登入測試帳號，執行 `verify-installer.ps1`（須 MATCH） |
+| 2 | **A-1** 安裝（預設路徑）→ **A-2** 捷徑 → **A-4（有 Chrome 分支）** → **A-5** 導覽 |
+| 3 | **A-9** 實際抓取 — 先產生真實資料，後面的保留／匯出驗證才有意義 |
+| 4 | **A-8** Telegram（用你自己的 Token） |
+| 5 | **A-6** Launcher 錯誤代碼（需蓄意破壞安裝檔，故排在資料驗證之後） |
+| 6 | **A-3** 登出再登入 — 真實 Windows 登入流程，比 VM 快照更貼近實況 |
+| 7 | **A-7 匯出** → 檔案存到 `C:\Users\Public\BeybladeTracker-Acceptance\` |
+| 8 | **A-10** 解除安裝（保留資料）→ 確認 `%LOCALAPPDATA%\BeybladeTracker` 完整 |
+| 9 | 重新安裝 → **A-11** 解除安裝（刪除資料）→ 確認該目錄消失 |
+| 10 | 重新安裝 → 匯入步驟 7 的檔案，完成 **A-7 匯入側**（此時為乾淨狀態） |
+| 11 | 收尾：解除安裝（刪除資料）→ 登出 → 由工作帳號刪除測試帳號 |
+
+> A-11 只會刪除**測試帳號**的 `%LOCALAPPDATA%\BeybladeTracker`，不影響其他帳號的資料。
+
+### 如何證明用的是內建 Node（本機有系統 Node 時的替代驗證）
+
+本機 `C:\Program Files\nodejs\node.exe` 存在，因此需明確證明服務跑的是安裝包內建的 runtime。服務啟動後在**測試帳號**執行：
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Select-Object ProcessId, CommandLine | Format-List
+```
+
+**預期**：命令列指向
+`%LOCALAPPDATA%\Programs\Beyblade Tracker\versions\1.0.0\runtime\node.exe`，
+**不得**為 `C:\Program Files\nodejs\node.exe`。
+
+| 判定 | 證據／備註 |
+| --- | --- |
+|  |  |
+
+---
+
+## 2.2 路線 2：乾淨 VM — 執行順序與快照規劃
 
 A 段各項之間有相依性，順序錯了會需要重做。建議如下：
 

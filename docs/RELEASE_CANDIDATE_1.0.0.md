@@ -46,7 +46,7 @@
 
 ### Manifest 狀態
 
-`publishReady=false`、`signature=null`、`installerUrl=null`。原因是本機未設定 `RELEASE_BASE_URL` 與 `RELEASE_SIGNING_KEY_FILE`，也沒有 Authenticode 憑證。依 `RELEASE_GUIDE.md`，此產物只能視為**可安裝的 release candidate**，不得宣稱已啟用公開自動更新。這與先前狀態一致，非本次重建造成的退步。
+build 當下為 `publishReady=false`、`signature=null`、`installerUrl=null`，因為本機未設定 `RELEASE_BASE_URL` 與 `RELEASE_SIGNING_KEY_FILE`。之後已補上 Ed25519 簽章驗證流程，詳見第 8 節；但**仍未取得 Authenticode 憑證與正式 HTTPS 發佈站**。依 `RELEASE_GUIDE.md`，此產物只能視為**可安裝的 release candidate**，不得宣稱已啟用公開自動更新。
 
 ## 4. 封裝 E2E 測試結果
 
@@ -104,4 +104,45 @@ E2E 腳本會在收尾時刪除自己的 user root（連同 `installer.log`）�
 
 ## 7. 結論
 
-Release candidate 1.0.0 已從合併後的 `main` 重建完成，前置閘門、三項封裝 E2E 與清理檢查全部通過，版本、雜湊與 log 摘要已記錄。**符合進入 Windows 實機驗收的條件**，但仍受第 3 節的簽章限制：實機驗收只能涵蓋安裝／執行／解除安裝，無法涵蓋已簽章的線上更新與 SmartScreen 體驗。
+Release candidate 1.0.0 已從合併後的 `main` 重建完成，前置閘門、三項封裝 E2E 與清理檢查全部通過，版本、雜湊與 log 摘要已記錄。**符合進入 Windows 實機驗收的條件**，但仍受第 3 節與第 8 節的簽章限制：實機驗收只能涵蓋安裝／執行／解除安裝，無法涵蓋真正的線上更新與 SmartScreen 體驗。
+
+## 8. 簽章現況（2026-08-02）
+
+本專案有**兩層互相獨立**的簽章，缺一不可，兩者用途不同：
+
+| 層級 | 保護對象 | 現況 |
+| --- | --- | --- |
+| Ed25519 manifest 簽章 | 更新描述與下載內容完整性 | **管線已驗證可用**（見下） |
+| Windows Authenticode | `Setup.exe` 本身、SmartScreen 信任 | **尚未取得憑證**，屬採購／法務工作 |
+
+### 8.1 Ed25519 manifest 簽章
+
+金鑰已產生並存放在版控之外：
+
+| 檔案 | 路徑 |
+| --- | --- |
+| 私鑰（PKCS#8） | `C:\Users\yedon\.beyblade-release\manifest-signing-key.pem` |
+| 公鑰（SPKI） | `C:\Users\yedon\.beyblade-release\manifest-public-key.pem` |
+
+公鑰內容（即 `UPDATE_PUBLIC_KEY`）：
+
+```
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAWgLNbIODFU0bjcVDY8et0xfRR+l18uUnqDGyHIDWX7s=
+-----END PUBLIC KEY-----
+```
+
+因為當時尚無 HTTPS 發佈站，簽章以保留網域 `https://placeholder.invalid/beyblade-tracker`（RFC 2606 `.invalid`）作為 base URL，**純粹用來驗證簽章／驗章管線可用**。驗證結果：
+
+- 簽章與 `validateUpdateManifest()` 用戶端驗章：PASS
+- 負向控制：換一把公鑰 → 被拒（`BT-UPD-003`）
+- 竄改控制：改動已簽章的 `sha256` 欄位 → 被拒（`BT-UPD-003`）
+- 另已實測 Node 內建 `.env` 載入器可承載雙引號多行 PEM，`UPDATE_PUBLIC_KEY` 可直接用 `.env` 傳遞
+
+補簽時**刻意不重跑 build**：重建會產生新的 installer 與新的 SHA-256，使本文件第 3、4 節已驗證的雜湊與 E2E 結果失效。補簽前已比對 installer 位元組雜湊未變。
+
+> **警告**：`dist\windows\release-manifest.json` 目前是 `publishReady=true`，但 `installerUrl` 指向不存在的 `.invalid` 網域。**此 manifest 絕不可公開發佈**。取得真正的 HTTPS 發佈站後，設定 `RELEASE_BASE_URL` 與 `RELEASE_SIGNING_KEY_FILE` 重跑 `npm run release:windows`，並以新產物重新執行第 4 節的三項 E2E 與第 3 節的雜湊記錄。
+
+### 8.2 Authenticode（尚未完成）
+
+需要組織持有的程式碼簽章憑證，無法在本機自行產生；自簽憑證不會被 SmartScreen 信任，沒有實質意義。取得憑證後的步驟見 `RELEASE_GUIDE.md`。此為公開發佈閘門，不是 Phase 7 的程式缺口。

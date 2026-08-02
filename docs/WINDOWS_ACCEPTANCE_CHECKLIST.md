@@ -81,11 +81,13 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 
 | 捷徑名稱 | 預期行為 | 判定 | 證據 |
 | --- | --- | --- | --- |
-| Beyblade Tracker | 以預設瀏覽器開啟管理頁 |  |  |
-| 匯出／移機 | 出現匯出對話框 |  |  |
-| 匯入／移機 | 出現選檔對話框 |  |  |
-| 停止背景追蹤 | 服務停止，`/health` 不再回應 |  |  |
-| 服務狀態 | 顯示狀態視窗，文字為繁中且無亂碼 |  |  |
+| Beyblade Tracker | 以預設瀏覽器開啟管理頁 | **PASS** | 開啟 msedge PID 7468，`IsWindowVisible=True`、`IsIconic=False`，標題「總覽｜Beyblade Tracker」 |
+| 匯出／移機 | 出現匯出對話框 | **PASS** | 另存新檔對話框正常出現 |
+| 匯入／移機 | 出現選檔對話框 | **PASS** | 開啟檔案對話框正常出現 |
+| 停止背景追蹤 | 服務停止，`/health` 不再回應 | **PASS** | 8787 於 **2.0 秒**內停止監聽，無殘留 Beyblade node 行程 |
+| 服務狀態 | 顯示狀態視窗，文字為繁中且無亂碼 | **PASS** | 繁中正常，無亂碼 |
+
+**A-2 整體：PASS**（2026-08-02，Test_Darren）。停止耗時 2.0 秒，遠低於 `service-control` 的 35 秒與 `launcher.ps1` 的 45 秒上限。
 
 ### A-3 登入後自動啟動
 
@@ -308,28 +310,31 @@ manifest 與已安裝版本同為 1.0.0 時，永遠只會顯示「已是最新�
 
 ## 3.1 已發現的缺陷（2026-08-02 第一輪）
 
-### D-1 安裝完成後出現無法操作的視窗（**機制待確認**）
+### D-1 安裝完成後出現無法操作的 Chrome 視窗 — **已查明，非缺陷**
 
-實機驗收者回報：安裝完成後「工具列有跳出一個網頁的圖示，但無法點開，就只存在下方的工具列」。
+**結論（2026-08-02 確認）**：該視窗是**爬蟲的螢幕外 Chrome**，並非 launcher 或捷徑所開啟。
 
-> **更正**：本項最初記為「安裝器不等服務就緒即開啟瀏覽器」。檢視 `release/windows/launcher.ps1` 後確認**該描述錯誤** —— 只有 `open` 動作會 `Start-Process 'http://127.0.0.1:8787'`；安裝器 `[Run]` 執行的是 `launcher.vbs restart`，而 `restart` 分支只有 `Run-Control 'restart'; Wait-ForManagementPage`，**不會開啟瀏覽器**。
+`config/sources.json` 中 `shimamura-ux20` 設定為 `"connector": "browser"`、`"channel": "chrome"`、`"headless": false`、`"offscreen": true`；而 `src/connectors/browser.js:22-24` 對此組合套用：
 
-**已排除**的假說：`Wait-ForManagementPage` 逾時（寫死 15 秒）導致 `BT-LCH-004` 對話框。驗收者確認該圖示是 **Chrome**、且**畫面上沒有任何錯誤代碼**，表示 launcher 實際上執行成功，並未走到錯誤分支。
-
-目前最符合證據的候選機制（**待 A-2 驗證**）—— 子行程繼承隱藏視窗狀態：
-
-```
-開始功能表捷徑 → wscript.exe "launcher.vbs" open
-launcher.vbs   → shell.Run command, 0, False      ← 0 = SW_HIDE
-launcher.ps1   → Start-Process 'http://127.0.0.1:8787'
+```js
+launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 ```
 
-`launcher.vbs` 以隱藏視窗模式啟動 PowerShell；PowerShell 再 `Start-Process` 開啟預設瀏覽器時，子行程可能繼承父行程 `STARTUPINFO` 的 `SW_HIDE` 顯示狀態。結果是 Chrome 行程確實啟動、工作列出現按鈕，但視窗不可見也無法還原 —— 與「工具列有 Chrome 圖示但點不開」完全吻合，也解釋了為何沒有錯誤代碼。
+因此會啟動一個**具視窗的（非 headless）Chrome**，只是被移到座標 -32000,-32000。它擁有正常的工作列按鈕，但點擊後視窗在螢幕外，使用者看不到任何東西 —— 與回報的「工具列有 Chrome 圖示，點不開，只存在下方工具列」完全吻合。
 
-**若成立，影響範圍是「Beyblade Tracker」主捷徑本身**：一般使用者安裝後最自然的動作就是點它，而它開出來的是一個看不見的視窗。這比原先以為的「時序落差」嚴重得多。
+時間亦吻合：首次掃描於 18:27:25.134 啟動，`shimamura-ux20` 於 48379 ms 後逾時失敗，該 Chrome 視窗在這約 48 秒間存在。
 
-- **E2E 為何測不到**：`phase7-e2e.ps1` 全程 `/VERYSILENT`，從不建立捷徑（`/NOICONS`）、也從不執行 `open` 動作或開啟瀏覽器。這條路徑從未被自動化涵蓋。
-- 驗證方式：A-2 步驟 2 點擊該捷徑後，以 `IsWindowVisible` 檢查瀏覽器主視窗是否為不可見狀態（`a2-shortcuts.ps1` 已內建此鑑識）。
+**A-2 驗證結果排除了 launcher 涉入**：點擊「Beyblade Tracker」捷徑實際開啟的是 **msedge**（該帳號預設瀏覽器），且 `IsWindowVisible=True`、`IsIconic=False`，管理頁正常顯示。捷徑功能正常。
+
+此為既有設計行為（TODO.md 已記載「使用螢幕外 Chrome 讀取公開頁」），**不列為缺陷**。唯一值得考慮的改善是：其暴露時間長達 48 秒是被 **D-2** 放大的；若 `shimamura-ux20` 正常運作，該視窗只會短暫存在。若仍希望使用者完全不見到它，可評估改用 `headless: true`，但需先確認該站在 headless 下是否仍可取得內容。
+
+<details>
+<summary>先前兩個已被推翻的假說（保留以免重複調查）</summary>
+
+1. **「安裝器不等服務就緒即開啟瀏覽器」** — 錯誤。`launcher.ps1` 僅 `open` 分支會 `Start-Process`，安裝器 `[Run]` 執行的是 `restart`，不開瀏覽器。
+2. **「`Wait-ForManagementPage` 15 秒逾時導致 BT-LCH-004 對話框」** — 錯誤。驗收者確認圖示為 Chrome 且畫面無任何錯誤代碼，表示 launcher 未進入錯誤分支。
+
+</details>
 
 ### D-2 `shimamura-ux20` 來源選擇器逾時
 

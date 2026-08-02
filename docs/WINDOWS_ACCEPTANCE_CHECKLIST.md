@@ -314,16 +314,22 @@ manifest 與已安裝版本同為 1.0.0 時，永遠只會顯示「已是最新�
 
 > **更正**：本項最初記為「安裝器不等服務就緒即開啟瀏覽器」。檢視 `release/windows/launcher.ps1` 後確認**該描述錯誤** —— 只有 `open` 動作會 `Start-Process 'http://127.0.0.1:8787'`；安裝器 `[Run]` 執行的是 `launcher.vbs restart`，而 `restart` 分支只有 `Run-Control 'restart'; Wait-ForManagementPage`，**不會開啟瀏覽器**。
 
-目前最符合證據的候選機制（**尚未證實**）：
+**已排除**的假說：`Wait-ForManagementPage` 逾時（寫死 15 秒）導致 `BT-LCH-004` 對話框。驗收者確認該圖示是 **Chrome**、且**畫面上沒有任何錯誤代碼**，表示 launcher 實際上執行成功，並未走到錯誤分支。
 
-1. `Wait-ForManagementPage` 的等待上限是**寫死的 15 秒**（`launcher.ps1`），而實測首次啟動需 **18 秒**（18:27:07 → 18:27:25.128）。
-2. 逾時則丟 `BT-LCH-004`，由 `Show-LauncherError` 建立 WinForms 對話框（`$form.Text = 'Beyblade Tracker'`）。
-3. 該 PowerShell 由 `launcher.vbs` 以 `shell.Run command, 0, False` 啟動，**視窗模式為隱藏**。從隱藏視窗的行程彈出的強制回應對話框，可能無法取得焦點或還原，表現為「只在工作列、點不開」。
+目前最符合證據的候選機制（**待 A-2 驗證**）—— 子行程繼承隱藏視窗狀態：
 
-若成立，這是**兩個**問題：15 秒等待短於真實首次啟動時間；以及錯誤對話框在隱藏模式下無法操作 —— 後者會使 A-6 要求的「複製錯誤資訊」「問題回報」按鈕形同虛設。
+```
+開始功能表捷徑 → wscript.exe "launcher.vbs" open
+launcher.vbs   → shell.Run command, 0, False      ← 0 = SW_HIDE
+launcher.ps1   → Start-Process 'http://127.0.0.1:8787'
+```
 
-- **E2E 為何測不到**：`phase7-e2e.ps1` 一律 `/VERYSILENT`，安裝器的 `[Run]` 走 `Check: WizardSilent` 那條（帶 `noninteractive`），而 `-NonInteractive` 模式只把錯誤碼寫到 stderr、**不開對話框**。互動安裝這條路徑從未被自動化測過。
-- 驗證方式見下方 A-2 的前置檢查（尋找標題為 `Beyblade Tracker` 的 PowerShell 視窗）。
+`launcher.vbs` 以隱藏視窗模式啟動 PowerShell；PowerShell 再 `Start-Process` 開啟預設瀏覽器時，子行程可能繼承父行程 `STARTUPINFO` 的 `SW_HIDE` 顯示狀態。結果是 Chrome 行程確實啟動、工作列出現按鈕，但視窗不可見也無法還原 —— 與「工具列有 Chrome 圖示但點不開」完全吻合，也解釋了為何沒有錯誤代碼。
+
+**若成立，影響範圍是「Beyblade Tracker」主捷徑本身**：一般使用者安裝後最自然的動作就是點它，而它開出來的是一個看不見的視窗。這比原先以為的「時序落差」嚴重得多。
+
+- **E2E 為何測不到**：`phase7-e2e.ps1` 全程 `/VERYSILENT`，從不建立捷徑（`/NOICONS`）、也從不執行 `open` 動作或開啟瀏覽器。這條路徑從未被自動化涵蓋。
+- 驗證方式：A-2 步驟 2 點擊該捷徑後，以 `IsWindowVisible` 檢查瀏覽器主視窗是否為不可見狀態（`a2-shortcuts.ps1` 已內建此鑑識）。
 
 ### D-2 `shimamura-ux20` 來源選擇器逾時
 

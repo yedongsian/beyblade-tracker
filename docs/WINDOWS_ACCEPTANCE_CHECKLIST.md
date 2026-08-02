@@ -365,6 +365,34 @@ launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 
 測試 B 與 C 證實該站封鎖 headless Chrome（新舊模式皆然），只有有頭模式能取得內容。因此 `config/sources.json` 中的 `"headless": false` 是**必要設定**，不可為了隱藏視窗而改成 headless —— 那會讓來源直接失效。目前的 `--window-position=-32000,-32000` 已是可行範圍內最接近隱藏的做法；視窗本身不可見，僅保留工作列按鈕。
 
+### D-3 發佈產物內含建置者的個人來源設定（**最高優先**）
+
+`scripts/build-windows-release.js` 複製整個 `config` 目錄進 payload，因此 **`config/sources.json` 被打包進安裝器**。但該檔案受 `.gitignore` 排除，git 只追蹤 `config/sources.example.json`。
+
+`diff` 確認：payload 內的 `config/sources.json` 與建置機上的個人設定**完全相同**，含 `yodobashi-ux20`、`shimamura-ux20`、`hlj-ux20` 三個真實日本商店。
+
+`src/config.js:36-42` 的解析順序使問題成立：
+
+```
+1. SOURCES_FILE 環境變數
+2. %LOCALAPPDATA%\BeybladeTracker\config\sources.json   ← 全新安裝不存在
+3. <appRoot>\config\sources.json                        ← 命中打包進去的個人設定
+4. <appRoot>\config\sources.example.json                ← 設計上的預設，永遠不會被使用
+```
+
+**後果**：
+
+1. **建置不可重現** —— 出貨的預設來源清單取決於建置者機器上一個未納入版控的檔案。換一台機器建置就會出貨不同內容。
+2. **散布個人設定** —— 所有使用者都會繼承建置者的來源清單。
+3. **違背既有設計** —— `sources.example.json` 的註解明確寫著「Copy to config/sources.json and edit... product pages **you add yourself**」，且提醒「be a good citizen and respect each site's terms and rate limits」。實際行為卻是使用者**未曾新增任何來源**，安裝後就立刻開始抓取三個真實零售網站。
+4. **D-2 因此擴散** —— 失效的 shimamura URL 隨之送到每一位使用者手上，每輪掃描固定浪費 45 秒。
+
+實測佐證：Test_Darren 全新安裝後的首次掃描即回報 `sources 3`，且三個 key 與建置機個人設定一致。
+
+**建議修正方向**：build 時排除 `config/sources.json`（只打包 `sources.example.json`），讓解析順序自然落到第 4 項。如此全新安裝會以離線 demo fixture 起步，由使用者自行新增來源 —— 這正是原本的設計意圖。D-2 對終端使用者亦隨之消失。
+
+---
+
 ### 已排除：log 中文亂碼（**非缺陷**）
 
 第一版診斷腳本以 `Get-Content` 未指定編碼讀取 `tracker.log`，在 Windows PowerShell 5.1 下以 ANSI 解讀 UTF-8，導致輸出呈現 `?? New product @ Yodobashi ??2450 JPY`。

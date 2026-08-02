@@ -121,9 +121,11 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 
 **預期結果**：可設定語言、通知、掃描頻率與資料保存；設定儲存後重開仍保留。
 
+導覽為 `!settings.onboardingCompleted` 時顯示的強制回應對話框（`src/web/ui.js` 的 `onboardingDialog`），欄位依序為：語言 → 通知方式 → **Telegram 區塊（BotFather 連結、操作說明、Bot Token／Chat ID 輸入欄）** → 掃描頻率 → 資料保存天數。
+
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **部分** | 2026-08-02：驗收者確認安裝後管理頁確有出現此導覽（描述為「輸入連結跟說明」，即 Telegram 區塊）。**尚待確認是否按下儲存完成** —— 未完成則 `onboardingCompleted` 不會寫入，下次開啟仍會再次跳出，此為本項的驗證重點。 |
 
 ### A-6 繁中文案與錯誤代碼
 
@@ -336,11 +338,32 @@ launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 
 </details>
 
-### D-2 `shimamura-ux20` 來源選擇器逾時
+### D-2 `shimamura-ux20` 商品 URL 已失效 — **根因已查明**
 
 首次掃描中該來源失敗：`page.waitForSelector: Timeout 45000ms exceeded`，等待 `.catalogue__infoTitle`，耗時 48379 ms。另兩個來源正常。
 
-屬來源健康／連接器議題，非安裝器缺陷。需判定是網站改版、Queue-it 等候室（TODO.md 已記錄 2026-07-16 曾遇到）或單純逾時。此失敗亦使首次掃描總時間拉長至約 69 秒，但**不影響** Web 服務就緒時間，因掃描為非同步執行。
+**根因（2026-08-02 實測）**：設定中的商品頁 `https://www.shop-shimamura.com/item/0363100014177/` **已下架**。以有頭 Chrome 實際存取，頁面標題為：
+
+> お探しの商品は現在お取り扱いがございません。 | しまむらパーク
+
+即該站自己的「查無此商品」錯誤頁。`.catalogue__infoTitle` 本來就不存在於錯誤頁，因此必然逾時。**非程式缺陷，非等候室，非阻擋** —— 是設定中的 URL 過期。
+
+四組對照實測：
+
+| 測試 | 設定 | 結果 |
+| --- | --- | --- |
+| A | `headless:false` + offscreen（現況） | 頁面載入成功，內容為「查無此商品」錯誤頁 |
+| B | `headless:true` | **Access Denied**（Akamai `errors.edgesuite.net`） |
+| C | `--headless=new` | **Access Denied** |
+| D | `headless:false` 打首頁（對照組） | 正常，405 KB |
+
+**影響**：本 RC 的 payload 內含這個失效 URL，因此任何使用者安裝後，每次掃描都會在該來源上耗掉 45 秒逾時。建議在發佈前更新或停用此來源。
+
+**副作用**：這也是 D-1 那個螢幕外 Chrome 視窗存在長達 48 秒的原因。若此來源修正或停用，該視窗即不再出現（或僅短暫出現）。
+
+#### 附帶結論：無法改用 headless 來隱藏爬蟲視窗
+
+測試 B 與 C 證實該站封鎖 headless Chrome（新舊模式皆然），只有有頭模式能取得內容。因此 `config/sources.json` 中的 `"headless": false` 是**必要設定**，不可為了隱藏視窗而改成 headless —— 那會讓來源直接失效。目前的 `--window-position=-32000,-32000` 已是可行範圍內最接近隱藏的做法；視窗本身不可見，僅保留工作列按鈕。
 
 ### 已排除：log 中文亂碼（**非缺陷**）
 

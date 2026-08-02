@@ -71,7 +71,7 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **PASS** | 2026-08-02 Test_Darren 帳號。安裝於 `%LOCALAPPDATA%\Programs\Beyblade Tracker`；`current.json` = `{"version":"1.0.0"}`；`versions\1.0.0\runtime\node.exe` 存在；installer log 為 `Installation process succeeded.`、`User privileges: None`、`Install mode root key: HKEY_CURRENT_USER`。服務於 **18 秒**內就緒（18:27:07 啟動 → 18:27:25.128 `web app on http://127.0.0.1:8787`），`/health` = `ok`、version `1.0.0`。另見缺陷 **D-1**。 |
 
 ### A-2 開始功能表捷徑（5 個）
 
@@ -108,7 +108,7 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 
 | 情境 | 預期 | 判定 | 證據 |
 | --- | --- | --- | --- |
-| 已安裝 Chrome | 精靈不顯示提示；`/health` 顯示 browser available、name = `Google Chrome` |  |  |
+| 已安裝 Chrome | 精靈不顯示提示；`/health` 顯示 browser available、name = `Google Chrome` | **PASS** | 2026-08-02：`/health` 回報 `browser : available=True name=Google Chrome`；精靈未顯示缺少 Chrome 的提示 |
 | 移除 Chrome 後安裝<br>（**僅路線 2 可測**） | 精靈在「準備安裝」頁顯示找不到 Chrome 的提示；選「是」開啟 `https://www.google.com/chrome/`；選「否」仍可完成安裝，HTTP-only 來源可正常掃描 |  |  |
 
 > 偵測路徑依序為 `CHROME_PATH`、`%PROGRAMFILES%`、`%PROGRAMFILES(X86)%`、`%LOCALAPPDATA%` 下的 `Google\Chrome\Application\chrome.exe`。
@@ -174,7 +174,7 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **部分** | 2026-08-02 首次啟動自動執行掃描：`sources 3, ok 2, failed 1, itemsSeen 2, eventsCreated 1`，通知 1 送出。`yodobashi-ux20`（895 ms）與 `hlj-ux20`（2026 ms）成功；**`shimamura-ux20` 失敗**：`page.waitForSelector: Timeout 45000ms exceeded`，等待 `.catalogue__infoTitle`，耗時 48379 ms。見缺陷 **D-2**。UI 端的繁中錯誤呈現尚未檢視。 |
 
 ### A-10 解除安裝 — 選「保留資料」
 
@@ -264,7 +264,7 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Select-Object ProcessI
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **PASS** | 2026-08-02：服務程序命令列為 `...\Programs\Beyblade Tracker\versions\1.0.0\runtime\node.exe --no-warnings ...\bin\service.js`；`tracker-status.json` 的 `executablePath` 亦指向同一內建 runtime。本機雖有 `C:\Program Files\nodejs`，但未被使用。 |
 
 ---
 
@@ -303,6 +303,32 @@ A 段各項之間有相依性，順序錯了會需要重做。建議如下：
 `compareVersions(manifest.version, APP_VERSION) > 0` 才會回報 `updateAvailable`；
 manifest 與已安裝版本同為 1.0.0 時，永遠只會顯示「已是最新」。
 要驗證更新鏈，必須另外建置一個 1.0.1 作為更新目標。
+
+---
+
+## 3.1 已發現的缺陷（2026-08-02 第一輪）
+
+### D-1 安裝完成後自動開啟的頁面早於服務就緒（首次使用體驗）
+
+安裝器 `[Run]` 以 `nowait` 執行 `launcher.vbs restart`，**不等待服務就緒**即開啟預設瀏覽器連向 `http://127.0.0.1:8787`。實測服務需 **18 秒**才開始監聽（18:27:07 → 18:27:25.128），這段期間使用者看到的是無法載入的頁面。
+
+實機驗收者的原話：「工具列有跳出一個網頁的圖示，但無法點開」。一般使用者在此情境會直接認定程式安裝失敗。
+
+- **E2E 為何測不到**：`phase7-e2e.ps1` 一律以 `/VERYSILENT` 執行且從不開啟瀏覽器，只輪詢 `/health` 最多 45 秒，因此永遠看不到這個落差。
+- **非效能問題**：18 秒遠低於 E2E 的 45 秒門檻，服務本身正常。問題在於**開啟瀏覽器的時機**。
+- 建議方向：由 launcher 先輪詢 `/health` 就緒後再開啟瀏覽器，或先顯示一個等待中的本機頁面。
+
+### D-2 `shimamura-ux20` 來源選擇器逾時
+
+首次掃描中該來源失敗：`page.waitForSelector: Timeout 45000ms exceeded`，等待 `.catalogue__infoTitle`，耗時 48379 ms。另兩個來源正常。
+
+屬來源健康／連接器議題，非安裝器缺陷。需判定是網站改版、Queue-it 等候室（TODO.md 已記錄 2026-07-16 曾遇到）或單純逾時。此失敗亦使首次掃描總時間拉長至約 69 秒，但**不影響** Web 服務就緒時間，因掃描為非同步執行。
+
+### 已排除：log 中文亂碼（**非缺陷**）
+
+第一版診斷腳本以 `Get-Content` 未指定編碼讀取 `tracker.log`，在 Windows PowerShell 5.1 下以 ANSI 解讀 UTF-8，導致輸出呈現 `?? New product @ Yodobashi ??2450 JPY`。
+
+以 `-Encoding UTF8` 重讀同一份 log 得到 `🆕 New product @ Yodobashi — 2450 JPY`，證實**應用程式寫出的 UTF-8 完全正確**，亂碼純屬診斷腳本缺陷，已修正。此案例與 A-6 要驗證的 BOM／編碼議題同源，記錄於此以免日後重複誤判。
 
 ---
 

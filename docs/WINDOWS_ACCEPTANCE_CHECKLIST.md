@@ -100,7 +100,7 @@ SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **無視窗：PASS**<br>**自動啟動：待重測** | 2026-08-05。機碼格式正確（含 `noninteractive`）。驗收者親眼確認登入過程**無主控台、無對話框、工作列無異常、無 Chrome**，此部分通過。<br><br>但自動啟動**無法由本次資料證實**：登入 07:36:56，服務 `startedAt` 07:38:35，而中間 07:38:11 有一個手動觸發的 `launcher.ps1 -Action open`（機碼用的是 `start noninteractive`，命令列亦無 `-NonInteractive`，故非機碼所觸發）。無法區分服務是由機碼啟動（耗時 98 秒）或由該次手動點擊啟動。**需重測：登入後完全不點任何捷徑。** |
 
 ### A-4 Chrome 偵測兩個分支
 
@@ -390,6 +390,31 @@ launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 實測佐證：Test_Darren 全新安裝後的首次掃描即回報 `sources 3`，且三個 key 與建置機個人設定一致。
 
 **建議修正方向**：build 時排除 `config/sources.json`（只打包 `sources.example.json`），讓解析順序自然落到第 4 項。如此全新安裝會以離線 demo fixture 起步，由使用者自行新增來源 —— 這正是原本的設計意圖。D-2 對終端使用者亦隨之消失。
+
+---
+
+### D-4 互動模式的 launcher 行程啟動服務後不會結束
+
+2026-08-05 觀測：`launcher.ps1 -Action open` 於 07:38:11 啟動，至 07:45:43 仍存在，已逾 **7 分半**。`open` 的正常流程為「啟動服務 → 等待管理頁（上限 15 秒）→ 開啟瀏覽器 → 結束」，不應如此。
+
+該行程 `MainWindowHandle = 0`，**排除**卡在 `Show-LauncherError` 對話框的可能。
+
+最可能的位置是 `Run-Control` 的互動分支（`release/windows/launcher.ps1`）：
+
+```powershell
+if (-not $NonInteractive) {
+  & $node '--no-warnings' $controlScript $command
+  ...
+}
+```
+
+此分支**沒有逾時保護** —— `$controlTimeoutSeconds` 僅在 `-NonInteractive` 路徑使用。若被啟動的 node 服務繼承了呼叫端的 stdout/stderr handle，PowerShell 的 `&` 會等到 handle 關閉為止，而常駐服務永遠不會關閉，因而無限等待。
+
+安裝當下即有相同徵兆：18:27:17 的蒐證顯示 `PID 564` 仍在執行 `service-control.js restart`。
+
+**影響**：每次由捷徑啟動就累積一個卡住的隱藏 PowerShell 行程。不影響服務功能，屬資源洩漏與潛在混淆來源（會干擾以行程判斷狀態的診斷）。
+
+**E2E 為何測不到**：自動化測試一律走 `-NonInteractive` 路徑，該路徑有 `WaitForExit($timeout * 1000)` 保護；無逾時保護的互動分支從未被涵蓋。
 
 ---
 

@@ -237,7 +237,9 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **PASS** | 2026-08-05 由「設定 → 應用程式 → 已安裝的應用程式」解除安裝，資料提示選「是」。<br><br>**已移除**：安裝目錄、`current.json`、5 個開始功能表捷徑、`Run` 機碼、`HKCU` 解除安裝登錄項目；8787 停止監聽，無殘留 Beyblade node 行程。<br><br>**已保留**：2 份自動備份、`config\sources.json`、`data\tracker.db`、`logs\tracker.log`、`runtime\tracker-status.json`。資料庫前後比對 `integrity_check=ok`、`schemaVersion=13`，筆數完全相同：products 1、offers 2、events 1、sources 3、**observations 514**。<br><br>`tracker.db` 由 929,792 增為 933,888 bytes 且 `-wal`／`-shm` 消失，屬服務關閉時的 WAL checkpoint，非資料變動；`runtime\tracker.pid` 一併清除，為正常關閉行為。 |
+
+> 判定採「筆數 + `integrity_check`」而非位元組雜湊：服務停止必然觸發 WAL 併回主檔，雜湊比對會產生假性失敗。
 
 ### A-11 解除安裝 — 選「刪除資料」⚠️ 破壞性
 

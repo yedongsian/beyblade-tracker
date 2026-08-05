@@ -191,7 +191,11 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **匯出側：PASS**<br>**匯入側：待執行** | 2026-08-05 由「匯出／移機」捷徑匯出 `beyblade-transfer-20260805-104427.beyblade-transfer`（壓縮 123,745 bytes／解壓 1,171,557 bytes）。<br><br>`format=beyblade-transfer-v1`、`appVersion=1.0.0`、`schemaVersion=13`、`exclusions=["secrets","runtime","logs","debug-html"]`。內含檔案**恰好兩個**：`tracker.db`（876,544 bytes）與 `sources.json`（1,833 bytes），兩者 SHA-256 重算皆符；DB 檔頭為 `SQLite format 3`；`sources.json` 含 3 個來源。<br><br>安全性掃描七項（Telegram token 格式、`secrets.json`、webhook 字樣、Discord webhook URL、`tracker.pid`、`tracker.log`、debug HTML）**全部未命中**。<br><br>匯出前後 `tracker.db` 的 SHA-256 相同（`53405a0f…`），確認匯出為唯讀操作。<br><br>匯入側依路線 1 執行順序，留待 A-11 清空資料後進行，以驗證跨乾淨環境還原。 |
+
+> **Token 排除為結構性保證**：secrets 儲存於獨立的 `config\secrets.json`（`src/paths.js` 的 `secretFile`），而 `createTransferBundle` 只打包 `tracker.db` 與 `sources.json`，故憑證不可能進入移機檔。此結論不依賴 A-8 是否已設定 Telegram。
+>
+> 字串掃描對 `tracker.db` 的涵蓋有限（二進位且經 base64 編碼），故以上述結構性保證為主要依據。
 
 ### A-8 Telegram 通知與 DPAPI
 
@@ -479,6 +483,14 @@ shell.Run command, 0, False   ' 0 = SW_HIDE
 #### E2E 為何測不到
 
 `phase7-e2e.ps1` 全程 `/VERYSILENT`，安裝器 `[Run]` 走 `Check: WizardSilent` 的 `noninteractive` 分支，而 `-NonInteractive` 模式只把代碼寫到 stderr、**不建立對話框**。新增的 `phase7-launcher-errors.ps1` 同樣只涵蓋 `-NonInteractive`。互動分支從未被任何自動化涵蓋。
+
+#### 影響範圍已收斂：不含檔案對話框（2026-08-05）
+
+A-7 匯出側證實「匯出／移機」捷徑**可正常運作** —— 同樣經由 `wscript.exe launcher.vbs`（隱藏視窗、互動模式），`SaveFileDialog` 正常彈出、使用者完成存檔、檔案通過完整驗證。
+
+原因是兩者機制不同：`SaveFileDialog` 是由 comdlg32／shell 建立的共用對話框，不受呼叫端 `STARTUPINFO.wShowWindow` 影響；而 `Show-LauncherError` 的 `$form.ShowDialog()` 是本行程建立的第一個 WinForms 頂層視窗，會沿用 `SW_HIDE`。
+
+因此 **D-4 只影響錯誤對話框**，`匯出／移機` 與 `匯入／移機` 兩個捷徑功能正常。這使嚴重度略降，但核心問題不變：使用者在**出錯時**完全得不到任何提示。
 
 #### 修正方向（已實測可行）
 

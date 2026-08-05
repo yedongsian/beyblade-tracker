@@ -1,9 +1,33 @@
 # Windows 實機驗收清單（RC 1.0.0）
 
 對象產物：`BeybladeTracker-1.0.0-Setup.exe`
-SHA-256：`7794f66f018bbb285fa4a537e74e1237c3028d0665360c5ce513231c7c74eca1`
-來源 commit：`2eca4c9`
-建立日期：2026-08-02
+SHA-256：**`cf2187c616e3c1f11290dc31bd2b76e15c772493b6aea2140dbd15903a89b146`**（27,483,953 bytes，2026-08-06 重建）
+建立日期：2026-08-02（第一輪）／2026-08-06（第二輪，修正後重建）
+
+> **第一輪產物已作廢**：SHA-256 `7794f66f…`（來源 commit `2eca4c9`）。第一輪在該產物上完成，並找出 D-1～D-6 共 6 項發現。
+>
+> 第二輪產物包含 D-3、D-4、D-5、D-6 的修正，因此**第一輪的所有判定都需要以新產物重新確認**。各項的第一輪結果保留於下方作為對照與回歸基準。
+
+## 修正狀態（2026-08-06）
+
+| 缺陷 | 狀態 | 修正 | 影響的驗收項目 |
+| --- | --- | --- | --- |
+| D-1 | 非缺陷 | 爬蟲的螢幕外 Chrome，屬設計行為 | — |
+| D-2 | 隨 D-3 消失 | 失效的 shimamura URL 不再隨產物出貨 | A-9 |
+| **D-3** | **已修** | build 排除 `config/sources.json`，改帶 `fixtures/`，並加入三道 build 斷言 | A-1、A-9 |
+| **D-4** | **已修** | `Show-LauncherError` 於 `Shown` 事件強制 `ShowWindow`／`TopMost` | A-6b |
+| **D-5** | **已修** | `ui.js:126` 兩處 `'\n'` → `'\\n'` | A-8 |
+| **D-6** | **已修** | `restoreBackup` 新增 `ignorePid`；匯入失敗時將 pending 檔移置一旁 | A-7 匯入側 |
+
+修正端驗證：單元測試 223/223（新增 4 項回歸測試，每項均經「還原缺陷後測試必須失敗」確認）；四項 release E2E 全數通過（normal、stopfail、missing-launcher、launcher-errors 5/5）；無殘留目錄或行程。
+
+### ⚠ D-3 改變了全新安裝的預設行為
+
+修正後，全新安裝不再內建 yodobashi／shimamura／hlj 三個真實商店，而是落到 `config/sources.example.json`：僅啟用離線的 `demo-fixture`，`example-jsonld` 為停用。
+
+因此 **A-9 的驗收方式必須改變**：不能再期待「安裝後自動抓取三個真實商店」，而應驗證
+（1）離線 demo fixture 可正常運作，（2）使用者自行新增來源後可正常抓取。這才符合
+`sources.example.json` 所述的設計意圖（「product pages **you add yourself**」）。
 
 驗收前請先讀 [RELEASE_CANDIDATE_1.0.0.md](RELEASE_CANDIDATE_1.0.0.md)（重建與簽章現況）與 [RUNBOOK.md](RUNBOOK.md) 第 13 節（release gate）。
 

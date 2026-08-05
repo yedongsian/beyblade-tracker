@@ -255,11 +255,20 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
+| **PASS**（第二輪，2026-08-06） | D-5 修正後於設定頁完成儲存並測試。<br><br>**憑證保護**：`config\secrets.json` 建立（836 bytes），`version=1`、`provider=windows-dpapi-current-user`；`telegram.token`（352 字元）與 `telegram.chatId`（308 字元）皆為 base64 密文。整份檔案掃描 Bot Token 格式**未命中**。<br>**設定頁**：HTML 未回傳任何 Token 明文，欄位為 `type="password"`，並顯示 DPAPI provider 字樣。<br>**通知送達**：驗收者確認 Telegram 實際收到測試訊息。<br><br>**跨帳號解密（關鍵）**：將密文複本交由同機的另一個 Windows 帳號（`yedon`）以相同 entropy 嘗試 `ProtectedData.Unprotect`，兩個值皆失敗並回報 `Key not valid for use in specified state`，證實 `CurrentUser` scope 生效。<br>對照組：同一份 entropy 於該帳號自行加解密可正常運作，排除「entropy 錯誤導致假陰性」。<br>驗證後密文複本已即時刪除，共用資料夾無任何憑證殘留。<br><br>**此為 `powershellDpapi()` 真實路徑的首次實證** —— `test/phase7.test.js:28` 注入假的 `protect`／`unprotect`，該路徑從未被自動化測試執行過，PRIVACY.md 對 DPAPI 的宣稱在此之前沒有任何實機依據。 |
+
+<details>
+<summary>第一輪結果（BLOCKED，保留作對照）</summary>
+
+| 判定 | 證據／備註 |
+| --- | --- |
 | **BLOCKED** | 2026-08-05 嘗試執行，因 **D-5** 無法進行：設定頁 JavaScript 語法錯誤導致整頁事件處理器未掛載，按「安全儲存並測試」不會送出任何請求，`secrets.json` 未建立。<br><br>已排除的原因：DPAPI 本身正常（以安裝包內的 `SecretStore` 用假值實測，667 ms 寫入密文並正確回讀，`provider=windows-dpapi-current-user`）；`config` 目錄可寫；`network.enabled=true`。<br><br>**須待 D-5 修正後重測。** |
 
 > **已知測試落差**：`test/phase7.test.js:28` 以注入的 `protect`／`unprotect` 假函式建立 `SecretStore`，因此**真實 Windows DPAPI 路徑從未被任何自動化測試執行過**。本項是唯一能驗證該路徑的機會，亦是 PRIVACY.md 對 DPAPI 宣稱的唯一實證來源。
 >
 > 本輪雖未能經由 UI 完成，但步驟 2 的直接實測已證明 `SecretStore` 的真實 DPAPI 加解密可用。仍待驗證者為：UI 儲存流程、設定頁不回傳明文、以及跨帳號解密應失敗。
+
+</details>
 
 ### A-9 實際網路抓取
 

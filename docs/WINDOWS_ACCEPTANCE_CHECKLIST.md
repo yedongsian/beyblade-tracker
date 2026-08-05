@@ -174,7 +174,7 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-| **A-6a：PASS**<br>**A-6b：待執行** | 見上表。 |
+| **A-6a：PASS**<br>**A-6b：FAIL** | A-6a 見上表。<br><br>**A-6b 於 2026-08-05 執行並失敗**：以 `wscript.exe launcher.vbs start`（真實捷徑路徑）觸發 `BT-LCH-001`，**畫面上完全沒有出現任何對話框**，驗收者三題皆答 N，剪貼簿維持哨兵值未被寫入。RUNBOOK 第 13 節「每個 hidden Launcher 路徑都必須顯示 native dialog」**未達成**。根因見缺陷 **D-4**。 |
 
 > 已知預期現象：`BT-LCH-001` 情境下 `current.json` 無法讀取，故 launcher 的 `$appVersion` 為 `unknown`，複製內容中的 App version 會顯示 `unknown`。屬設計行為，但支援端因此拿不到版本號，值得後續評估。
 
@@ -431,30 +431,60 @@ launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 
 ---
 
-### D-4 互動模式的 launcher 行程啟動服務後不會結束
+### D-4 互動模式的錯誤對話框不可見，且使 launcher 永久阻塞（**最高優先，與 D-3 並列**）
 
-2026-08-05 觀測：`launcher.ps1 -Action open` 於 07:38:11 啟動，至 07:45:43 仍存在，已逾 **7 分半**。`open` 的正常流程為「啟動服務 → 等待管理頁（上限 15 秒）→ 開啟瀏覽器 → 結束」，不應如此。
+**根因已由實驗證實（2026-08-05）。** 兩個原本看似無關的症狀 —— A-6b 沒有對話框、以及 launcher 行程卡住不結束 —— 是**同一個缺陷**。
 
-該行程 `MainWindowHandle = 0`，**排除**卡在 `Show-LauncherError` 對話框的可能。
+#### 證據
 
-最可能的位置是 `Run-Control` 的互動分支（`release/windows/launcher.ps1`）：
+以隔離目錄（僅 `launcher.ps1` + `launcher.vbs`，刻意不建 `current.json` 以觸發 `BT-LCH-001`）比對兩條啟動路徑：
 
-```powershell
-if (-not $NonInteractive) {
-  & $node '--no-warnings' $controlScript $command
-  ...
-}
+| 路徑 | 對話框 | 行程 |
+| --- | --- | --- |
+| A：直接 `powershell.exe -File launcher.ps1 -Action start` | **出現**，`IsWindowVisible=True`，關閉後 exit 1 | 正常結束 |
+| B：`wscript.exe launcher.vbs start`（**真實捷徑路徑**） | **未出現** | **永久阻塞** |
+
+以 `EnumWindows` 列舉路徑 B 那個行程的所有頂層視窗：
+
+```
+handle=199360  visible=False  title='Beyblade Tracker'      ← 對話框確實存在，只是隱藏
+Process.MainWindowHandle : 0
+呼叫 ShowWindow(handle, SW_SHOW) 後 → visible=True
 ```
 
-此分支**沒有逾時保護** —— `$controlTimeoutSeconds` 僅在 `-NonInteractive` 路徑使用。若被啟動的 node 服務繼承了呼叫端的 stdout/stderr handle，PowerShell 的 `&` 會等到 handle 關閉為止，而常駐服務永遠不會關閉，因而無限等待。
+#### 機制
 
-安裝當下即有相同徵兆：18:27:17 的蒐證顯示 `PID 564` 仍在執行 `service-control.js restart`。
+`launcher.vbs` 以隱藏視窗啟動 PowerShell：
 
-**影響**：每次由捷徑啟動就累積一個卡住的隱藏 PowerShell 行程。不影響服務功能，屬資源洩漏與潛在混淆來源（會干擾以行程判斷狀態的診斷）。
+```vbscript
+shell.Run command, 0, False   ' 0 = SW_HIDE
+```
 
-**E2E 為何測不到**：自動化測試一律走 `-NonInteractive` 路徑，該路徑有 `WaitForExit($timeout * 1000)` 保護；無逾時保護的互動分支從未被涵蓋。
+行程的 `STARTUPINFO.wShowWindow` 因而是 `SW_HIDE`，而 WinForms 建立的**第一個頂層視窗會沿用該狀態**。於是 `Show-LauncherError` 的 `$form.ShowDialog()` 開出一個看不見的強制回應對話框，並在其上**無限期阻塞**。
 
-**範圍已確認（2026-08-05）**：A-3 乾淨重測中，由 `Run` 機碼觸發的 `-NonInteractive` 啟動**未留下任何殘留行程**，而先前手動觸發的 `-Action open` 則卡了 7.5 分鐘。證實此缺陷**僅存在於互動分支**，與上述 `Run-Control` 的兩條路徑分析一致。
+`Process.MainWindowHandle` 只回報可見視窗，所以會回 `0` —— 這正是先前誤判「排除卡在對話框」的原因。**該推論已作廢**；原先歸咎於 `Run-Control` 互動分支缺少逾時保護、node 繼承 handle 導致 `&` 永久等待的假說，**並非本缺陷的成因**。
+
+#### 影響（嚴重）
+
+1. **所有經由開始功能表捷徑或安裝器 `[Run]` 觸發的 `BT-LCH-*` 錯誤，使用者完全看不到任何提示。**
+2. 整套錯誤處理 UX —— 固定代碼、繁中復原指引、「複製錯誤資訊」、「問題回報」按鈕 —— 在真實使用情境下**完全無法觸及**。這是 RUNBOOK 第 13 節的明文要求，目前未達成。
+3. 每次發生就累積一個永久阻塞的隱藏 PowerShell 行程。
+4. 使用者只會看到「點了捷徑但什麼都沒發生」，無從自救也無法回報。
+
+#### 可回溯解釋的既有觀測
+
+- A-3 首次量測中 `launcher.ps1 -Action open`（07:38:11 啟動）卡了 7.5 分鐘且 `MainWindowHandle=0`：當時服務尚未就緒，`Wait-ForManagementPage` 15 秒逾時 → `BT-LCH-004` → 隱藏對話框 → 永久阻塞。
+- 安裝當下 18:27:17 觀測到的 `PID 564` 殘留，屬同一現象。
+
+#### E2E 為何測不到
+
+`phase7-e2e.ps1` 全程 `/VERYSILENT`，安裝器 `[Run]` 走 `Check: WizardSilent` 的 `noninteractive` 分支，而 `-NonInteractive` 模式只把代碼寫到 stderr、**不建立對話框**。新增的 `phase7-launcher-errors.ps1` 同樣只涵蓋 `-NonInteractive`。互動分支從未被任何自動化涵蓋。
+
+#### 修正方向（已實測可行）
+
+實驗顯示對 `Beyblade Tracker` 視窗呼叫 `ShowWindow(hwnd, SW_SHOW)` 即可讓它現身，因此修法只需確保該表單以正常狀態顯示，例如在 `Show-LauncherError` 中於表單 `Shown` 事件呼叫 `ShowWindow(SW_SHOW)`、或搭配 `TopMost` 與 `Activate()`。**不應**改動 `launcher.vbs` 的 `shell.Run ... 0` —— 隱藏 PowerShell 主控台本身是正確設計，不該為此讓黑窗在每次啟動時閃現。
+
+修好後應補上互動路徑的自動化涵蓋，避免再次回歸。
 
 ---
 

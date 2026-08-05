@@ -17,6 +17,16 @@ function Throw-LauncherError([string]$Code) {
 function Show-LauncherError([string]$Code) {
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
+  # launcher.vbs starts this process with shell.Run(cmd, 0, False), so STARTUPINFO
+  # carries SW_HIDE and the first top-level window inherits it. ShowDialog would then
+  # block forever on a dialog nobody can see, which is how every launcher error became
+  # silent. Force the window visible once it exists.
+  if (-not ('BeybladeWin32' -as [type])) {
+    Add-Type -Namespace BeybladeWin32 -Name Native -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+'@ -PassThru | Out-Null
+  }
   $details = @{
     'BT-LCH-001' = @('找不到目前版本', 'Beyblade Tracker 找不到目前安裝版本。', '重新安裝相同或更新版本。')
     'BT-LCH-002' = @('找不到執行環境', 'Beyblade Tracker 找不到內建執行環境。', '重新安裝，並檢查防毒軟體是否隔離檔案。')
@@ -50,7 +60,15 @@ function Show-LauncherError([string]$Code) {
   $status.Add_Click({ Start-Process 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action status" })
   $close = New-Object System.Windows.Forms.Button
   $close.Text = '關閉'; $close.Location = New-Object System.Drawing.Point(382, 220); $close.Size = New-Object System.Drawing.Size(90, 32); $close.Add_Click({ $form.Close() })
-  $form.Controls.AddRange(@($label, $copy, $report, $status, $close)); $form.ShowDialog() | Out-Null
+  $form.Controls.AddRange(@($label, $copy, $report, $status, $close))
+  $form.TopMost = $true
+  # SW_SHOWNORMAL = 1. Handle is only valid once the form is created, so do it on Shown.
+  $form.Add_Shown({
+    [void][BeybladeWin32.Native]::ShowWindow($form.Handle, 1)
+    [void][BeybladeWin32.Native]::SetForegroundWindow($form.Handle)
+    $form.Activate()
+  })
+  $form.ShowDialog() | Out-Null
 }
 
 try {

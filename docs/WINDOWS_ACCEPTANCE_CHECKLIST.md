@@ -191,7 +191,7 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-| **匯出側：PASS**<br>**匯入側：待執行** | 2026-08-05 由「匯出／移機」捷徑匯出 `beyblade-transfer-20260805-104427.beyblade-transfer`（壓縮 123,745 bytes／解壓 1,171,557 bytes）。<br><br>`format=beyblade-transfer-v1`、`appVersion=1.0.0`、`schemaVersion=13`、`exclusions=["secrets","runtime","logs","debug-html"]`。內含檔案**恰好兩個**：`tracker.db`（876,544 bytes）與 `sources.json`（1,833 bytes），兩者 SHA-256 重算皆符；DB 檔頭為 `SQLite format 3`；`sources.json` 含 3 個來源。<br><br>安全性掃描七項（Telegram token 格式、`secrets.json`、webhook 字樣、Discord webhook URL、`tracker.pid`、`tracker.log`、debug HTML）**全部未命中**。<br><br>匯出前後 `tracker.db` 的 SHA-256 相同（`53405a0f…`），確認匯出為唯讀操作。<br><br>匯入側依路線 1 執行順序，留待 A-11 清空資料後進行，以驗證跨乾淨環境還原。 |
+| **匯出側：PASS**<br>**匯入側：FAIL** | **匯入側 2026-08-05 執行並失敗**，根因見缺陷 **D-6**：移機檔通過驗證並成功暫存至 `runtime\pending-import.beyblade-transfer`（123,745 bytes），但服務重新啟動時 `applyPendingTransfer` 被 `restoreBackup` 的執行中守門擋下（讀到服務自身 PID），導致服務結束、匯入從未套用。匯入前後資料庫 `observations` 均為 **2**，與移機檔基準 **494** 不符；`sources.json` 的三個來源來自安裝包預設（D-3），不足以證明還原成功。<br><br>匯出側證據如下。<br><br>2026-08-05 由「匯出／移機」捷徑匯出 `beyblade-transfer-20260805-104427.beyblade-transfer`（壓縮 123,745 bytes／解壓 1,171,557 bytes）。<br><br>`format=beyblade-transfer-v1`、`appVersion=1.0.0`、`schemaVersion=13`、`exclusions=["secrets","runtime","logs","debug-html"]`。內含檔案**恰好兩個**：`tracker.db`（876,544 bytes）與 `sources.json`（1,833 bytes），兩者 SHA-256 重算皆符；DB 檔頭為 `SQLite format 3`；`sources.json` 含 3 個來源。<br><br>安全性掃描七項（Telegram token 格式、`secrets.json`、webhook 字樣、Discord webhook URL、`tracker.pid`、`tracker.log`、debug HTML）**全部未命中**。<br><br>匯出前後 `tracker.db` 的 SHA-256 相同（`53405a0f…`），確認匯出為唯讀操作。<br><br>匯入側依路線 1 執行順序，留待 A-11 清空資料後進行，以驗證跨乾淨環境還原。 |
 
 > **Token 排除為結構性保證**：secrets 儲存於獨立的 `config\secrets.json`（`src/paths.js` 的 `secretFile`），而 `createTransferBundle` 只打包 `tracker.db` 與 `sources.json`，故憑證不可能進入移機檔。此結論不依賴 A-8 是否已設定 Telegram。
 >
@@ -561,6 +561,80 @@ SyntaxError: Invalid or unexpected token
 #### 修正
 
 `src/web/ui.js:126` 的兩處 `'\n'` 改為 `'\\n'`。
+
+---
+
+### D-6 匯入移機檔後服務永久無法啟動（**最嚴重**）
+
+匯入功能完全失效，且失敗後**應用程式無法再啟動** —— 使用者點了「匯入／移機」之後，程式就此打不開，且畫面上沒有任何錯誤訊息。
+
+#### 機制（已由獨立實驗證實為必然，非競態）
+
+匯入是兩階段設計：`bin/import.js` 只驗證移機檔並寫入 `runtime\pending-import.beyblade-transfer`，真正的還原在**服務啟動時**由 `src/app.js:47` 的 `applyPendingTransfer()` 執行。
+
+但 `bin/service.js` 的啟動順序是：
+
+```js
+async function main() {
+  writeFileSync(PID_FILE, String(process.pid));   // 158：先寫入「自己的」PID
+  ...
+    app = createApp();                            // 163：createApp → applyPendingTransfer
+```
+
+`applyPendingTransfer` 呼叫 `restoreBackup(..., { pidFile })`，其守門邏輯（`src/maintenance/backup.js:96-100`）為：
+
+```js
+const pid = Number(readFileSync(candidate, 'utf8').trim());
+if (isProcessAlive(pid)) throw new Error(`Tracker 仍在執行中 (PID=${pid})，請先停止服務再還原。`);
+```
+
+於是服務讀到**自己剛寫入的 PID**、判定「仍在執行中」，拋錯後結束。
+
+#### 實驗證據
+
+以隔離的 `BEYBLADE_USER_ROOT`、非預設 port、且無任何其他實例執行的環境重現：
+
+```
+服務 PID : 7116
+[error] service failed to start: Tracker 仍在執行中 (PID=7116)，請先停止服務再還原。
+pending 檔是否仍在 : True
+資料庫是否建立     : False
+```
+
+錯誤中的 PID 與服務自身 PID **完全相同**，證實為自我阻擋。
+
+實機側亦留下相同紀錄（Test_Darren，2026-08-05）：
+
+```
+14:28:08.630 [info]  service shutting down: stop.request
+14:28:11.599 [error] service failed to start: Tracker 仍在執行中 (PID=3268)，請先停止服務再還原。
+```
+
+#### 影響
+
+1. **移機／匯入功能完全無法使用** —— 這是 Phase 7 的主打功能，INSTALL.md 與 README 皆有記載。
+2. **失敗後應用程式形同磚化**：`pending-import` 檔不會被消耗，因此**之後每一次啟動都會重複失敗**，包括登入自動啟動與捷徑。使用者必須手動刪除該檔才能恢復，但無從得知。
+3. 疊加 **D-4**：整個過程由隱藏的 launcher 執行，使用者看不到任何錯誤，只知道「點了匯入之後程式就打不開了」。
+
+#### 為什麼自動化測試沒抓到
+
+`test/phase7.test.js:60` 的呼叫是：
+
+```js
+const applied = applyPendingTransfer(incomingConfig);   // 未傳入 { pidFile }
+```
+
+而正式路徑 `src/app.js:47` 傳的是 `{ pidFile: initialPaths.pidFile }`。守門迴圈 `[pidFile, ...pidFiles].filter(Boolean)` 在測試中為空陣列，**該檢查從未被執行**。測試與正式環境使用不同參數，因此測試通過而實際功能損壞。
+
+#### 修正方向
+
+`restoreBackup` 的守門應忽略呼叫端自身的行程，例如在比對時排除 `process.pid`；或由 `applyPendingTransfer` 明確傳入可忽略的 PID。**測試須以與 `app.js` 相同的參數呼叫**，否則同類問題會再次漏測。
+
+亦建議在還原失敗時將 `pending-import` 檔移置一旁（例如改名為 `.failed`），避免應用程式陷入永久無法啟動的狀態。
+
+#### 現場恢復方式
+
+刪除 `%LOCALAPPDATA%\BeybladeTracker\runtime\pending-import.beyblade-transfer` 後即可正常啟動。
 
 ---
 

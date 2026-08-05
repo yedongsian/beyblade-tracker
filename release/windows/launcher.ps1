@@ -5,8 +5,8 @@
 $ErrorActionPreference = 'Stop'
 # Actions callable by the installer, uninstaller, startup automation and tests: never GUI, always bounded.
 $nonInteractiveActions = @('start','restart','stop','status')
-# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 15s) plus overhead.
-$controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' = 20 }
+# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 60s) plus overhead.
+$controlTimeoutSeconds = @{ 'start' = 90; 'restart' = 130; 'stop' = 45; 'status' = 20 }
 
 function Throw-LauncherError([string]$Code) {
   $launcherError = New-Object System.Exception($Code)
@@ -221,7 +221,10 @@ function Run-Control([string]$command) {
 }
 
 function Wait-ForManagementPage {
-  $deadline = [DateTime]::UtcNow.AddSeconds(15)
+  # Run-Control has already waited for the service to report ready, so this is only
+  # the margin between that and the web port accepting requests. Kept well above the
+  # observed gap so a slow first start cannot surface as a spurious BT-LCH-004.
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
   while ([DateTime]::UtcNow -lt $deadline) {
     try { if ((Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8787/health' -TimeoutSec 2).StatusCode -eq 200) { return } }
     catch { Start-Sleep -Milliseconds 500 }

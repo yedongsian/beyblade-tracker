@@ -1,7 +1,11 @@
 import { canAttemptGracefulStop, canForceTerminate, classifyServiceProcess } from './service-process.js';
 
 export const STOP_TIMEOUT_MS = 35_000;
-export const START_TIMEOUT_MS = 15_000;
+// A first start does real work before the service reports ready: schema migrations,
+// an automatic backup, and applying any pending transfer. Measured on Windows it took
+// 18s after install and 37.5s at logon, so the previous 15s budget reported failure
+// for startups that were actually succeeding.
+export const START_TIMEOUT_MS = 60_000;
 const STOP_POLL_MS = 500;
 const START_POLL_MS = 300;
 

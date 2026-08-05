@@ -26,6 +26,7 @@
     "test:release:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-e2e.ps1",
     "test:release:windows:stopfail": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-e2e.ps1 -StopFailureMode",
     "test:release:windows:missing-launcher": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-e2e.ps1 -MissingLauncherMode",
+    "test:release:launcher-errors": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-launcher-errors.ps1",
     "config:check": "node --no-warnings bin/config-check.js",
     "dev": "node --no-warnings bin/worker.js --dev",
     "health": "node --no-warnings bin/health-check.js",

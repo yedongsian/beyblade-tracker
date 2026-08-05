@@ -152,9 +152,31 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 - 每個失敗路徑顯示 native dialog，含固定 `BT-LCH-*` 代碼、繁中復原指引、「複製錯誤資訊」與「問題回報」
 - 複製內容**只含**代碼、App version、UTC 與 safe support reference；**不得**含完整路徑、stack、Token、Webhook 或 URL
 
+#### A-6a 非互動路徑（已自動化）
+
+新增 `scripts/phase7-launcher-errors.ps1`（`npm run test:release:launcher-errors`）。它在隔離安裝目錄逐一注入故障，以 `-NonInteractive` 呼叫 launcher，斷言 exit code 為 1、stderr **恰好等於**預期代碼、stdout 無輸出，且 stderr 不含安裝路徑、使用者目錄、`.ps1`／`.js`、stack 字樣或 URL。
+
+| 案例 | 注入 | 預期 | 判定 |
+| --- | --- | --- | --- |
+| A | 刪除 `current.json` | `BT-LCH-001` | **PASS** |
+| B | 刪除 `runtime\node.exe` | `BT-LCH-002` | **PASS** |
+| C | `service-control.js` stub 回傳 1 | `BT-LCH-003` | **PASS** |
+| D | stub 回傳 0 但不啟動服務（health timeout） | `BT-LCH-004` | **PASS** |
+| E | `-NonInteractive` + `export` | `BT-LCH-006` | **PASS** |
+
+2026-08-05 實測：**5 PASS / 0 FAIL / 0 SKIPPED**，35.9 秒，無殘留目錄或行程。
+
+案例 D 需要 port 8787 淨空（`Wait-ForManagementPage` 硬編碼該位址，無法改 port）；腳本會偵測監聽者並標記 `SKIPPED` 而非誤判為通過。首次執行即因 Test_Darren 的服務占用而正確跳過，停止該服務後重跑始得 PASS。
+
+#### A-6b 互動對話框路徑（人工目視，尚未執行）
+
+自動化只涵蓋 `-NonInteractive`（僅寫 stderr、不開對話框）。RUNBOOK 要求的 native dialog、繁中復原指引、「複製錯誤資訊」與「問題回報」按鈕，須以 `C:\Users\Public\BeybladeTracker-Acceptance\a6-dialog.ps1` 人工驗證。該腳本刻意以 `wscript.exe launcher.vbs`（隱藏視窗、互動模式）啟動，即開始功能表捷徑的真實路徑，用以確認從隱藏行程彈出的對話框確實可見且可操作。
+
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **A-6a：PASS**<br>**A-6b：待執行** | 見上表。 |
+
+> 已知預期現象：`BT-LCH-001` 情境下 `current.json` 無法讀取，故 launcher 的 `$appVersion` 為 `unknown`，複製內容中的 App version 會顯示 `unknown`。屬設計行為，但支援端因此拿不到版本號，值得後續評估。
 
 > 建置端已確認 `release/windows/launcher.ps1` 開頭為 `EF BB BF`（UTF-8 with BOM），亂碼風險已預先排除。
 

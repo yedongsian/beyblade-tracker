@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import {
-  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { DatabaseSync } from 'node:sqlite';
 import { Database } from '../src/db/database.js';
@@ -63,6 +63,76 @@ test('transfer bundle verifies hashes, excludes credentials, and restores databa
   assert.equal(restored.get("SELECT COUNT(*) count FROM sources WHERE key='transfer-source'").count, 1);
   restored.close();
   assert.equal(existsSync(incomingConfig.pendingImportFile), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+// The service publishes its own PID before createApp applies a pending transfer,
+// so the restore guard must not treat the caller as a competing instance. Calling
+// this without { pidFile } skips the guard entirely and hides the failure.
+test('pending transfer applies while the calling service already owns the PID file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-transfer-self-'));
+  const original = join(root, 'old', 'tracker.db');
+  const sources = join(root, 'old', 'sources.json');
+  mkdirSync(join(root, 'old'), { recursive: true });
+  const db = new Database(original);
+  upsertSource(db, { key: 'self-pid-source', connector: 'fixture' });
+  db.close();
+  writeFileSync(sources, JSON.stringify({ sources: [] }));
+  const bundle = createTransferBundle({ dbPath: original, sourcesPath: sources, exportDir: join(root, 'exports') });
+
+  const incomingRoot = join(root, 'new');
+  const pidFile = join(incomingRoot, 'runtime', 'tracker.pid');
+  const incomingConfig = {
+    dbPath: join(incomingRoot, 'data', 'tracker.db'),
+    sourcesPath: join(incomingRoot, 'config', 'sources.json'),
+    userSourcesPath: join(incomingRoot, 'config', 'sources.json'),
+    pendingImportFile: join(incomingRoot, 'runtime', 'pending.beyblade-transfer'),
+  };
+  stageTransferImport(bundle, incomingConfig);
+  // Exactly what bin/service.js does before createApp runs.
+  mkdirSync(dirname(pidFile), { recursive: true });
+  writeFileSync(pidFile, String(process.pid));
+
+  const applied = applyPendingTransfer(incomingConfig, { pidFile });
+  assert.equal(applied.integrity, 'ok');
+  const restored = new Database(incomingConfig.dbPath);
+  assert.equal(restored.get("SELECT COUNT(*) count FROM sources WHERE key='self-pid-source'").count, 1);
+  restored.close();
+  assert.equal(existsSync(incomingConfig.pendingImportFile), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+// A pending file that survives a failure would be retried on every launch, leaving
+// the service permanently unable to start.
+test('a failed pending transfer is moved aside so the next start can proceed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'beyblade-transfer-failed-'));
+  const incomingConfig = {
+    dbPath: join(root, 'data', 'tracker.db'),
+    sourcesPath: join(root, 'config', 'sources.json'),
+    userSourcesPath: join(root, 'config', 'sources.json'),
+    pendingImportFile: join(root, 'runtime', 'pending.beyblade-transfer'),
+  };
+  const foreignPidFile = join(root, 'runtime', 'other.pid');
+  mkdirSync(join(root, 'runtime'), { recursive: true });
+
+  const original = join(root, 'old', 'tracker.db');
+  mkdirSync(join(root, 'old'), { recursive: true });
+  const db = new Database(original);
+  upsertSource(db, { key: 'failed-source', connector: 'fixture' });
+  db.close();
+  writeFileSync(join(root, 'old', 'sources.json'), JSON.stringify({ sources: [] }));
+  const bundle = createTransferBundle({
+    dbPath: original, sourcesPath: join(root, 'old', 'sources.json'), exportDir: join(root, 'exports'),
+  });
+  stageTransferImport(bundle, incomingConfig);
+
+  // A different live process holds the database, so the restore must be refused.
+  writeFileSync(foreignPidFile, String(process.ppid));
+  assert.throws(() => applyPendingTransfer(incomingConfig, { pidFile: foreignPidFile }), /仍在執行中/);
+
+  assert.equal(existsSync(incomingConfig.pendingImportFile), false, 'pending file must not survive a failure');
+  const movedAside = readdirSync(join(root, 'runtime')).filter((name) => name.includes('.failed-'));
+  assert.equal(movedAside.length, 1, 'failed import should be kept aside for diagnosis');
   rmSync(root, { recursive: true, force: true });
 });
 

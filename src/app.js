@@ -44,7 +44,15 @@ export function createApp(overrides = {}) {
   }
   const secretStore = providedSecretStore || createSecretStore(config.secretFile);
   applyNotificationSecrets(config, secretStore);
-  config.appliedTransfer = applyPendingTransfer(config, { pidFile: initialPaths.pidFile });
+  // A failed import must not stop the service from starting: the pending file has
+  // already been moved aside, so surface the failure and continue with existing data.
+  try {
+    config.appliedTransfer = applyPendingTransfer(config, { pidFile: initialPaths.pidFile });
+  } catch (err) {
+    config.appliedTransfer = null;
+    config.failedTransfer = { message: err.message, movedTo: err.pendingImportMovedTo || null };
+    logger.error(`移機匯入失敗，已略過並保留現有資料：${err.message}`);
+  }
   const db = openDatabase(config.dbPath);
   registerDefaultOfficialSources(db);
   registerDefaultCommunitySources(db);

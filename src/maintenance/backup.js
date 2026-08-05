@@ -87,15 +87,20 @@ function isProcessAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-export function restoreBackup(sourcePath, destinationPath, { pidFile, pidFiles = [] } = {}) {
+export function restoreBackup(sourcePath, destinationPath, { pidFile, pidFiles = [], ignorePid } = {}) {
   if (!existsSync(sourcePath)) throw new Error(`找不到備份檔：${sourcePath}`);
   verifyDatabase(sourcePath);
   mkdirSync(dirname(destinationPath), { recursive: true });
 
+  // The guard protects against overwriting a database another process is using.
+  // `ignorePid` lets a caller declare that it is itself the owner recorded in the
+  // PID file: the service publishes its PID before applying a pending transfer, so
+  // without this it would read its own PID and refuse to start while one is queued.
   const allPidFiles = [pidFile, ...pidFiles].filter(Boolean);
   for (const candidate of allPidFiles) {
     if (!existsSync(candidate)) continue;
     const pid = Number(readFileSync(candidate, 'utf8').trim());
+    if (Number.isInteger(ignorePid) && pid === ignorePid) continue;
     if (isProcessAlive(pid)) throw new Error(`Tracker 仍在執行中 (PID=${pid})，請先停止服務再還原。`);
   }
 

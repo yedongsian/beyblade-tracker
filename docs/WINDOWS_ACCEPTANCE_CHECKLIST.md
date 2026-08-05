@@ -21,6 +21,27 @@ SHA-256：**`cf2187c616e3c1f11290dc31bd2b76e15c772493b6aea2140dbd15903a89b146`**
 
 修正端驗證：單元測試 223/223（新增 4 項回歸測試，每項均經「還原缺陷後測試必須失敗」確認）；四項 release E2E 全數通過（normal、stopfail、missing-launcher、launcher-errors 5/5）；無殘留目錄或行程。
 
+### 第二輪待辦（尚未完成，勿遺漏）
+
+| # | 待辦 | 原因 |
+| --- | --- | --- |
+| 1 | **D-7 修正後需再重建一次並複驗** | `2760845` 調整了啟動逾時鏈，但目前安裝的產物（`cf2187c6…`）**不含**該修正。重建會再次更換 SHA-256。 |
+| 2 | 以最終產物複驗 A-1、A-2、A-3、A-5 | 逾時鏈改變會影響安裝後啟動與登入自動啟動的行為 |
+| 3 | A-9 依新標準重驗 | D-3 改變預設來源，需驗離線 demo fixture 與使用者自行新增的來源 |
+| 4 | A-4b（無 Chrome 分支） | 需路線 2 的乾淨 VM |
+| 5 | 清理 Test_Darren 帳號與共用資料夾 | 驗收結束後 |
+
+> 第二輪已於當前產物完成並確認的項目：D-3、D-4、D-5、D-6 的修正皆已實機驗證，A-7 匯入側 PASS。這些結論不受 D-7 重建影響（D-7 只調整逾時常數，不改動上述任一機制），但仍應於最終產物上抽驗確認。
+
+### 第二輪已驗證的修正
+
+| 缺陷 | 實機證據 |
+| --- | --- |
+| **D-3** | 安裝後 payload 的 `config\` 僅含 `sources.example.json`，`fixtures\beyblade-x.json` 已打包 |
+| **D-4** | 經真實隱藏 launcher 路徑，`BT-LCH-003` 對話框正常顯示，含代碼、繁中復原指引、App version、Support reference 與四個按鈕 |
+| **D-5** | 部署後逐頁擷取內嵌 script 以 `node --check` 驗證，**12 頁全數通過**（第一輪 `/settings` 為唯一失敗） |
+| **D-6** | `pending-import` 檔已被消耗；`data\tracker-before-restore-20260805-232207Z.db`（532,480 bytes）存在，證明還原確實執行；observations 由 2 變為 **495**（移機檔基準 494 加上重啟後一次掃描） |
+
 ### ⚠ D-3 改變了全新安裝的預設行為
 
 修正後，全新安裝不再內建 yodobashi／shimamura／hlj 三個真實商店，而是落到 `config/sources.example.json`：僅啟用離線的 `demo-fixture`，`example-jsonld` 為停用。

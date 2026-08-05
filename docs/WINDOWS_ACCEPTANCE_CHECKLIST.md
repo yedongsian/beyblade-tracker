@@ -251,7 +251,7 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **PASS** | 2026-08-05 重新安裝後，由「設定 → 應用程式」解除安裝並於資料提示選「否」。<br><br>刪除前使用者資料含 9 個檔案（2 份自動備份、`sources.json`、`tracker.db` 933,888 bytes 及 WAL／SHM、`tracker.log`、`tracker-status.json`、`tracker.pid`）。<br><br>刪除後：安裝目錄、開始功能表捷徑、`Run` 機碼、解除安裝登錄項目**全部移除**，`%LOCALAPPDATA%\BeybladeTracker` **整個目錄消失**，8787 停止監聽。<br><br>**`installer.iss` 的 `DelTree` 分支至此首次獲得實測驗證。** 執行前已將使用者資料完整備份至 `a11-safety-copy`（9 個檔案）以防意外，驗收判定不依賴該備份。 |
 
 ---
 

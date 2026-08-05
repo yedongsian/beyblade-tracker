@@ -569,6 +569,34 @@ test('Settings update polling presents checking as an indeterminate active phase
   assert.match(english, /Checking update information and the signed manifest/);
 });
 
+// A syntax error in the emitted inline script leaves every handler on the page
+// unattached while the server still returns correct HTML, so assertions on markup
+// and API behaviour all keep passing. Parse what the browser actually receives.
+test('every page emits an inline script the browser can parse', async () => {
+  const paths = [
+    '/', '/products', '/offers', '/events', '/catalog', '/watchlist',
+    '/community', '/review', '/exclusions', '/sources', '/settings', '/privacy',
+  ];
+  await withServer(async ({ base }) => {
+    for (const path of paths) {
+      const html = await (await fetch(`${base}${path}`)).text();
+      const inline = html.match(/<script nonce="[^"]*">([\s\S]*?)<\/script>/);
+      assert.ok(inline, `${path} should carry a nonced inline script`);
+      // new Function compiles without executing, so this validates syntax without a DOM.
+      assert.doesNotThrow(() => new Function(inline[1]), `${path} inline script must parse`);
+    }
+  });
+});
+
+test('settingsScript parses in every locale', () => {
+  for (const locale of ['zh-TW', 'en', 'ja']) {
+    assert.doesNotThrow(
+      () => new Function(settingsScript(createTranslator(locale))),
+      `${locale} settingsScript must parse`,
+    );
+  }
+});
+
 test('manual identity, exclusion review, and network controls are available through the local UI', async () => {
   await withServer(async ({ db, base }) => {
     const sourceA = upsertSource(db, { key: 'manual-a', name: 'Manual A', connector: 'fixture' });

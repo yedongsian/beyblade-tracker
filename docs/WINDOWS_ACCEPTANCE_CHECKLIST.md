@@ -210,7 +210,11 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-|  |  |
+| **BLOCKED** | 2026-08-05 嘗試執行，因 **D-5** 無法進行：設定頁 JavaScript 語法錯誤導致整頁事件處理器未掛載，按「安全儲存並測試」不會送出任何請求，`secrets.json` 未建立。<br><br>已排除的原因：DPAPI 本身正常（以安裝包內的 `SecretStore` 用假值實測，667 ms 寫入密文並正確回讀，`provider=windows-dpapi-current-user`）；`config` 目錄可寫；`network.enabled=true`。<br><br>**須待 D-5 修正後重測。** |
+
+> **已知測試落差**：`test/phase7.test.js:28` 以注入的 `protect`／`unprotect` 假函式建立 `SecretStore`，因此**真實 Windows DPAPI 路徑從未被任何自動化測試執行過**。本項是唯一能驗證該路徑的機會，亦是 PRIVACY.md 對 DPAPI 宣稱的唯一實證來源。
+>
+> 本輪雖未能經由 UI 完成，但步驟 2 的直接實測已證明 `SecretStore` 的真實 DPAPI 加解密可用。仍待驗證者為：UI 儲存流程、設定頁不回傳明文、以及跨帳號解密應失敗。
 
 ### A-9 實際網路抓取
 
@@ -497,6 +501,64 @@ A-7 匯出側證實「匯出／移機」捷徑**可正常運作** —— 同樣�
 實驗顯示對 `Beyblade Tracker` 視窗呼叫 `ShowWindow(hwnd, SW_SHOW)` 即可讓它現身，因此修法只需確保該表單以正常狀態顯示，例如在 `Show-LauncherError` 中於表單 `Shown` 事件呼叫 `ShowWindow(SW_SHOW)`、或搭配 `TopMost` 與 `Activate()`。**不應**改動 `launcher.vbs` 的 `shell.Run ... 0` —— 隱藏 PowerShell 主控台本身是正確設計，不該為此讓黑窗在每次啟動時閃現。
 
 修好後應補上互動路徑的自動化涵蓋，避免再次回歸。
+
+---
+
+### D-5 設定頁的 JavaScript 語法錯誤，整頁互動功能失效（**最高優先**）
+
+`/settings` 的內嵌 script 有語法錯誤，瀏覽器**完全不執行該段程式**，因此頁面上所有事件處理器都沒有掛上。使用者按任何按鈕都不會有反應，也不會送出任何請求。
+
+#### 根因
+
+`src/web/ui.js:126`（位於 `settingsScript()` 自第 112 行起的**模板字面值**內）：
+
+```js
+...message(deferred?'updateDeferred':'updateAvailable',{version:availableUpdate.version})+'\n'+availableUpdate.publisher+...
+```
+
+`'\n'` 在模板字面值中會被**外層 JavaScript**求值為真實換行字元，於是輸出到瀏覽器的程式碼變成單引號字串內含實際換行 —— 未閉合的字串字面值：
+
+```
+SyntaxError: Invalid or unexpected token
+```
+
+同一檔案的第 99 行（4 處）與第 101 行（1 處）都正確使用了 `\\n`，**只有第 126 行的 2 處寫成單反斜線**。
+
+#### 影響範圍（已逐頁實測）
+
+擷取每頁的內嵌 script 以 `node --check` 驗證，12 頁中僅 `/settings` 失敗：
+
+| 正常 | `/`、`/products`、`/offers`、`/events`、`/catalog`、`/watchlist`、`/community`、`/review`、`/exclusions`、`/sources`、`/privacy` |
+| --- | --- |
+| **失效** | **`/settings`** |
+
+設定頁上失效的功能包含：
+
+- Telegram 憑證的**儲存／傳送測試／清除**（直接使 A-8 無法進行）
+- 版本更新的**檢查／套用／延後／回滾**（連帶影響 B 段的線上更新驗收）
+- 設定頁上的**匯出／匯入移機檔**按鈕
+- 隱私與診斷設定的儲存
+
+開始功能表的「匯出／移機」「匯入／移機」捷徑**不受影響**，因為它們不經過網頁（A-7 匯出側因此仍通過）。
+
+#### 診斷經過
+
+1. 使用者回報輸入 Token 後「沒有紀錄」，且 `secrets.json` 未建立。
+2. 排除 DPAPI：以安裝包內的 `SecretStore` 用假值實測，667 ms 成功寫入密文並正確回讀。
+3. 排除權限與網路：`config` 目錄可寫，`network.enabled=true`。
+4. `tracker.log` 在該時段**無任何** `web request failed` 紀錄，而伺服器對所有錯誤都會記錄 —— 代表請求從未送達。
+5. 於瀏覽器重新載入設定頁，主控台出現 `Uncaught SyntaxError: Invalid or unexpected token`。
+6. 擷取內嵌 script 以 `node --check` 取得確切位置，回溯至 `ui.js:126`。
+
+#### 為什麼自動化測試沒抓到
+
+219 項測試全數通過，其中包含「Phase 7 settings UI stores privacy choices and never returns Telegram plaintext」等設定頁測試 —— 但這些測試驗的是**伺服器端行為與 HTML 內容**，從未把產生出來的內嵌 JavaScript 拿去做語法檢查。
+
+**建議補上的測試**：對每個頁面擷取 `<script nonce>` 內容並以 `new Function(src)` 或 `node --check` 驗證可解析。這類錯誤只要一行測試即可永久防堵。
+
+#### 修正
+
+`src/web/ui.js:126` 的兩處 `'\n'` 改為 `'\\n'`。
 
 ---
 

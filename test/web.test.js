@@ -81,12 +81,16 @@ test('Phase 7 settings UI stores privacy choices and never returns Telegram plai
 
 test('Operations page and API expose only local safe metrics and both parser rates', async () => {
   await withServer(async ({ db, base }) => {
+    // The HTTP route reads the real clock and only counts events inside
+    // OPERATION_METRICS_WINDOW_MS (7 days), so a fixed date silently stops being measured once it
+    // ages out — these rows must be anchored to now, not to the day the test was written.
+    const recently = new Date().toISOString();
     db.run(`INSERT INTO operation_events
       (correlation_id,component,operation,source_key,status,duration_ms,error_class,created_at)
-      VALUES ('corr','source','monitor','fixture','failed',12,'timeout','2026-07-30T00:00:00.000Z')`);
+      VALUES ('corr','source','monitor','fixture','failed',12,'timeout','${recently}')`);
     db.run(`INSERT INTO operation_events
       (correlation_id,component,operation,status,valid_count,page_count,page_failed_count,created_at)
-      VALUES ('parser','parser','extract','success',1,100,99,'2026-07-30T00:00:00.000Z')`);
+      VALUES ('parser','parser','extract','success',1,100,99,'${recently}')`);
     const page = await (await fetch(`${base}/operations`)).text();
     assert.match(page, /運維狀態/);
     const metrics = await (await fetch(`${base}/api/operations`)).json();

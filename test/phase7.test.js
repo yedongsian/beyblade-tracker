@@ -332,6 +332,44 @@ test('non-interactive launcher callers get a bounded exit code instead of a dial
   assert.match(vbs, /-NonInteractive/);
 });
 
+// D-4 shipped because every automated check ran with -NonInteractive, which writes a code to stderr
+// and never builds a window. The interactive path — the one every shortcut actually uses — had no
+// coverage at all, so an invisible, permanently blocking dialog passed the whole suite.
+test('launcher error verification covers the interactive dialog the shortcuts actually use', () => {
+  const script = readFileSync(new URL('../scripts/phase7-launcher-errors.ps1', import.meta.url), 'utf8');
+  assert.match(script, /function Invoke-LchDialogCase/);
+  assert.match(script, /Invoke-LchDialogCase 'F' '互動對話框可見性' 'start' 'BT-LCH-001'/);
+  // wscript.exe is what makes the host hidden; driving powershell.exe directly cannot reproduce D-4.
+  assert.match(script, /Start-Process -FilePath 'wscript\.exe'/);
+  assert.doesNotMatch(script, /Invoke-LchDialogCase[\s\S]*?-NonInteractive/);
+  // EnumWindows sees hidden windows; MainWindowHandle does not, which is why D-4 read as "no dialog".
+  assert.match(script, /EnumWindows/);
+  assert.match(script, /IsWindowVisible/);
+  assert.match(script, /BeybladeLchWindows\]::Visible\(\$window\)\) \{ \$failures \+= '對話框視窗存在但不可見/);
+  assert.match(script, /永久阻塞回歸/);
+  assert.match(script, /\[switch\]\$SkipDialogCase/);
+  assert.match(script, /\[Environment\]::UserInteractive/);
+
+  const launcher = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url)).subarray(3).toString('utf8');
+  assert.match(launcher, /\$form\.Add_Shown\(\{/);
+  assert.match(launcher, /ShowWindow\(\$form\.Handle, 1\)/);
+});
+
+// D-7: the launcher reported BT-LCH-003 for starts that succeeded, because the wait budget was the
+// verdict. Expiring the budget must only end the wait; the failure decision needs real evidence.
+test('a start that outlives its wait budget is confirmed against the service before failing', () => {
+  const serviceControl = readFileSync(new URL('../scripts/service-control.js', import.meta.url), 'utf8');
+  assert.match(serviceControl, /async function probeHealth/);
+  assert.match(serviceControl, /probeHealth,/);
+  assert.match(serviceControl, /result\.outcome === 'still-starting'/);
+  assert.match(serviceControl, /Tracker 仍在啟動中/);
+
+  const lifecycle = readFileSync(new URL('../src/release/service-lifecycle.js', import.meta.url), 'utf8');
+  assert.match(lifecycle, /export async function confirmStartOutcome/);
+  assert.match(lifecycle, /return confirmStartOutcome\(deps, childPid\);/);
+  assert.doesNotMatch(lifecycle, /\}\s*\r?\n\s*return \{ ok: false, outcome: 'timeout', pid: childPid \};/);
+});
+
 test('stable launcher guard blocks a rollback into a legacy service-control without a guard', { skip: process.platform !== 'win32' }, () => {
   const root = mkdtempSync(join(tmpdir(), 'beyblade-legacy-rollback-'));
   const installRoot = join(root, 'program');

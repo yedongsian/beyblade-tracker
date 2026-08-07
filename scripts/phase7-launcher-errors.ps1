@@ -1,4 +1,7 @@
-﻿param()
+﻿param(
+  # Case F opens a real dialog on the desktop, so it needs an interactive window station.
+  [switch]$SkipDialogCase
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -128,6 +131,143 @@ function Invoke-LchCase([string]$Id, [string]$Name, [string]$Action, [string]$Ex
   }
 }
 
+# D-4 regression harness. launcher.vbs starts PowerShell with shell.Run(cmd, 0, False), so the
+# process carries SW_HIDE and the first WinForms top-level window inherited it: the error dialog
+# existed but was invisible and ShowDialog blocked on it forever. Process.MainWindowHandle only
+# reports visible windows, which is why that failure looked like "no dialog at all". These
+# enumerate every top-level window of the process, visible or not, so the invisible case is
+# distinguishable from the missing case.
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class BeybladeLchWindows {
+  private delegate bool EnumProc(IntPtr window, IntPtr state);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr state);
+  [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr state);
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextW(IntPtr window, StringBuilder text, int count);
+  [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+
+  public static string Text(IntPtr window) {
+    StringBuilder text = new StringBuilder(1024);
+    GetWindowTextW(window, text, text.Capacity);
+    return text.ToString();
+  }
+
+  public static IntPtr[] TopLevel(uint processId) {
+    List<IntPtr> found = new List<IntPtr>();
+    EnumWindows(delegate(IntPtr window, IntPtr state) {
+      uint owner;
+      GetWindowThreadProcessId(window, out owner);
+      if (owner == processId) { found.Add(window); }
+      return true;
+    }, IntPtr.Zero);
+    return found.ToArray();
+  }
+
+  public static string[] ChildText(IntPtr parent) {
+    List<string> found = new List<string>();
+    EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
+      found.Add(Text(window));
+      return true;
+    }, IntPtr.Zero);
+    return found.ToArray();
+  }
+
+  public static bool Visible(IntPtr window) { return IsWindowVisible(window); }
+
+  public static void Close(IntPtr window) { PostMessageW(window, 0x0010, IntPtr.Zero, IntPtr.Zero); }
+}
+'@ -ErrorAction Stop
+
+function Find-LchLauncherProcessId([int[]]$Exclude, [int]$TimeoutSeconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $candidates = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and $_.CommandLine.Contains($launcherPath) -and $Exclude -notcontains $_.ProcessId })
+    if ($candidates.Count) { return [int]$candidates[0].ProcessId }
+    Start-Sleep -Milliseconds 250
+  }
+  return 0
+}
+
+# The form carries its title from the moment it is created, well before Shown fires and its controls
+# are realized, so matching on the title alone races the dialog and reports a hidden, empty window.
+# Wait for the state the user would actually see, and on timeout hand back whatever was found so the
+# caller can tell "never appeared" apart from D-4's "appeared but stayed invisible".
+function Wait-LchDialogWindow([int]$ProcessId, [string]$Title, [int]$TimeoutSeconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $lastMatch = [IntPtr]::Zero
+  while ([DateTime]::UtcNow -lt $deadline) {
+    foreach ($window in [BeybladeLchWindows]::TopLevel([uint32]$ProcessId)) {
+      if ([BeybladeLchWindows]::Text($window) -ne $Title) { continue }
+      $lastMatch = $window
+      if ([BeybladeLchWindows]::Visible($window) -and @([BeybladeLchWindows]::ChildText($window)).Count -gt 0) {
+        return $window
+      }
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  return $lastMatch
+}
+
+# The real Start-menu path: wscript hides the console host, and the launcher runs in interactive
+# mode so a failure must raise a visible, operable dialog rather than only writing to stderr.
+function Invoke-LchDialogCase([string]$Id, [string]$Name, [string]$Action, [string]$Expected, [int]$TimeoutSeconds = 45) {
+  $vbsPath = Join-Path $installRoot 'launcher.vbs'
+  $launcherPid = 0
+  try {
+    $existing = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and $_.CommandLine.Contains($launcherPath) } | ForEach-Object { [int]$_.ProcessId })
+    Start-Process -FilePath 'wscript.exe' -ArgumentList @("`"$vbsPath`"", $Action) -WindowStyle Hidden | Out-Null
+
+    $launcherPid = Find-LchLauncherProcessId $existing 20
+    if ($launcherPid -eq 0) { return New-LchResult $Id $Name $Expected 'FAIL' '' 'wscript 未啟動任何 launcher PowerShell 程序。' }
+
+    $window = Wait-LchDialogWindow $launcherPid 'Beyblade Tracker' $TimeoutSeconds
+    if ($window -eq [IntPtr]::Zero) {
+      return New-LchResult $Id $Name $Expected 'FAIL' '(無視窗)' "$TimeoutSeconds 秒內未建立任何標題為 Beyblade Tracker 的頂層視窗。"
+    }
+
+    $failures = @()
+    # The D-4 assertion: the window existed before the fix too, hidden and blocking forever.
+    if (-not [BeybladeLchWindows]::Visible($window)) { $failures += '對話框視窗存在但不可見（D-4 回歸）' }
+    $texts = @([BeybladeLchWindows]::ChildText($window))
+    $body = ($texts -join "`n")
+    if ($body.IndexOf($Expected, [StringComparison]::OrdinalIgnoreCase) -lt 0) { $failures += "對話框未顯示錯誤代碼 $Expected" }
+    foreach ($button in @('複製錯誤資訊', '問題回報', '關閉')) {
+      if ($texts -notcontains $button) { $failures += "對話框缺少「$button」按鈕" }
+    }
+    foreach ($forbidden in @($installRoot, $userRoot, '.ps1', '.js', 'http://', 'https://', 'StackTrace')) {
+      if ($body.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        $failures += "對話框顯示了不安全字樣：$forbidden"
+      }
+    }
+
+    [BeybladeLchWindows]::Close($window)
+    $closed = $false
+    $closeDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    while ([DateTime]::UtcNow -lt $closeDeadline) {
+      if (-not (Get-Process -Id $launcherPid -ErrorAction SilentlyContinue)) { $closed = $true; break }
+      Start-Sleep -Milliseconds 250
+    }
+    # Before the fix the hidden ShowDialog could never be dismissed, so the process leaked forever.
+    if (-not $closed) { $failures += '關閉對話框後 launcher 程序未結束（永久阻塞回歸）' }
+
+    $actual = "visible=$([BeybladeLchWindows]::Visible($window)) buttons=$($texts.Count)"
+    if ($failures.Count) { return New-LchResult $Id $Name $Expected 'FAIL' $actual ($failures -join '；') }
+    return New-LchResult $Id $Name $Expected 'PASS' "visible=True closed=True code=$Expected"
+  } catch {
+    return New-LchResult $Id $Name $Expected 'FAIL' '' "執行互動 launcher 時發生例外：$($_.Exception.Message)"
+  } finally {
+    if ($launcherPid -gt 0) { Stop-Process -Id $launcherPid -Force -ErrorAction SilentlyContinue }
+  }
+}
+
 function Stop-LchProcesses {
   $candidates = Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
     $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains($runId) -and $_.CommandLine.Contains($installRoot)
@@ -191,6 +331,17 @@ try {
 
   Restore-LchInjection
   $results += Invoke-LchCase 'E' '非互動模式不支援的動作' 'export' 'BT-LCH-006'
+  Write-LchResult $results[-1]
+
+  Restore-LchInjection
+  if ($SkipDialogCase) {
+    $results += New-LchResult 'F' '互動對話框可見性' 'BT-LCH-001' 'SKIPPED' 'SKIPPED' '案例 F 已依 -SkipDialogCase 跳過。'
+  } elseif (-not [Environment]::UserInteractive) {
+    $results += New-LchResult 'F' '互動對話框可見性' 'BT-LCH-001' 'SKIPPED' 'SKIPPED' '案例 F 已跳過：目前工作階段沒有互動桌面，無法驗證視窗可見性。'
+  } else {
+    Set-LchMissingFile $currentPath $currentBackupPath
+    $results += Invoke-LchDialogCase 'F' '互動對話框可見性' 'start' 'BT-LCH-001'
+  }
   Write-LchResult $results[-1]
 } catch {
   $primaryError = $_

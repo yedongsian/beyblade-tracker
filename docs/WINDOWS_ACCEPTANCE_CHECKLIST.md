@@ -14,40 +14,73 @@ SHA-256：**`c8959c9bd8563ef92bbe81b31c92463b47faac4131aead0031ca047ca8d13981`**
 
 > 第二輪已驗證的結論（D-3～D-6、A-7 匯入側、A-8）在機制上不受 D-7 影響 —— D-7 只調整逾時常數。但仍應於本產物抽驗確認。
 
-## 修正狀態（2026-08-06）
+## 驗收現況與待辦（最後更新 2026-08-07）
 
-| 缺陷 | 狀態 | 修正 | 影響的驗收項目 |
+### 一、缺陷：7 項發現，5 項真缺陷，**全部已修並實機驗證**
+
+| 缺陷 | 狀態 | 修正 | 實機證據 |
 | --- | --- | --- | --- |
-| D-1 | 非缺陷 | 爬蟲的螢幕外 Chrome，屬設計行為 | — |
-| D-2 | 隨 D-3 消失 | 失效的 shimamura URL 不再隨產物出貨 | A-9 |
-| **D-3** | **已修** | build 排除 `config/sources.json`，改帶 `fixtures/`，並加入三道 build 斷言 | A-1、A-9 |
-| **D-4** | **已修** | `Show-LauncherError` 於 `Shown` 事件強制 `ShowWindow`／`TopMost` | A-6b |
-| **D-5** | **已修** | `ui.js:126` 兩處 `'\n'` → `'\\n'` | A-8 |
-| **D-6** | **已修** | `restoreBackup` 新增 `ignorePid`；匯入失敗時將 pending 檔移置一旁 | A-7 匯入側 |
+| D-1 | **非缺陷** | 爬蟲的螢幕外 Chrome，屬既有設計 | 由 `browser.js` 的 `--window-position=-32000,-32000` 與 A-2 排除 launcher 涉入 |
+| D-2 | **隨 D-3 消失** | 失效的 shimamura URL 不再隨產物出貨 | 四組對照實測確認為商品下架，非程式缺陷 |
+| **D-3** | ✅ 已修並驗證 | build 排除 `config/sources.json`、改帶 `fixtures/`、加入三道 build 斷言 | 安裝後 payload 的 `config\` 僅含 `sources.example.json`；`fixtures\beyblade-x.json` 已打包 |
+| **D-4** | ✅ 已修並驗證 | `Show-LauncherError` 於 `Shown` 事件強制 `ShowWindow`／`TopMost` | 經真實隱藏 launcher 路徑，`BT-LCH-003` 對話框正常顯示，含代碼、繁中指引、App version、Support reference 與四個按鈕 |
+| **D-5** | ✅ 已修並驗證 | `ui.js:126` 兩處 `'\n'` → `'\\n'` | 部署後逐頁 `node --check`，**12 頁全數通過**（第一輪 `/settings` 為唯一失敗） |
+| **D-6** | ✅ 已修並驗證 | `restoreBackup` 新增 `ignorePid`；匯入失敗時將 pending 檔移置一旁 | pending 檔被消耗；`tracker-before-restore-20260805-232207Z.db`（532,480 bytes）存在；observations 2 → **495**（基準 494 ＋ 重啟後一次掃描） |
+| **D-7** | ✅ 已修並驗證 | 逾時鏈：`START_TIMEOUT_MS` 15s→60s、launcher start 90s／restart 130s、管理頁 30s | 第三版產物安裝後 **55.5 秒**就緒且**未出現任何對話框** |
 
-修正端驗證：單元測試 223/223（新增 4 項回歸測試，每項均經「還原缺陷後測試必須失敗」確認）；四項 release E2E 全數通過（normal、stopfail、missing-launcher、launcher-errors 5/5）；無殘留目錄或行程。
+**修正端驗證**：單元測試 **223/223**（新增 4 項回歸測試，每項均經「還原缺陷後測試必須失敗」反向確認）；四項 release E2E 全綠（normal 113s／stopfail 73s／missing-launcher 62s／launcher-errors 5-5 58s）；無 temp 殘留、無殘留行程、8787 淨空。
 
-### 第二輪待辦（尚未完成，勿遺漏）
+> **兩個負向 E2E 仍通過**是關鍵回歸把關：`Assert-E2eNoLauncherDialog` 確認 D-4 的對話框修正未讓靜默模式（安裝器、解除安裝器、自動化）跳出任何視窗。
 
-| # | 待辦 | 原因 |
+### 二、A 段項目現況
+
+| 項目 | 狀態 | 備註 |
 | --- | --- | --- |
-| 1 | ~~D-7 重建與實機驗證~~ **已完成**（`c8959c9b…`，55.5 秒就緒、無對話框） | — |
-| 1b | **後續**：改為以服務真實狀態判定啟動成敗，而非單靠逾時 | 首次啟動耗時 18～55.5 秒，變異近三倍，固定逾時本質脆弱 |
-| 2 | 以最終產物複驗 A-1、A-2、A-3、A-5 | 逾時鏈改變會影響安裝後啟動與登入自動啟動的行為 |
-| 3 | A-9 依新標準重驗 | D-3 改變預設來源，需驗離線 demo fixture 與使用者自行新增的來源 |
-| 4 | A-4b（無 Chrome 分支） | 需路線 2 的乾淨 VM |
-| 5 | 清理 Test_Darren 帳號與共用資料夾 | 驗收結束後 |
+| A-1 安裝（預設路徑、per-user、內建 runtime） | ✅ PASS | 第一輪通過；第三版產物已再次確認安裝結構與 D-3 |
+| A-2 五個開始功能表捷徑 | ✅ PASS | 停止耗時 2.0 秒 |
+| A-3 登入自動啟動 | ✅ PASS | 無視窗；乾淨重測 37.5 秒就緒 |
+| A-4a Chrome 已安裝分支 | ✅ PASS | `available=True name=Google Chrome` |
+| A-4b **無 Chrome 分支** | ⬜ **未測** | **需路線 2 乾淨 VM**（Chrome 為全機器安裝，換帳號無法移除） |
+| A-5 首次啟動導覽 | ✅ PASS | 未完成時重複出現、完成後寫入 |
+| A-6a 錯誤代碼（非互動，已自動化） | ✅ PASS | 5/5，`npm run test:release:launcher-errors` |
+| A-6b 互動對話框 | 🟡 **部分** | 對話框顯示已驗證（D-4）；**尚缺「複製錯誤資訊」的剪貼簿內容安全性檢查** |
+| A-7 匯出側 | ✅ PASS | 內含恰好兩檔、SHA-256 相符、七項安全掃描未命中 |
+| A-7 匯入側 | ✅ PASS | 第一輪 FAIL（D-6），修正後通過 |
+| A-8 Telegram 與 DPAPI | ✅ PASS | 含**跨帳號解密失敗**驗證與對照組；`powershellDpapi()` 真實路徑首次獲得實證 |
+| A-9 實際抓取 | 🟡 **需依新標準重測** | D-3 已改變預設行為，見下 |
+| A-10 解除安裝（保留資料） | ✅ PASS | 筆數與 `integrity_check` 前後一致 |
+| A-11 解除安裝（刪除資料） | ✅ PASS | `DelTree` 分支首次獲得執行驗證 |
 
-> 第二輪已於當前產物完成並確認的項目：D-3、D-4、D-5、D-6 的修正皆已實機驗證，A-7 匯入側 PASS。這些結論不受 D-7 重建影響（D-7 只調整逾時常數，不改動上述任一機制），但仍應於最終產物上抽驗確認。
+### 三、待辦（依建議順序）
 
-### 第二輪已驗證的修正
+| # | 待辦 | 需要什麼 | 備註 |
+| --- | --- | --- | --- |
+| 1 | **A-9 依新標準重驗** | 清空 `%LOCALAPPDATA%\BeybladeTracker` 後重裝 | 驗（a）全新安裝只有離線 `demo-fixture`、（b）fixture 可正常運作、（c）使用者自行新增來源後可抓取。**這是 D-3 使用者可見效果的唯一驗證**，做法：解除安裝選「刪除資料」（順便再驗一次 A-11）後重裝 |
+| 2 | **A-6b 剪貼簿內容檢查** | 數分鐘 | 用 `a6-dialog.ps1`；須確認複製內容**只含**代碼／App version／UTC／Support reference，**不含**路徑、stack、URL、Token |
+| 3 | A-2／A-3／A-5 於第三版產物複驗 | 一輪安裝＋登出登入 | 逾時鏈已改變，屬形式確認 |
+| 4 | A-10／A-11 於第三版產物複驗 | 兩次解除安裝 | 可與第 1 項合併執行 |
+| 5 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.2 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware |
+| 6 | **後續設計改動**：以服務真實狀態判定啟動成敗 | 程式修改 | 見 D-7 的殘留風險：首次啟動 18～55.5 秒，變異近三倍，固定逾時本質脆弱 |
+| 7 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802` |
 
-| 缺陷 | 實機證據 |
+### 四、B 段（公開發佈閘門，仍全數受阻）
+
+| 項目 | 阻擋原因 |
 | --- | --- |
-| **D-3** | 安裝後 payload 的 `config\` 僅含 `sources.example.json`，`fixtures\beyblade-x.json` 已打包 |
-| **D-4** | 經真實隱藏 launcher 路徑，`BT-LCH-003` 對話框正常顯示，含代碼、繁中復原指引、App version、Support reference 與四個按鈕 |
-| **D-5** | 部署後逐頁擷取內嵌 script 以 `node --check` 驗證，**12 頁全數通過**（第一輪 `/settings` 為唯一失敗） |
-| **D-6** | `pending-import` 檔已被消耗；`data\tracker-before-restore-20260805-232207Z.db`（532,480 bytes）存在，證明還原確實執行；observations 由 2 變為 **495**（移機檔基準 494 加上重啟後一次掃描） |
+| 線上更新 | 需 HTTPS 發佈站 **並且**需一個 1.0.1 版本作為更新目標 |
+| Rollback／Migration 升級 | 需先有一次成功的更新 |
+| SmartScreen | 需 Authenticode 憑證 |
+
+Ed25519 manifest 簽章管線已驗證可用（含負向與竄改控制），金鑰在 `C:\Users\yedon\.beyblade-release\`；詳見 [RELEASE_CANDIDATE_1.0.0.md](RELEASE_CANDIDATE_1.0.0.md) 第 8 節。
+
+### 五、環境現況（供日後接續）
+
+| 項目 | 狀態 |
+| --- | --- |
+| 測試帳號 | `Test_Darren`，目前**已安裝**第三版產物；使用者資料含自移機檔還原的三個真實來源與 Telegram 憑證 |
+| 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含第三版安裝器、`verify-installer.ps1`（雜湊已同步）、各項驗收腳本與第一／二輪結果檔 |
+| 分支 | `codex/bt-api-001`，**未 push** |
+| 8787 | 淨空（驗收暫停時已停止服務） |
 
 ### ⚠ D-3 改變了全新安裝的預設行為
 

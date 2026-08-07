@@ -55,6 +55,17 @@ function processIdentity(pid) {
   } catch { return null; }
 }
 
+// Corroborating evidence for confirmStartOutcome only: /health does not identify the process
+// answering it, so it can never be the sole reason to call a start successful.
+async function probeHealth() {
+  const status = readStatus();
+  const base = typeof status?.webUrl === 'string' && status.webUrl ? status.webUrl : 'http://127.0.0.1:8787';
+  try {
+    const response = await fetch(`${base.replace(/\/+$/, '')}/health`, { signal: AbortSignal.timeout(2000) });
+    return response.ok;
+  } catch { return false; }
+}
+
 function clearPid() {
   try { unlinkSync(PID_FILE); } catch { /* absent */ }
 }
@@ -97,6 +108,7 @@ function lifecycleDependencies() {
     readStatus,
     isAlive,
     inspectProcess: processIdentity,
+    probeHealth,
     clearPid,
     clearStopRequest,
     sleep,
@@ -134,7 +146,15 @@ async function start() {
     console.log(`Log：${LOG_FILE}`);
     return true;
   }
-  if (result.outcome === 'timeout') console.error('等待 Tracker 啟動逾時。');
+  if (result.outcome === 'still-starting') {
+    // The wait budget ran out but the service is verifiably alive and still starting, so this is
+    // not a failure. Callers wait for the management page next, which reports the honest outcome.
+    console.log(`Tracker 仍在啟動中 (PID=${result.pid})`);
+    console.log('首次啟動需要完成資料庫升級與自動備份，請稍候再開啟管理頁。');
+    console.log(`Log：${LOG_FILE}`);
+    return true;
+  }
+  if (result.outcome === 'timeout') console.error('等待 Tracker 啟動逾時，且無法確認服務已在執行。');
   else console.error(`Tracker 啟動失敗：${result.status?.error || '程序已退出'}`);
   console.error(`請查看 Log：${LOG_FILE}`);
   return false;

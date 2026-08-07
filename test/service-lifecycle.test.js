@@ -229,12 +229,67 @@ test('start reports a failed spawn once instead of retrying', async () => {
   assert.equal(calls.spawns, 1);
 });
 
-test('start times out without claiming success', async () => {
+test('start times out without claiming success when nothing confirms the service', async () => {
   const { calls, deps } = startHarness({ statuses: [{ service: 'beyblade-tracker', pid: 5150, status: 'starting' }] });
   const result = await runStartSequence(deps);
   assert.equal(result.ok, false);
   assert.equal(result.outcome, 'timeout');
   assert.equal(calls.spawns, 1);
+});
+
+// D-7: a first start measured 18s to 55.5s on one machine, so treating the wait budget as the
+// verdict reported BT-LCH-003 for services that were starting normally. Expiring the budget must
+// only end the wait; the service's own status record decides whether the start failed.
+test('a slow start that still owns its status record is reported as starting, not failed', async () => {
+  const startingStatus = {
+    service: 'beyblade-tracker', pid: 5150, status: 'starting', startedAt: STARTED_AT,
+  };
+  const { calls, deps } = startHarness({
+    statuses: [startingStatus],
+    identities: [ownedIdentity(5150)],
+  });
+  const result = await runStartSequence(deps);
+  assert.equal(result.ok, true, 'a live, owned, still-starting service must not be reported as failed');
+  assert.equal(result.outcome, 'still-starting');
+  assert.equal(result.pid, 5150);
+  assert.equal(result.ownership, 'owned');
+  assert.equal(calls.spawns, 1, 'confirmation must not spawn a second service');
+});
+
+test('a responding health endpoint confirms a slow start whose status record never arrived', async () => {
+  const { deps } = startHarness({ statuses: [null] });
+  deps.probeHealth = async () => true;
+  const result = await runStartSequence(deps);
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, 'still-starting');
+  assert.equal(result.healthy, true);
+});
+
+test('a healthy port cannot rescue a start whose process has already exited', async () => {
+  const { deps } = startHarness({ statuses: [null], alive: (candidate) => candidate !== 5150 });
+  deps.probeHealth = async () => true;
+  const result = await runStartSequence(deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, 'exited', 'a dead child is a failure however healthy the port looks');
+});
+
+test('a status record owned by another process cannot confirm a start', async () => {
+  const { deps } = startHarness({
+    statuses: [{ service: 'beyblade-tracker', pid: 5150, status: 'starting', startedAt: STARTED_AT }],
+    identities: [otherIdentity(5150)],
+  });
+  const result = await runStartSequence(deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, 'timeout');
+  assert.equal(result.ownership, 'other');
+});
+
+test('a failing health probe cannot throw its way out of the start decision', async () => {
+  const { deps } = startHarness({ statuses: [null] });
+  deps.probeHealth = async () => { throw new Error('ECONNREFUSED'); };
+  const result = await runStartSequence(deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, 'timeout');
 });
 
 test('status coordination files authorize a graceful attempt but never a force kill', () => {

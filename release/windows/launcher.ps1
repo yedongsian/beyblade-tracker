@@ -5,7 +5,8 @@
 $ErrorActionPreference = 'Stop'
 # Actions callable by the installer, uninstaller, startup automation and tests: never GUI, always bounded.
 $nonInteractiveActions = @('start','restart','stop','status')
-# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 60s) plus overhead.
+# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 60s) plus the
+# health probe service-control makes before it decides whether a slow start actually failed.
 $controlTimeoutSeconds = @{ 'start' = 90; 'restart' = 130; 'stop' = 45; 'status' = 20 }
 
 function Throw-LauncherError([string]$Code) {
@@ -221,9 +222,10 @@ function Run-Control([string]$command) {
 }
 
 function Wait-ForManagementPage {
-  # Run-Control has already waited for the service to report ready, so this is only
-  # the margin between that and the web port accepting requests. Kept well above the
-  # observed gap so a slow first start cannot surface as a spurious BT-LCH-004.
+  # This is now the only place a start is declared unsuccessful. service-control reports success
+  # for a service it has verified is alive and still starting, so anything genuinely stuck arrives
+  # here and is reported as BT-LCH-004 ("waited, never answered") rather than BT-LCH-003's false
+  # claim that the start failed. The budget is the margin on top of service-control's own 60s.
   $deadline = [DateTime]::UtcNow.AddSeconds(30)
   while ([DateTime]::UtcNow -lt $deadline) {
     try { if ((Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8787/health' -TimeoutSec 2).StatusCode -eq 200) { return } }

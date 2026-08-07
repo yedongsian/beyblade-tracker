@@ -1,8 +1,8 @@
 # Windows 實機驗收清單（RC 1.0.0）
 
 對象產物：`BeybladeTracker-1.0.0-Setup.exe`
-SHA-256：**`c8959c9bd8563ef92bbe81b31c92463b47faac4131aead0031ca047ca8d13981`**（27,480,484 bytes，2026-08-06 第三次建置）
-建立日期：2026-08-02（第一輪）／2026-08-06（第二、三輪）
+SHA-256：**`0d4a0c7306b95ab9fc2b7900138d8135c09b6810399181bc96111c274efc712d`**（27,479,037 bytes，2026-08-07 第四次建置）
+建立日期：2026-08-02（第一輪）／2026-08-06（第二、三輪）／2026-08-07（第四輪）
 
 ### 產物沿革
 
@@ -10,9 +10,12 @@ SHA-256：**`c8959c9bd8563ef92bbe81b31c92463b47faac4131aead0031ca047ca8d13981`**
 | --- | --- | --- | --- |
 | 第一輪 | `7794f66f…` | 來源 commit `2eca4c9`，無修正 | 作廢。於此產物找出 D-1～D-6 |
 | 第二輪 | `cf2187c6…` | 含 D-3／D-4／D-5／D-6 修正 | 作廢。四項修正皆已實機驗證；於此產物再找出 **D-7** |
-| **第三輪** | **`c8959c9b…`** | 再加入 **D-7** 修正 | **現行驗收對象** |
+| 第三輪 | `c8959c9b…` | 再加入 **D-7** 的逾時常數修正 | 作廢。D-7 已於此產物實機驗證，但殘留風險未解 |
+| **第四輪** | **`0d4a0c73…`** | 改為 **D-7 的根本解法**（逾時不再等同啟動失敗） | **現行驗收對象** |
 
-> 第二輪已驗證的結論（D-3～D-6、A-7 匯入側、A-8）在機制上不受 D-7 影響 —— D-7 只調整逾時常數。但仍應於本產物抽驗確認。
+> 第二、三輪已驗證的結論（D-3～D-7、A-7 匯入側、A-8）在機制上不受第四輪影響 —— 第四輪只改變「逾時後如何判定成敗」。但仍應於本產物抽驗確認。
+
+> **共用資料夾已同步**：`C:\Users\Public\BeybladeTracker-Acceptance\` 的 Setup.exe、`SHA256.txt` 與 `verify-installer.ps1` 皆已更新為第四版，並實際執行過 `verify-installer.ps1` 得到 `MATCH`。
 
 ## 驗收現況與待辦（最後更新 2026-08-07）
 
@@ -26,11 +29,20 @@ SHA-256：**`c8959c9bd8563ef92bbe81b31c92463b47faac4131aead0031ca047ca8d13981`**
 | **D-4** | ✅ 已修並驗證 | `Show-LauncherError` 於 `Shown` 事件強制 `ShowWindow`／`TopMost` | 經真實隱藏 launcher 路徑，`BT-LCH-003` 對話框正常顯示，含代碼、繁中指引、App version、Support reference 與四個按鈕 |
 | **D-5** | ✅ 已修並驗證 | `ui.js:126` 兩處 `'\n'` → `'\\n'` | 部署後逐頁 `node --check`，**12 頁全數通過**（第一輪 `/settings` 為唯一失敗） |
 | **D-6** | ✅ 已修並驗證 | `restoreBackup` 新增 `ignorePid`；匯入失敗時將 pending 檔移置一旁 | pending 檔被消耗；`tracker-before-restore-20260805-232207Z.db`（532,480 bytes）存在；observations 2 → **495**（基準 494 ＋ 重啟後一次掃描） |
-| **D-7** | ✅ 已修並驗證 | 逾時鏈：`START_TIMEOUT_MS` 15s→60s、launcher start 90s／restart 130s、管理頁 30s | 第三版產物安裝後 **55.5 秒**就緒且**未出現任何對話框** |
+| **D-7** | ✅ 已修並驗證，**根因已解** | 第三輪：逾時鏈 `START_TIMEOUT_MS` 15s→60s、launcher start 90s／restart 130s、管理頁 30s。<br>第四輪：**逾時不再等同啟動失敗**，改由服務自身證據判定 | 第三版產物安裝後 **55.5 秒**就緒且**未出現任何對話框**；第四版的判定改動有 6 項單元回歸測試 |
 
-**修正端驗證**：單元測試 **223/223**（新增 4 項回歸測試，每項均經「還原缺陷後測試必須失敗」反向確認）；四項 release E2E 全綠（normal 113s／stopfail 73s／missing-launcher 62s／launcher-errors 5-5 58s）；無 temp 殘留、無殘留行程、8787 淨空。
+**修正端驗證（2026-08-07，第四版）**：單元測試 **230/230**；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors **6-6**）；無 temp 殘留、無殘留行程、8787 淨空。
 
-> **兩個負向 E2E 仍通過**是關鍵回歸把關：`Assert-E2eNoLauncherDialog` 確認 D-4 的對話框修正未讓靜默模式（安裝器、解除安裝器、自動化）跳出任何視窗。
+新增的回歸涵蓋：
+
+| 缺陷 | 新增涵蓋 | 反向確認 |
+| --- | --- | --- |
+| D-7 | `test/service-lifecycle.test.js` 6 項，涵蓋慢啟動判定為 `still-starting`、health 佐證、行程已死不得被 health 救回、狀態檔屬於他人不得佐證、health 探測拋錯不得改變判定 | 移除 `confirmStartOutcome` 呼叫後 **3 項失敗** |
+| D-4 | `scripts/phase7-launcher-errors.ps1` **案例 F**：以 `wscript.exe launcher.vbs start`（真實捷徑路徑）觸發 `BT-LCH-001`，用 `EnumWindows` 列舉頂層視窗並斷言 `IsWindowVisible=True`、代碼與三個按鈕存在、內容不含路徑／URL，最後 `WM_CLOSE` 後行程必須結束 | 移除 `Show-LauncherError` 的 `Add_Shown`／`ShowWindow` 後，案例 F 失敗並回報 **`visible=False buttons=5`** —— 正是 D-4 的特徵：控制項全部建好，就是看不見 |
+
+> **兩個負向 E2E 仍通過**是關鍵回歸把關：`Assert-E2eNoLauncherDialog` 確認 D-4 的對話框修正未讓靜默模式（安裝器、解除安裝器、自動化）跳出任何視窗。案例 F 是它的正向對照 —— 一個確認「該跳窗時跳得出來」，一個確認「不該跳窗時不跳」。
+
+> **順帶修掉一個到期的時間炸彈測試**：`test/web.test.js` 的運維指標測試把 `operation_events.created_at` 寫死為 `2026-07-30`，而該指標只統計 7 天內的事件，因此該測試自 **2026-08-06 起必然失敗**（與本輪改動無關）。已改為以現在時刻寫入。同檔其他寫死日期的測試都注入了假時鐘，不受影響。
 
 ### 二、A 段項目現況
 
@@ -43,7 +55,7 @@ SHA-256：**`c8959c9bd8563ef92bbe81b31c92463b47faac4131aead0031ca047ca8d13981`**
 | A-4b **無 Chrome 分支** | ⬜ **未測** | **需路線 2 乾淨 VM**（Chrome 為全機器安裝，換帳號無法移除） |
 | A-5 首次啟動導覽 | ✅ PASS | 未完成時重複出現、完成後寫入 |
 | A-6a 錯誤代碼（非互動，已自動化） | ✅ PASS | 5/5，`npm run test:release:launcher-errors` |
-| A-6b 互動對話框 | 🟡 **部分** | 對話框顯示已驗證（D-4）；**尚缺「複製錯誤資訊」的剪貼簿內容安全性檢查** |
+| A-6b 互動對話框 | 🟡 **部分** | 對話框顯示已驗證（D-4），且**自 2026-08-07 起已納入自動化**（案例 F，含畫面內容安全掃描）；**尚缺「複製錯誤資訊」的剪貼簿內容安全性檢查** |
 | A-7 匯出側 | ✅ PASS | 內含恰好兩檔、SHA-256 相符、七項安全掃描未命中 |
 | A-7 匯入側 | ✅ PASS | 第一輪 FAIL（D-6），修正後通過 |
 | A-8 Telegram 與 DPAPI | ✅ PASS | 含**跨帳號解密失敗**驗證與對照組；`powershellDpapi()` 真實路徑首次獲得實證 |
@@ -53,15 +65,16 @@ SHA-256：**`c8959c9bd8563ef92bbe81b31c92463b47faac4131aead0031ca047ca8d13981`**
 
 ### 三、待辦（依建議順序）
 
+程式端已收斂：D-7 的根本解法與 D-4 的互動路徑自動化都已完成並隨第四版產物出貨，因此以下只剩實機驗收與環境工作。**第 1～4 項可在一輪 Test_Darren 工作階段內連續做完。**
+
 | # | 待辦 | 需要什麼 | 備註 |
 | --- | --- | --- | --- |
-| 1 | **A-9 依新標準重驗** | 清空 `%LOCALAPPDATA%\BeybladeTracker` 後重裝 | 驗（a）全新安裝只有離線 `demo-fixture`、（b）fixture 可正常運作、（c）使用者自行新增來源後可抓取。**這是 D-3 使用者可見效果的唯一驗證**，做法：解除安裝選「刪除資料」（順便再驗一次 A-11）後重裝 |
-| 2 | **A-6b 剪貼簿內容檢查** | 數分鐘 | 用 `a6-dialog.ps1`；須確認複製內容**只含**代碼／App version／UTC／Support reference，**不含**路徑、stack、URL、Token |
-| 3 | A-2／A-3／A-5 於第三版產物複驗 | 一輪安裝＋登出登入 | 逾時鏈已改變，屬形式確認 |
-| 4 | A-10／A-11 於第三版產物複驗 | 兩次解除安裝 | 可與第 1 項合併執行 |
-| 5 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.2 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware |
-| 6 | **後續設計改動**：以服務真實狀態判定啟動成敗 | 程式修改 | 見 D-7 的殘留風險：首次啟動 18～55.5 秒，變異近三倍，固定逾時本質脆弱 |
-| 7 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802` |
+| 1 | **A-6b 剪貼簿內容檢查** | 數分鐘 | 用 `a6-dialog.ps1`；須確認複製內容**只含**代碼／App version／UTC／Support reference，**不含**路徑、stack、URL、Token。案例 F 已自動驗過**對話框上顯示的**內容不含路徑與 URL，但**剪貼簿**是另一條路徑（`$copyText`），仍須人工確認 |
+| 2 | **A-9 依新標準重驗** | 清空 `%LOCALAPPDATA%\BeybladeTracker` 後重裝 | 驗（a）全新安裝只有離線 `demo-fixture`、（b）fixture 可正常運作、（c）使用者自行新增來源後可抓取。**這是 D-3 使用者可見效果的唯一驗證**，做法：解除安裝選「刪除資料」（順便再驗一次 A-11）後重裝 |
+| 3 | A-2／A-3／A-5 於第四版產物複驗 | 一輪安裝＋登出登入 | 啟動判定已改變，屬形式確認；**請順便記錄首次啟動耗時**，用以檢驗根本解法在真實變異下的表現 |
+| 4 | A-10／A-11 於第四版產物複驗 | 兩次解除安裝 | 可與第 2 項合併執行 |
+| 5 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.2 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware。**這是 A 段唯一無法在本機完成的項目** |
+| 6 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802` |
 
 ### 四、B 段（公開發佈閘門，仍全數受阻）
 
@@ -77,9 +90,9 @@ Ed25519 manifest 簽章管線已驗證可用（含負向與竄改控制），金
 
 | 項目 | 狀態 |
 | --- | --- |
-| 測試帳號 | `Test_Darren`，目前**已安裝**第三版產物；使用者資料含自移機檔還原的三個真實來源與 Telegram 憑證 |
-| 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含第三版安裝器、`verify-installer.ps1`（雜湊已同步）、各項驗收腳本與第一／二輪結果檔 |
-| 分支 | `codex/bt-api-001`，**未 push** |
+| 測試帳號 | `Test_Darren`，目前仍安裝著**第三版**產物；使用者資料含自移機檔還原的三個真實來源與 Telegram 憑證。第 2 項待辦的「解除安裝（刪除資料）→ 重裝第四版」會一併換掉它 |
+| 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含**第四版**安裝器、`SHA256.txt`、`verify-installer.ps1`（雜湊皆已同步並實測 `MATCH`）、各項驗收腳本與前幾輪結果檔 |
+| 分支 | `codex/bt-api-001`，**未 push**（分支名沿用自 `BT-API-001`，但其上內容全部是驗收與缺陷修正，與該 ticket 無關） |
 | 8787 | 淨空（驗收暫停時已停止服務） |
 
 ### ⚠ D-3 改變了全新安裝的預設行為
@@ -250,16 +263,19 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 | E | `-NonInteractive` + `export` | `BT-LCH-006` | **PASS** |
 
 2026-08-05 實測：**5 PASS / 0 FAIL / 0 SKIPPED**，35.9 秒，無殘留目錄或行程。
+2026-08-07 於第四版產物重跑並加入案例 F（互動對話框可見性，見 A-6b）：**6 PASS / 0 FAIL / 0 SKIPPED**。
 
 案例 D 需要 port 8787 淨空（`Wait-ForManagementPage` 硬編碼該位址，無法改 port）；腳本會偵測監聽者並標記 `SKIPPED` 而非誤判為通過。首次執行即因 Test_Darren 的服務占用而正確跳過，停止該服務後重跑始得 PASS。
 
-#### A-6b 互動對話框路徑（人工目視，尚未執行）
+#### A-6b 互動對話框路徑（已部分自動化）
 
-自動化只涵蓋 `-NonInteractive`（僅寫 stderr、不開對話框）。RUNBOOK 要求的 native dialog、繁中復原指引、「複製錯誤資訊」與「問題回報」按鈕，須以 `C:\Users\Public\BeybladeTracker-Acceptance\a6-dialog.ps1` 人工驗證。該腳本刻意以 `wscript.exe launcher.vbs`（隱藏視窗、互動模式）啟動，即開始功能表捷徑的真實路徑，用以確認從隱藏行程彈出的對話框確實可見且可操作。
+原本自動化只涵蓋 `-NonInteractive`（僅寫 stderr、不開對話框），這正是 D-4 得以出貨的原因。**2026-08-07 起，同一支腳本新增案例 F 涵蓋互動路徑**：以 `wscript.exe launcher.vbs`（隱藏視窗、互動模式，即開始功能表捷徑的真實路徑）觸發錯誤，斷言對話框可見、含代碼與三個按鈕、畫面文字不含路徑與 URL，且關閉後行程確實結束。做法與反向確認見缺陷 **D-4** 的「互動路徑的自動化涵蓋」一節。
+
+**仍須人工的部分**：`C:\Users\Public\BeybladeTracker-Acceptance\a6-dialog.ps1` 的**剪貼簿內容檢查**。案例 F 驗的是畫面上顯示的文字，而「複製錯誤資訊」寫進剪貼簿的是另一個字串（`launcher.ps1` 的 `$copyText`），兩者是不同路徑，前者通過不蘊含後者安全。
 
 | 判定 | 證據／備註 |
 | --- | --- |
-| **A-6a：PASS**<br>**A-6b：FAIL** | A-6a 見上表。<br><br>**A-6b 於 2026-08-05 執行並失敗**：以 `wscript.exe launcher.vbs start`（真實捷徑路徑）觸發 `BT-LCH-001`，**畫面上完全沒有出現任何對話框**，驗收者三題皆答 N，剪貼簿維持哨兵值未被寫入。RUNBOOK 第 13 節「每個 hidden Launcher 路徑都必須顯示 native dialog」**未達成**。根因見缺陷 **D-4**。 |
+| **A-6a：PASS**<br>**A-6b：部分** | A-6a 見上表。<br><br>**對話框可見性**：2026-08-05 首次人工執行**失敗**（根因 D-4）—— 以 `wscript.exe launcher.vbs start` 觸發 `BT-LCH-001`，畫面上完全沒有出現任何對話框，驗收者三題皆答 N，剪貼簿維持哨兵值未被寫入。修正後於 2026-08-07 由案例 F 自動驗證通過：`visible=True closed=True code=BT-LCH-001`，且畫面文字未命中任何不安全字樣。RUNBOOK 第 13 節「每個 hidden Launcher 路徑都必須顯示 native dialog」**已達成並上鎖**。<br><br>**剪貼簿內容**：仍未驗證，見上方說明。 |
 
 > 已知預期現象：`BT-LCH-001` 情境下 `current.json` 無法讀取，故 launcher 的 `$appVersion` 為 `unknown`，複製內容中的 App version 會顯示 `unknown`。屬設計行為，但支援端因此拿不到版本號，值得後續評估。
 
@@ -517,6 +533,33 @@ launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 
 安裝完成 10:31:57 → 服務 `startedAt` 10:32:53，耗時 **55.5 秒**，**未出現任何錯誤對話框**。D-7 修正生效。
 
+#### 根本解法（2026-08-07，第四版產物）
+
+第三輪的修正只是把門檻從 15 秒調到 60 秒，並未改變「逾時即失敗」這個判定方式，因此下方的殘留風險仍在。第四輪改掉判定本身：
+
+| 層級 | 改動 |
+| --- | --- |
+| `src/release/service-lifecycle.js` | 新增 `confirmStartOutcome()`。`runStartSequence` 逾時後不再直接回報失敗，而是先取證 |
+| `scripts/service-control.js` | 新增 `probeHealth()`；新增 `still-starting` 分支，回報「仍在啟動中」並以成功離開 |
+| `release/windows/launcher.ps1` | `Wait-ForManagementPage` 成為唯一宣告啟動失敗的地方 |
+
+判定依據不是時間，而是服務自己留下的證據：
+
+1. 狀態檔已寫入 `running` 且 PID 相符 → `started`（競態補撈）
+2. 子行程已死 → `exited`，真失敗
+3. 子行程存活，且**狀態檔由它自己持有並停在 `starting`** → `still-starting`，**不是失敗**
+4. 以上皆非，但 `/health` 有回應 → `still-starting`
+5. 都不成立 → `timeout`，真失敗
+
+第 3 點是關鍵：`bin/service.js` 在所有慢工作（migration、自動備份、套用 pending 匯入）**之前**就會寫出一筆帶有自身 PID、執行檔與啟動時間的 `starting` 狀態記錄，因此「這個行程確實是我們的服務、而且還在啟動中」是可查證的事實，不是猜測。
+
+`/health` 只能佐證、不能單獨定案 —— 它不會告訴你是**哪個行程**在回應。但它與「子行程仍存活」併用時有意義：若有別的監聽者占著 8787，我們的子行程會因綁不到 port 而結束，而不是活著。
+
+**逾時的角色因此只剩「使用者要等多久才拿到回饋」**，不再決定成敗，也就不必為變異去猜一個夠大的數字。真正卡住的服務會走到 `Wait-ForManagementPage`，回報 `BT-LCH-004`（等候逾時，服務未回應）—— 這是誠實的描述，而不是 `BT-LCH-003` 那句與事實不符的「啟動失敗」。
+
+<details>
+<summary>原殘留風險紀錄（保留作對照）</summary>
+
 #### ⚠ 殘留風險：首次啟動耗時變異極大，固定逾時仍然脆弱
 
 同一台機器、同一個產物家族的實測值：
@@ -532,7 +575,9 @@ launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 
 **建議的根本解法**：不要讓「等待逾時」直接等同於「啟動失敗」。逾時後應先確認服務的真實狀態（`tracker.pid` 對應的行程是否存活、`/health` 是否回應），確認確實未啟動才回報 `BT-LCH-003`。如此逾時只影響「要等多久才給使用者回饋」，不再決定成敗判定，也就不需要為變異去猜一個夠大的數字。
 
-此為設計改動，未納入本輪修正，列為後續項目。
+此為設計改動，未納入第三輪修正，列為後續項目 —— **已於 2026-08-07 的第四輪實作，見上節。**
+
+</details>
 
 ### D-2 `shimamura-ux20` 商品 URL 已失效 — **根因已查明**
 
@@ -650,7 +695,20 @@ A-7 匯出側證實「匯出／移機」捷徑**可正常運作** —— 同樣�
 
 實驗顯示對 `Beyblade Tracker` 視窗呼叫 `ShowWindow(hwnd, SW_SHOW)` 即可讓它現身，因此修法只需確保該表單以正常狀態顯示，例如在 `Show-LauncherError` 中於表單 `Shown` 事件呼叫 `ShowWindow(SW_SHOW)`、或搭配 `TopMost` 與 `Activate()`。**不應**改動 `launcher.vbs` 的 `shell.Run ... 0` —— 隱藏 PowerShell 主控台本身是正確設計，不該為此讓黑窗在每次啟動時閃現。
 
-修好後應補上互動路徑的自動化涵蓋，避免再次回歸。
+#### 互動路徑的自動化涵蓋（2026-08-07 補上）
+
+`scripts/phase7-launcher-errors.ps1` 新增**案例 F**，走的正是本缺陷的路徑：`wscript.exe launcher.vbs start`（隱藏主控台、互動模式）觸發 `BT-LCH-001`，然後
+
+- 以 `EnumWindows` + `GetWindowThreadProcessId` 列舉該行程的**所有**頂層視窗。這是必要的：`Process.MainWindowHandle` 只回報可見視窗，正是它讓 D-4 一直看起來像「根本沒有對話框」
+- 斷言該視窗 `IsWindowVisible=True`
+- 以 `EnumChildWindows` 讀出控制項文字，斷言含 `BT-LCH-001` 與「複製錯誤資訊」「問題回報」「關閉」三個按鈕，且**不含**安裝路徑、使用者目錄、`.ps1`／`.js`、URL 或 stack 字樣
+- 送出 `WM_CLOSE` 後，launcher 行程必須在 15 秒內結束 —— 這一條專門盯住「永久阻塞」
+
+無互動桌面時會標記 `SKIPPED` 而非誤判為通過（`-SkipDialogCase` 或 `[Environment]::UserInteractive` 為否）。
+
+撰寫時踩到一個值得記下的陷阱：只用視窗標題等待會**與對話框自己賽跑**。WinForms 表單一建立就帶著標題，早於 `Shown` 事件與控制項實體化，因此第一版腳本抓到的是 `visible=False buttons=0` 的空殼，看起來像修正沒生效。等待條件必須是「可見**且**控制項已建立」。
+
+反向確認：拿掉 `Add_Shown` 的 `ShowWindow` 後，案例 F 回報 **`visible=False buttons=5`** —— 五個控制項全部建好，就是看不見。這正是 D-4 的特徵，也證明這條斷言確實盯著對的東西。
 
 ---
 

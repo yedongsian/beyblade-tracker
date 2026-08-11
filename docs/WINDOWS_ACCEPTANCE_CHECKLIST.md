@@ -455,7 +455,7 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Select-Object ProcessI
 
 ## 2.2 第四輪驗收紀錄（2026-08-11，Test_Darren）
 
-依 `C:\Users\Public\BeybladeTracker-Acceptance\ROUND4-RUNBOOK.md` 執行。結果如上表；本節記錄過程中值得留存的事。
+執行步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md)（A-4b 的 VM 輪次可照抄步驟 3～9）。結果如上表；本節記錄過程中值得留存的事。
 
 ### 首次啟動耗時：根本解法未被觸發，但變異依舊
 

@@ -11,6 +11,7 @@ import {
   upsertCatalogPart,
 } from '../src/core/catalog.js';
 import { createTranslator } from '../src/i18n.js';
+import { sourceErrorMessageKey } from '../src/core/operations.js';
 
 const OPTS = { preorderIsPurchasable: false, eventCooldownSeconds: 0, priceChangeThreshold: 0.05 };
 
@@ -92,4 +93,36 @@ test('UI translator supports Traditional Chinese, Japanese and English state lab
   assert.equal(createTranslator('zh-TW')('state.in_stock'), '現貨');
   assert.equal(createTranslator('ja')('state.in_stock'), '在庫あり');
   assert.equal(createTranslator('en')('state.in_stock'), 'In stock');
+});
+
+// BT-UX-003. A missing key falls back to Traditional Chinese and then to the key itself, so an
+// untranslated source error would render as Chinese on an English page and nobody would notice.
+test('every source error class resolves to a message translated in all three languages', () => {
+  const classes = [
+    'timeout', 'dns', 'connection', 'tls', 'robots_blocked', 'access_blocked', 'network_paused',
+    'parse', 'maintenance', 'empty', 'not_found', 'validation', 'error', 'unknown',
+    'http_400', 'http_401', 'http_403', 'http_404', 'http_410', 'http_429',
+    'http_500', 'http_502', 'http_503', 'http_504', 'http_418',
+  ];
+  const zh = createTranslator('zh-TW');
+  for (const errorClass of classes) {
+    const key = sourceErrorMessageKey(errorClass);
+    assert.ok(key, `${errorClass} must map to a message key`);
+    const baseline = zh(key, { class: errorClass });
+    assert.notEqual(baseline, key, `${key} is missing from the Traditional Chinese catalog`);
+    for (const locale of ['ja', 'en']) {
+      const translated = createTranslator(locale)(key, { class: errorClass });
+      assert.notEqual(translated, key, `${key} is missing from the ${locale} catalog`);
+      assert.notEqual(translated, baseline, `${key} falls back to Chinese on ${locale}`);
+    }
+  }
+});
+
+test('an unrecognized error class falls back instead of leaking itself into the message', () => {
+  assert.equal(sourceErrorMessageKey('no_url'), 'srcErr.unknown');
+  assert.equal(sourceErrorMessageKey('BT-SRC-001'), 'srcErr.unknown');
+  assert.equal(sourceErrorMessageKey('token=secret https://internal/path'), 'srcErr.unknown');
+  assert.equal(sourceErrorMessageKey(null), null);
+  // An unexplained status still names itself, so the message is never vaguer than the evidence.
+  assert.match(createTranslator('en')(sourceErrorMessageKey('http_418'), { class: 'http_418' }), /http_418/);
 });

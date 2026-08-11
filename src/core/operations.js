@@ -168,6 +168,42 @@ export function safeErrorClass(error) {
   return 'error';
 }
 
+// A store's own words are whatever library raised them - 'HTTP 404', 'fetch failed', or raw
+// Playwright text - so showing last_error verbatim leaves the operator reading English internals
+// with no idea what to do. Classes are already bounded and content-free, which makes them a safe
+// join key onto localized, actionable text (BT-UX-003).
+const SOURCE_ERROR_MESSAGE_KEYS = new Map([
+  ['timeout', 'srcErr.timeout'],
+  ['dns', 'srcErr.dns'],
+  ['connection', 'srcErr.connection'],
+  ['tls', 'srcErr.tls'],
+  ['robots_blocked', 'srcErr.robots'],
+  ['access_blocked', 'srcErr.blocked'],
+  ['network_paused', 'srcErr.networkPaused'],
+  ['parse', 'srcErr.parse'],
+  ['maintenance', 'srcErr.parse'],
+  ['empty', 'srcErr.parse'],
+  ['not_found', 'srcErr.notFound'],
+  ['validation', 'srcErr.validation'],
+]);
+
+// Statuses worth their own advice, because what the operator should do differs: 404 means delisted,
+// 429 means back off, 503 means wait. Anything else falls back to the generic HTTP line, which
+// still names the status so the message is never vaguer than the evidence behind it.
+const EXPLAINED_HTTP_STATUSES = new Set(['400', '401', '403', '404', '410', '429', '500', '502', '503', '504']);
+
+/**
+ * Map a bounded error class onto the translation key describing it. Unrecognized classes fall back
+ * to the generic key rather than leaking the class itself into user-facing prose.
+ */
+export function sourceErrorMessageKey(errorClass) {
+  const raw = normalizeErrorClass(errorClass);
+  if (!raw) return null;
+  const http = raw.match(/^http_(\d{3})$/);
+  if (http) return EXPLAINED_HTTP_STATUSES.has(http[1]) ? `srcErr.http_${http[1]}` : 'srcErr.http';
+  return SOURCE_ERROR_MESSAGE_KEYS.get(raw) || 'srcErr.unknown';
+}
+
 /**
  * Derive a clear, bounded parser operation outcome from a crawl's stats so the
  * Operations page reflects what the parser actually produced. Distinguishes:

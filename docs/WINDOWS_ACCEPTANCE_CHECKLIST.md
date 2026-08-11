@@ -17,7 +17,9 @@ SHA-256：**`0d4a0c7306b95ab9fc2b7900138d8135c09b6810399181bc96111c274efc712d`**
 
 > **共用資料夾已同步**：`C:\Users\Public\BeybladeTracker-Acceptance\` 的 Setup.exe、`SHA256.txt` 與 `verify-installer.ps1` 皆已更新為第四版，並實際執行過 `verify-installer.ps1` 得到 `MATCH`。
 
-## 驗收現況與待辦（最後更新 2026-08-07）
+## 驗收現況與待辦（最後更新 2026-08-11）
+
+> **A 段已於第四版產物全數完成，只剩 A-4b。** 2026-08-11 在 Test_Darren 走完一輪完整驗收：安裝 → 導覽 → A-9 新標準 → 捷徑 → 互動對話框 → 登出登入 → 兩次解除安裝。11 項中 10 項 PASS，A-4b 仍需乾淨 VM。詳見第 2.3 節。
 
 ### 一、缺陷：7 項發現，5 項真缺陷，**全部已修並實機驗證**
 
@@ -46,35 +48,45 @@ SHA-256：**`0d4a0c7306b95ab9fc2b7900138d8135c09b6810399181bc96111c274efc712d`**
 
 ### 二、A 段項目現況
 
-| 項目 | 狀態 | 備註 |
-| --- | --- | --- |
-| A-1 安裝（預設路徑、per-user、內建 runtime） | ✅ PASS | 第一輪通過；第三版產物已再次確認安裝結構與 D-3 |
-| A-2 五個開始功能表捷徑 | ✅ PASS | 停止耗時 2.0 秒 |
-| A-3 登入自動啟動 | ✅ PASS | 無視窗；乾淨重測 37.5 秒就緒 |
-| A-4a Chrome 已安裝分支 | ✅ PASS | `available=True name=Google Chrome` |
-| A-4b **無 Chrome 分支** | ⬜ **未測** | **需路線 2 乾淨 VM**（Chrome 為全機器安裝，換帳號無法移除） |
-| A-5 首次啟動導覽 | ✅ PASS | 未完成時重複出現、完成後寫入 |
-| A-6a 錯誤代碼（非互動，已自動化） | ✅ PASS | 5/5，`npm run test:release:launcher-errors` |
-| A-6b 互動對話框 | 🟡 **部分** | 對話框顯示已驗證（D-4），且**自 2026-08-07 起已納入自動化**（案例 F，含畫面內容安全掃描）；**尚缺「複製錯誤資訊」的剪貼簿內容安全性檢查** |
-| A-7 匯出側 | ✅ PASS | 內含恰好兩檔、SHA-256 相符、七項安全掃描未命中 |
-| A-7 匯入側 | ✅ PASS | 第一輪 FAIL（D-6），修正後通過 |
-| A-8 Telegram 與 DPAPI | ✅ PASS | 含**跨帳號解密失敗**驗證與對照組；`powershellDpapi()` 真實路徑首次獲得實證 |
-| A-9 實際抓取 | 🟡 **需依新標準重測** | D-3 已改變預設行為，見下 |
-| A-10 解除安裝（保留資料） | ✅ PASS | 筆數與 `integrity_check` 前後一致 |
-| A-11 解除安裝（刪除資料） | ✅ PASS | `DelTree` 分支首次獲得執行驗證 |
+「第四版」欄記錄 2026-08-11 於現行驗收對象上的複驗結果。
+
+| 項目 | 狀態 | 第四版 | 備註 |
+| --- | --- | --- | --- |
+| A-1 安裝（預設路徑、per-user、內建 runtime） | ✅ PASS | ✅ | `Installation process succeeded.`；`current.json`、內建 node、5 捷徑、`Run` 機碼含 `noninteractive` 皆到位；**安裝完成未跳出任何對話框** |
+| A-2 五個開始功能表捷徑 | ✅ PASS | ✅ | 五個全數可用；8787 於 **1.4 秒**停止監聽 |
+| A-3 登入自動啟動 | ✅ PASS | ✅ | 登入 10:52:51 → 服務 10:53:25，**34.7 秒**；驗收者確認登入作業系統時**無任何視窗**；無殘留 launcher 行程 |
+| A-4a Chrome 已安裝分支 | ✅ PASS | ✅ | `available=True name=Google Chrome` |
+| A-4b **無 Chrome 分支** | ⬜ **未測** | — | **需路線 2 乾淨 VM**（Chrome 為全機器安裝，換帳號無法移除）。**A 段唯一未完成項** |
+| A-5 首次啟動導覽 | ✅ PASS | ✅ | 導覽跳出 → 填完儲存 → 關閉重開**不再出現**。這半段是第一輪缺的，至此補齊，`onboardingCompleted` 確實寫入 |
+| A-6a 錯誤代碼（非互動，已自動化） | ✅ PASS | ✅ | 案例 A–E，`npm run test:release:launcher-errors` |
+| A-6b 互動對話框 | ✅ **PASS** | ✅ | 對話框可見性已自動化（案例 F）；**剪貼簿內容檢查已於 2026-08-11 人工完成並通過**，見下 |
+| A-7 匯出側 | ✅ PASS | — | 內含恰好兩檔、SHA-256 相符、七項安全掃描未命中 |
+| A-7 匯入側 | ✅ PASS | — | 第一輪 FAIL（D-6），修正後通過 |
+| A-8 Telegram 與 DPAPI | ✅ PASS | — | 含**跨帳號解密失敗**驗證與對照組；`powershellDpapi()` 真實路徑首次獲得實證 |
+| A-9 實際抓取 | ✅ **PASS** | ✅ | **依 D-3 後的新標準完成三小項**，見下 |
+| A-10 解除安裝（保留資料） | ✅ PASS | ✅ | 程式檔案／捷徑／`Run` 機碼／登錄項目全數移除；使用者資料保留且 `integrity_check=ok` |
+| A-11 解除安裝（刪除資料） | ✅ PASS | ✅ | `DelTree` 分支再次執行成功，使用者資料整個目錄消失 |
+
+**A-9 依新標準的三小項（2026-08-11）**
+
+| 小項 | 結果 |
+| --- | --- |
+| (a) 全新安裝只有離線 demo-fixture | ✅ payload 中個人 `sources.json` 已排除、`sources.example.json` 與 `fixtures/` 均在；生效來源只有 `demo-fixture`（啟用）與 `example-jsonld`（停用）。**三個真實日本商店確實不再出貨 —— D-3 的使用者可見效果至此首次獲得驗證** |
+| (b) fixture 可正常運作 | ✅ 首次掃描 3 items／2 events，2 則通知送出，`healthy=true` |
+| (c) 使用者自行新增來源後可抓取 | ✅ 由管理頁加入 `https://www.hlj.com/product/TKT09613`，解析成功（5446 ms，1 item／1 event），`hlj-com` `healthy=true`。全庫成長為 sources 3／products 3／offers 4 |
+
+**A-6b 剪貼簿內容（2026-08-11）**：複製內容恰為四行 —— `錯誤代碼：BT-LCH-001`、`App version：unknown`、`UTC：…`、`Support reference：67e6f957b2e0`。自動安全掃描（安裝路徑、使用者目錄、使用者名稱、`.ps1`／`.vbs`、stack 字樣、URL、token、webhook）**全部未命中**，且四個必要欄位齊全。`App version` 為 `unknown` 屬 `BT-LCH-001` 的設計行為（此情境讀不到 `current.json`）。
 
 ### 三、待辦（依建議順序）
 
-程式端已收斂：D-7 的根本解法與 D-4 的互動路徑自動化都已完成並隨第四版產物出貨，因此以下只剩實機驗收與環境工作。**第 1～4 項可在一輪 Test_Darren 工作階段內連續做完。**
+2026-08-11 的驗收輪把原本的六項待辦收掉四項。**只剩兩項**：
 
 | # | 待辦 | 需要什麼 | 備註 |
 | --- | --- | --- | --- |
-| 1 | **A-6b 剪貼簿內容檢查** | 數分鐘 | 用 `a6-dialog.ps1`；須確認複製內容**只含**代碼／App version／UTC／Support reference，**不含**路徑、stack、URL、Token。案例 F 已自動驗過**對話框上顯示的**內容不含路徑與 URL，但**剪貼簿**是另一條路徑（`$copyText`），仍須人工確認 |
-| 2 | **A-9 依新標準重驗** | 清空 `%LOCALAPPDATA%\BeybladeTracker` 後重裝 | 驗（a）全新安裝只有離線 `demo-fixture`、（b）fixture 可正常運作、（c）使用者自行新增來源後可抓取。**這是 D-3 使用者可見效果的唯一驗證**，做法：解除安裝選「刪除資料」（順便再驗一次 A-11）後重裝 |
-| 3 | A-2／A-3／A-5 於第四版產物複驗 | 一輪安裝＋登出登入 | 啟動判定已改變，屬形式確認；**請順便記錄首次啟動耗時**，用以檢驗根本解法在真實變異下的表現 |
-| 4 | A-10／A-11 於第四版產物複驗 | 兩次解除安裝 | 可與第 2 項合併執行 |
-| 5 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.2 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware。**這是 A 段唯一無法在本機完成的項目** |
-| 6 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802` |
+| 1 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.3 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware。**A 段唯一未完成項**，且本機環境結構上做不到 —— Chrome 安裝於 `C:\Program Files`，全機器共用，換帳號仍可見 |
+| 2 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802`。**A-4b 完成前先別動**，共用資料夾的腳本還會用到 |
+
+> 分支 `codex/bt-api-001` 仍未 push，這是另一件待決事項，不列入驗收待辦。
 
 ### 四、B 段（公開發佈閘門，仍全數受阻）
 
@@ -90,10 +102,12 @@ Ed25519 manifest 簽章管線已驗證可用（含負向與竄改控制），金
 
 | 項目 | 狀態 |
 | --- | --- |
-| 測試帳號 | `Test_Darren`，目前仍安裝著**第三版**產物；使用者資料含自移機檔還原的三個真實來源與 Telegram 憑證。第 2 項待辦的「解除安裝（刪除資料）→ 重裝第四版」會一併換掉它 |
-| 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含**第四版**安裝器、`SHA256.txt`、`verify-installer.ps1`（雜湊皆已同步並實測 `MATCH`）、各項驗收腳本與前幾輪結果檔 |
+| 測試帳號 | `Test_Darren`，**目前無任何安裝、無使用者資料**（2026-08-11 A-11 以「刪除資料」收尾）。帳號本身保留，A-4b 之外若需複驗可直接重裝 |
+| 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含**第四版**安裝器、`SHA256.txt`、`verify-installer.ps1`（雜湊皆已同步並實測 `MATCH`）、`ROUND4-RUNBOOK.md`、各項驗收腳本與歷輪結果檔 |
+| 第一輪安裝 log | 已改名為 `install-testdarren-20260802.log` 保存，避免被後續輪次覆蓋 |
+| A-11 安全備份 | `a11-safety-copy`（8 檔，2026-08-11）。A-11 判定不依賴它，可自行刪除 |
 | 分支 | `codex/bt-api-001`，**未 push**（分支名沿用自 `BT-API-001`，但其上內容全部是驗收與缺陷修正，與該 ticket 無關） |
-| 8787 | 淨空（驗收暫停時已停止服務） |
+| 8787 | 淨空、無殘留行程 |
 
 ### ⚠ D-3 改變了全新安裝的預設行為
 
@@ -239,7 +253,7 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-| **部分** | 2026-08-02：驗收者確認安裝後管理頁確有出現此導覽（描述為「輸入連結跟說明」，即 Telegram 區塊）。**尚待確認是否按下儲存完成** —— 未完成則 `onboardingCompleted` 不會寫入，下次開啟仍會再次跳出，此為本項的驗證重點。 |
+| **PASS**（2026-08-11，第四版） | 2026-08-02 首次觀察：驗收者確認安裝後管理頁確有出現此導覽（描述為「輸入連結跟說明」，即 Telegram 區塊），但**未確認是否按下儲存完成**，因此當時只判「部分」。<br><br>2026-08-11 於第四版產物補齊後半段：導覽如期跳出 → 填完並儲存 → **關閉分頁重開管理頁，導覽不再出現**。這證明 `onboardingCompleted` 確實寫入，也正是本項真正的驗證重點。 |
 
 ### A-6 繁中文案與錯誤代碼
 
@@ -275,7 +289,7 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-| **A-6a：PASS**<br>**A-6b：部分** | A-6a 見上表。<br><br>**對話框可見性**：2026-08-05 首次人工執行**失敗**（根因 D-4）—— 以 `wscript.exe launcher.vbs start` 觸發 `BT-LCH-001`，畫面上完全沒有出現任何對話框，驗收者三題皆答 N，剪貼簿維持哨兵值未被寫入。修正後於 2026-08-07 由案例 F 自動驗證通過：`visible=True closed=True code=BT-LCH-001`，且畫面文字未命中任何不安全字樣。RUNBOOK 第 13 節「每個 hidden Launcher 路徑都必須顯示 native dialog」**已達成並上鎖**。<br><br>**剪貼簿內容**：仍未驗證，見上方說明。 |
+| **A-6a：PASS**<br>**A-6b：PASS** | A-6a 見上表。<br><br>**對話框可見性**：2026-08-05 首次人工執行**失敗**（根因 D-4）—— 以 `wscript.exe launcher.vbs start` 觸發 `BT-LCH-001`，畫面上完全沒有出現任何對話框，驗收者三題皆答 N，剪貼簿維持哨兵值未被寫入。修正後於 2026-08-07 由案例 F 自動驗證通過：`visible=True closed=True code=BT-LCH-001`，且畫面文字未命中任何不安全字樣。RUNBOOK 第 13 節「每個 hidden Launcher 路徑都必須顯示 native dialog」**已達成並上鎖**。<br><br>**剪貼簿內容（2026-08-11 補齊）**：於第四版產物以 `a6-dialog.ps1` 人工執行。對話框可見（`PID 27636 visible=True`），驗收者四題全答 Y，代碼為 `BT-LCH-001`、繁中無亂碼、四個按鈕可點。按下「複製錯誤資訊」後，剪貼簿內容恰為四行：<br>`錯誤代碼：BT-LCH-001`／`App version：unknown`／`UTC：2026-08-11T02:50:25.8539921Z`／`Support reference：67e6f957b2e0`。<br>安全掃描（安裝路徑、使用者目錄、使用者名稱、`.ps1`／`.vbs`、`at line`、`CategoryInfo`、`Exception`、`StackTrace`、`http://`、`https://`、`token`、`webhook`）**全部未命中**，四個必要欄位齊全，判定 **PASS**。關閉對話框後行程正常結束，暫存目錄已清除。 |
 
 > 已知預期現象：`BT-LCH-001` 情境下 `current.json` 無法讀取，故 launcher 的 `$appVersion` 為 `unknown`，複製內容中的 App version 會顯示 `unknown`。屬設計行為，但支援端因此拿不到版本號，值得後續評估。
 
@@ -334,7 +348,16 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-| **部分** | 2026-08-02 首次啟動自動執行掃描：`sources 3, ok 2, failed 1, itemsSeen 2, eventsCreated 1`，通知 1 送出。`yodobashi-ux20`（895 ms）與 `hlj-ux20`（2026 ms）成功；**`shimamura-ux20` 失敗**：`page.waitForSelector: Timeout 45000ms exceeded`，等待 `.catalogue__infoTitle`，耗時 48379 ms。見缺陷 **D-2**。UI 端的繁中錯誤呈現尚未檢視。 |
+| **PASS**（2026-08-11，第四版，依新標準） | **(a) 全新安裝只有離線 demo-fixture**：payload 的 `config\` 只有 `sources.example.json`（1080 bytes），個人 `sources.json` 已排除，`fixtures\beyblade-x.json` 已打包。生效來源恰為 `demo-fixture`（啟用）與 `example-jsonld`（停用）。<br><br>**(b) fixture 可正常運作**：首次啟動自動掃描 `demo-fixture: 3 items, 2 events`，2 則通知送出，`healthy=true`。<br><br>**(c) 使用者自行新增來源後可抓取**：由管理頁「貼上網址 → 預覽 → 加入」流程新增 `https://www.hlj.com/product/TKT09613`，解析成功（5446 ms，1 item／1 event），`hlj-com` `healthy=true`，全庫成長為 sources 3／products 3／offers 4。<br><br>**UI 端的繁中錯誤呈現仍未檢視** —— 本輪三個來源全數成功，沒有失敗案例可看。這是本項唯一未觸及的角落。 |
+
+<details>
+<summary>第一輪結果（部分，保留作對照）</summary>
+
+| 判定 | 證據／備註 |
+| --- | --- |
+| **部分** | 2026-08-02 首次啟動自動執行掃描：`sources 3, ok 2, failed 1, itemsSeen 2, eventsCreated 1`，通知 1 送出。`yodobashi-ux20`（895 ms）與 `hlj-ux20`（2026 ms）成功；**`shimamura-ux20` 失敗**：`page.waitForSelector: Timeout 45000ms exceeded`，等待 `.catalogue__infoTitle`，耗時 48379 ms。見缺陷 **D-2**。<br><br>此結果建立在 D-3 的錯誤行為之上（那三個來源本來就不該出貨），故不能作為第四版的判定依據。 |
+
+</details>
 
 ### A-10 解除安裝 — 選「保留資料」
 
@@ -430,7 +453,48 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Select-Object ProcessI
 
 ---
 
-## 2.2 路線 2：乾淨 VM — 執行順序與快照規劃
+## 2.2 第四輪驗收紀錄（2026-08-11，Test_Darren）
+
+依 `C:\Users\Public\BeybladeTracker-Acceptance\ROUND4-RUNBOOK.md` 執行。結果如上表；本節記錄過程中值得留存的事。
+
+### 首次啟動耗時：根本解法未被觸發，但變異依舊
+
+| 情境 | 耗時 |
+| --- | --- |
+| 第四輪 安裝後 | **26.9 秒**（安裝完成 10:36:20 → `startedAt` 10:36:47） |
+| 第四輪 登入自動啟動 | **34.7 秒**（登入 10:52:51 → `startedAt` 10:53:25） |
+
+兩次都在 60 秒預算內，因此 `still-starting` 這條新路徑**這一輪並未被實機觸發**，全程也沒有出現任何 `BT-LCH-*` 對話框。連同前三輪，同一台機器的實測值為 18／18.6／26.9／34.7／37.5／55.5 秒 —— 變異近三倍的事實不變，這正是把成敗判定從時間改為證據的理由。
+
+> 需要留意：根本解法的實機路徑仍未獲得正面實證。要觸發它得讓首次啟動超過 60 秒，本機目前做不到。單元測試涵蓋了判定邏輯，但「逾時後向服務取證」在真機上尚未走過一次。
+
+### 兩個 harness 缺陷（不是產品缺陷，但毀掉了證據）
+
+**其一：提早按 Enter 無法與失敗區分。** `r2-install.ps1`、`a10-uninstall-keep.ps1`、`a11-uninstall-delete.ps1` 都以 `Read-Host '完成後按 Enter'` 當作「動作已完成」的信號，之後立刻量測。若在動作真正發生前按下 Enter，輸出會與「安裝失敗」「解除安裝失敗」**完全一樣**。本輪因此誤判過兩次，各浪費一輪重做。
+
+三支腳本已改為**等待實際狀態改變**（安裝目錄出現／消失，最多 5 分鐘），並在逾時時明講「這代表動作未執行或未完成，下方檢查不具參考價值」，而不是留下一份看起來像失敗的報告。
+
+**其二：在提示處中斷腳本會讓整項驗收沒有證據。** 第一次的 A-11 在 `Read-Host` 等待時被關掉，`a11-result.txt` 就停在提示那一行，完全沒有「刪除後」段落 —— 即使解除安裝實際上成功了，該項仍等於沒驗。`a11-uninstall-delete.ps1` 已加上明確警告。
+
+### 一個會誤導後人的過期結論
+
+`r2-startup-timing.ps1` 寫死著第二輪的門檻與判語：「service-control start 上限為 15 秒 >>> 已超過，足以解釋 `BT-LCH-003` 誤報」。第四版的預算是 60 秒，且逾時已不再等同失敗，因此這段話會把正常的啟動寫成誤報。已改為依 60 秒預算判讀，並說明超過時會回報 `still-starting` 而非失敗。
+
+**教訓**：把版本相關的常數與結論寫死在驗收腳本裡，會在產物演進後污染證據檔。腳本應該只記錄觀測值，或從產物本身讀取門檻。
+
+### A-10 的基準線來自別處
+
+本輪 A-10 執行得太早：`a10-uninstall-keep.ps1` 於 11:27:13 啟動時服務尚未寫出資料庫，「解除安裝前」只看到一個 0 bytes 的 `tracker.log`，因此**腳本自己的前後筆數比對沒有成立**。
+
+判定仍為 PASS，基準線改採等價狀態的獨立紀錄：同樣是「全新安裝 ＋ 一次 fixture 掃描」，`r2-install-result.txt`（10:42:53）記錄的筆數為 products 2／offers 3／events 2／sources 2／observations 3，而 A-10 解除安裝後讀到的是**完全相同的五個數字**，且 `integrity_check=ok`、`schemaVersion=13`。程式檔案、捷徑、`Run` 機碼與登錄項目則全數移除。
+
+### 順帶澄清的一個疑點
+
+`a2-result.txt` 記錄「停止後仍存在的 node 行程：PID 32952、25788」，與第三輪的「無殘留」不同。查 `tracker.log` 得 `02:49:21.672Z service shutting down: stop.request`，而腳本在 port 關閉後（10:49:22）立即取樣 —— 服務當時正在做關閉收尾（WAL 併回主檔）。**是取樣時機，不是行程洩漏**；後續各檢查點均為「無 Beyblade node 行程」。
+
+---
+
+## 2.3 路線 2：乾淨 VM — 執行順序與快照規劃
 
 A 段各項之間有相依性，順序錯了會需要重做。建議如下：
 
@@ -556,6 +620,8 @@ launch.args = ['--window-position=-32000,-32000', '--window-size=900,700'];
 `/health` 只能佐證、不能單獨定案 —— 它不會告訴你是**哪個行程**在回應。但它與「子行程仍存活」併用時有意義：若有別的監聽者占著 8787，我們的子行程會因綁不到 port 而結束，而不是活著。
 
 **逾時的角色因此只剩「使用者要等多久才拿到回饋」**，不再決定成敗，也就不必為變異去猜一個夠大的數字。真正卡住的服務會走到 `Wait-ForManagementPage`，回報 `BT-LCH-004`（等候逾時，服務未回應）—— 這是誠實的描述，而不是 `BT-LCH-003` 那句與事實不符的「啟動失敗」。
+
+> ⚠ **這條新路徑尚未在真機上走過一次。** 2026-08-11 的第四輪實測為 26.9 秒與 34.7 秒，都在 60 秒預算內就回報 `started`，因此 `still-starting` 分支只有單元測試涵蓋。要在實機觸發它，得讓首次啟動超過 60 秒 —— 本機做不到。列為已知涵蓋落差。
 
 <details>
 <summary>原殘留風險紀錄（保留作對照）</summary>
@@ -856,11 +922,19 @@ const applied = applyPendingTransfer(incomingConfig);   // 未傳入 { pidFile }
 
 | 欄位 | 內容 |
 | --- | --- |
-| 執行者 |  |
-| 測試機／快照 ID |  |
-| 執行日期 |  |
-| A 段結果 | ___ PASS / ___ FAIL / ___ 未測（共 11 項） |
-| 阻斷性問題 |  |
-| Go / No-Go |  |
+| 執行者 | Darren Ye |
+| 測試機／帳號 | 開發機 `C--Dev-Beyblade-dev` 的本機測試帳號 `Test_Darren`（路線 1） |
+| 產物 | 第四輪 `0d4a0c73…`，27,479,037 bytes |
+| 執行日期 | 2026-08-02（第一輪）／08-05～08-07（第二、三輪）／**2026-08-11（第四輪，收尾）** |
+| A 段結果 | **10 PASS / 0 FAIL / 1 未測**（共 11 項） |
+| 未測項 | **A-4b 無 Chrome 分支** —— 路線 1 結構上做不到，需乾淨 VM |
+| 阻斷性問題 | 無。五項真缺陷（D-3～D-7）全部已修並實機驗證 |
+| Go / No-Go | **A 段 Go（但不完整）**；B 段仍全數受阻，見下 |
 
-A 段全數 PASS 只代表**安裝、執行、解除安裝**層面可接受；因 B 段受阻，仍不得將此產物標示為公開 production release。
+A 段 10 項 PASS 代表**安裝、執行、解除安裝**層面可接受，但這不是完整的發佈判定，原因有三：
+
+1. **A-4b 未測** —— 沒有 Chrome 的機器上安裝會發生什麼，至今無人驗過。
+2. **路線 1 不等於 RUNBOOK 要求的 clean VM** —— 本機有全機器安裝的 Chrome 與 `C:\Program Files\nodejs`，「不需開發工具」只能以間接方式證明（見 2.1 節末）。
+3. **B 段全數受阻** —— 線上更新、rollback、migration 升級與 SmartScreen 都需要外部條件（Authenticode 憑證、HTTPS 發佈站、一個 1.0.1 版本）。
+
+因此**仍不得將此產物標示為公開 production release**。

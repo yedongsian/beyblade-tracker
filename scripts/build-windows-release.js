@@ -25,7 +25,15 @@ function safeClean(path) {
   rmSync(resolved, { recursive: true, force: true });
 }
 
+// config/sources.json is gitignored and holds whatever this machine happens to track.
+// Shipping it makes the released default source list depend on the build machine and
+// pushes the builder's own configuration to every user, who then starts crawling sites
+// they never added. config.js already falls back to config/sources.example.json, which
+// is the tracked, intended default.
+const EXCLUDED_FROM_PAYLOAD = new Set([resolve(ROOT, 'config', 'sources.json')]);
+
 function copyTree(source, destination) {
+  if (EXCLUDED_FROM_PAYLOAD.has(resolve(source))) return;
   const stat = lstatSync(source);
   if (stat.isDirectory()) {
     mkdirSync(destination, { recursive: true });
@@ -39,13 +47,32 @@ function copyTree(source, destination) {
 safeClean(DIST);
 mkdirSync(join(PAYLOAD, 'runtime'), { recursive: true });
 mkdirSync(OUTPUT, { recursive: true });
-for (const entry of ['bin', 'config', 'src', 'scripts', 'node_modules']) {
+// fixtures ships because sources.example.json — the default a fresh install now falls
+// back to — enables an offline demo source that reads fixtures/beyblade-x.json.
+for (const entry of ['bin', 'config', 'fixtures', 'src', 'scripts', 'node_modules']) {
   copyTree(join(ROOT, entry), join(PAYLOAD, entry));
 }
 for (const entry of ['package.json', 'package-lock.json', 'README.md', 'INSTALL.md', 'PRIVACY.md', 'SOURCE_POLICY.md', 'SOURCE_DEVELOPMENT.md', 'TROUBLESHOOTING.md', 'RELEASE_GUIDE.md']) {
   const source = join(ROOT, entry);
   if (existsSync(source)) copyTree(source, join(PAYLOAD, entry));
 }
+// Fail the build rather than ship a payload carrying the builder's own source list.
+for (const forbidden of EXCLUDED_FROM_PAYLOAD) {
+  const shipped = join(PAYLOAD, forbidden.slice(resolve(ROOT).length + 1));
+  if (existsSync(shipped)) throw new Error(`發佈內容不得包含建置機的個人設定：${shipped}`);
+}
+if (!existsSync(join(PAYLOAD, 'config', 'sources.example.json'))) {
+  throw new Error('發佈內容缺少 config/sources.example.json，全新安裝將沒有可用的預設來源。');
+}
+// The example config enables this fixture, so a payload without it would ship a
+// default source that fails on every crawl.
+for (const source of JSON.parse(readFileSync(join(PAYLOAD, 'config', 'sources.example.json'), 'utf8')).sources || []) {
+  if (!source.enabled || source.connector !== 'fixture' || !source.config?.file) continue;
+  if (!existsSync(join(PAYLOAD, source.config.file))) {
+    throw new Error(`預設來源 ${source.key} 需要的 fixture 未被打包：${source.config.file}`);
+  }
+}
+
 copyTree(process.execPath, join(PAYLOAD, 'runtime', 'node.exe'));
 writeFileSync(join(PAYLOAD, 'release.json'), JSON.stringify({
   version: APP_VERSION, schemaVersion: CURRENT_SCHEMA_VERSION, builtAt: new Date().toISOString(),

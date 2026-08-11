@@ -208,6 +208,16 @@ npm run db:restore -- --from backups\manual-YYYYMMDD-HHMMSSZ.db --to C:\test\dat
 
 以隔離的測試安裝目錄分別製造 `current.json` 缺失、runtime 缺失、service failure 與 health timeout。每個 hidden Launcher 路徑都必須顯示 native dialog，包含固定 `BT-LCH-*` code、繁中 recovery、「複製錯誤資訊」與「問題回報」。複製內容只能含 code、App version、UTC 與 safe support reference；不得附完整 path、stack、Token、Webhook 或 URL。完成時記錄 code 與測試結果，不要保存使用者資料。
 
+非互動路徑已自動化：
+
+```powershell
+npm run test:release:launcher-errors
+```
+
+它在隔離安裝目錄逐一注入上述四種故障，加上 `BT-LCH-006`，並斷言 `-NonInteractive` 呼叫的 exit code 為 1、stderr 恰好等於預期代碼、stdout 無輸出，且未洩漏 path、script 名稱、stack 或 URL。**注意**：health timeout 案例需要 port 8787 淨空（`Wait-ForManagementPage` 硬編碼該位址），否則該案例會標記為 `SKIPPED` 而非 PASS。
+
+上述指令**不涵蓋**互動模式的 native dialog；該部分仍須人工目視驗收。
+
 ### Build
 
 ```powershell
@@ -215,6 +225,9 @@ npm test
 npm run config:check
 npm run release:windows
 npm run test:release:windows
+npm run test:release:windows:stopfail
+npm run test:release:windows:missing-launcher
+npm run test:release:launcher-errors
 ```
 
 Windows Launcher 含繁中文案，`release/windows/launcher.ps1` 必須保持為 UTF-8 with BOM，讓系統內建的 Windows PowerShell 5.1 正確解析。Build／review 時確認檔案開頭 bytes 為 `EF BB BF`；不得由 formatter 或 editor 移除 BOM。

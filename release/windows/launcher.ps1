@@ -5,8 +5,9 @@
 $ErrorActionPreference = 'Stop'
 # Actions callable by the installer, uninstaller, startup automation and tests: never GUI, always bounded.
 $nonInteractiveActions = @('start','restart','stop','status')
-# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 15s) plus overhead.
-$controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' = 20 }
+# Each bounded wait stays above the service-control timeout it drives (stop 35s, start 60s) plus the
+# health probe service-control makes before it decides whether a slow start actually failed.
+$controlTimeoutSeconds = @{ 'start' = 90; 'restart' = 130; 'stop' = 45; 'status' = 20 }
 
 function Throw-LauncherError([string]$Code) {
   $launcherError = New-Object System.Exception($Code)
@@ -17,6 +18,16 @@ function Throw-LauncherError([string]$Code) {
 function Show-LauncherError([string]$Code) {
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
+  # launcher.vbs starts this process with shell.Run(cmd, 0, False), so STARTUPINFO
+  # carries SW_HIDE and the first top-level window inherits it. ShowDialog would then
+  # block forever on a dialog nobody can see, which is how every launcher error became
+  # silent. Force the window visible once it exists.
+  if (-not ('BeybladeWin32' -as [type])) {
+    Add-Type -Namespace BeybladeWin32 -Name Native -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+'@ -PassThru | Out-Null
+  }
   $details = @{
     'BT-LCH-001' = @('找不到目前版本', 'Beyblade Tracker 找不到目前安裝版本。', '重新安裝相同或更新版本。')
     'BT-LCH-002' = @('找不到執行環境', 'Beyblade Tracker 找不到內建執行環境。', '重新安裝，並檢查防毒軟體是否隔離檔案。')
@@ -50,7 +61,15 @@ function Show-LauncherError([string]$Code) {
   $status.Add_Click({ Start-Process 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action status" })
   $close = New-Object System.Windows.Forms.Button
   $close.Text = '關閉'; $close.Location = New-Object System.Drawing.Point(382, 220); $close.Size = New-Object System.Drawing.Size(90, 32); $close.Add_Click({ $form.Close() })
-  $form.Controls.AddRange(@($label, $copy, $report, $status, $close)); $form.ShowDialog() | Out-Null
+  $form.Controls.AddRange(@($label, $copy, $report, $status, $close))
+  $form.TopMost = $true
+  # SW_SHOWNORMAL = 1. Handle is only valid once the form is created, so do it on Shown.
+  $form.Add_Shown({
+    [void][BeybladeWin32.Native]::ShowWindow($form.Handle, 1)
+    [void][BeybladeWin32.Native]::SetForegroundWindow($form.Handle)
+    $form.Activate()
+  })
+  $form.ShowDialog() | Out-Null
 }
 
 try {
@@ -203,7 +222,11 @@ function Run-Control([string]$command) {
 }
 
 function Wait-ForManagementPage {
-  $deadline = [DateTime]::UtcNow.AddSeconds(15)
+  # This is now the only place a start is declared unsuccessful. service-control reports success
+  # for a service it has verified is alive and still starting, so anything genuinely stuck arrives
+  # here and is reported as BT-LCH-004 ("waited, never answered") rather than BT-LCH-003's false
+  # claim that the start failed. The budget is the margin on top of service-control's own 60s.
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
   while ([DateTime]::UtcNow -lt $deadline) {
     try { if ((Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8787/health' -TimeoutSec 2).StatusCode -eq 200) { return } }
     catch { Start-Sleep -Milliseconds 500 }

@@ -101,10 +101,20 @@ export function applyPendingTransfer(config, { pidFile } = {}) {
   try {
     const incomingDb = join(work, 'tracker.db');
     writeFileSync(incomingDb, inspected.files['tracker.db']);
-    const restored = restoreBackup(incomingDb, config.dbPath, { pidFile });
+    // This runs inside the service that already owns the PID file.
+    const restored = restoreBackup(incomingDb, config.dbPath, { pidFile, ignorePid: process.pid });
     atomicWrite(config.userSourcesPath || config.sourcesPath, inspected.files['sources.json']);
     rmSync(config.pendingImportFile, { force: true });
     return { ...restored, metadata: inspected.metadata };
+  } catch (err) {
+    // This runs during startup, so a pending file that survives a failure would be
+    // retried on every launch and leave the service permanently unable to start.
+    // Move it aside first: a failed import must cost the import, not the install.
+    const failedPath = `${config.pendingImportFile}.failed-${timestamp()}`;
+    try { renameSync(config.pendingImportFile, failedPath); }
+    catch { rmSync(config.pendingImportFile, { force: true }); }
+    err.pendingImportMovedTo = failedPath;
+    throw err;
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

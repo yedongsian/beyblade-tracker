@@ -1,13 +1,24 @@
 import { canAttemptGracefulStop, canForceTerminate, classifyServiceProcess } from './service-process.js';
 
 export const STOP_TIMEOUT_MS = 35_000;
-export const START_TIMEOUT_MS = 15_000;
+// A first start does real work before the service reports ready: schema migrations, an automatic
+// backup, and applying any pending transfer. Measured on one Windows machine the same build took
+// 18s, 18.6s, 37.5s and 55.5s, so no fixed budget separates "slow" from "failed". This one bounds
+// how long a caller waits; confirmStartOutcome decides whether the start actually failed.
+export const START_TIMEOUT_MS = 60_000;
 const STOP_POLL_MS = 500;
 const START_POLL_MS = 300;
 
 function safeCall(fn, fallback) {
   try {
     const value = fn();
+    return value === undefined ? fallback : value;
+  } catch { return fallback; }
+}
+
+async function safeCallAsync(fn, fallback) {
+  try {
+    const value = await fn();
     return value === undefined ? fallback : value;
   } catch { return fallback; }
 }
@@ -67,6 +78,35 @@ export async function runStopSequence(deps) {
 }
 
 /**
+ * Expiring the wait budget is not evidence of failure, so ask the service itself before reporting one.
+ *
+ * `bin/service.js` publishes a `starting` status record — carrying its own PID, executable and start
+ * time — before any of the slow work begins. A spawned process that is still alive and still owns that
+ * record is a slow start, not a failed one. `/health` cannot name the process answering it, so it only
+ * corroborates: a conflicting listener would have made this child exit rather than leave it running.
+ *
+ * Reporting `still-starting` hands the question to the caller's own readiness wait (the launcher's
+ * `Wait-ForManagementPage`), which reports BT-LCH-004 — "waited and it never answered" — instead of
+ * BT-LCH-003's false claim that the start failed.
+ */
+export async function confirmStartOutcome(deps, childPid) {
+  const { readStatus, isAlive, probeHealth } = deps;
+  const status = safeCall(readStatus, null);
+  if (status?.pid === childPid && status.status === 'running') {
+    return { ok: true, outcome: 'started', pid: childPid, status };
+  }
+  if (!isAlive(childPid)) return { ok: false, outcome: 'exited', pid: childPid, status };
+  const ownership = status?.pid === childPid && status?.status === 'starting'
+    ? classify(deps, childPid, status)
+    : 'other';
+  const healthy = probeHealth ? await safeCallAsync(() => probeHealth(), false) : false;
+  if (ownership !== 'other' || healthy) {
+    return { ok: true, outcome: 'still-starting', pid: childPid, status, ownership, healthy };
+  }
+  return { ok: false, outcome: 'timeout', pid: childPid, status, ownership };
+}
+
+/**
  * A live PID is only "already running" when ownership is verified; a reused PID owned by another process
  * is cleared from the Tracker's own metadata without ever terminating that process.
  */
@@ -101,5 +141,5 @@ export async function runStartSequence(deps) {
     }
     if (!isAlive(childPid)) return { ok: false, outcome: 'exited', pid: childPid, status };
   }
-  return { ok: false, outcome: 'timeout', pid: childPid };
+  return confirmStartOutcome(deps, childPid);
 }

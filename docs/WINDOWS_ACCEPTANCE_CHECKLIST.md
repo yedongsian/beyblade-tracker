@@ -83,7 +83,8 @@ SHA-256：**`0d4a0c7306b95ab9fc2b7900138d8135c09b6810399181bc96111c274efc712d`**
 
 | # | 待辦 | 需要什麼 | 備註 |
 | --- | --- | --- | --- |
-| 0 | **A-6b「問題回報」按鈕複驗** | 下一版產物 | `launcher.ps1` 的回報 URL 已於 2026-08-11 修正（原本不會預填錯誤代碼與 App 版本，見 `BT-UX-002`）。修正本身已於線上表單實測通過，但**按鈕點擊後實際開啟的 URL 尚未在產物上複驗**。可與 A-4b 的 VM 輪合併執行 |
+| 0a | **A-6b「問題回報」按鈕複驗** | 下一版產物 | `launcher.ps1` 的回報 URL 已於 2026-08-11 修正（原本不會預填錯誤代碼與 App 版本，見 `BT-UX-002`）。修正本身已於線上表單實測通過，但**按鈕點擊後實際開啟的 URL 尚未在產物上複驗** |
+| 0b | **A-9 失敗來源的錯誤呈現** | 下一版產物 ＋ 一個必定失敗的來源 | 來源頁的錯誤訊息已於 2026-08-11 改為三語可操作訊息（`BT-UX-003`）。做法：加一個必定失敗的來源（例如已下架的 shimamura URL），確認顯示的是建議而非英文原文。**這是 A-9 唯一從未被檢視過的角落** |
 | 1 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.3 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware。**A 段唯一未完成項**，且本機環境結構上做不到 —— Chrome 安裝於 `C:\Program Files`，全機器共用，換帳號仍可見 |
 | 2 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802`。**A-4b 完成前先別動**，共用資料夾的腳本還會用到 |
 
@@ -350,7 +351,7 @@ $controlTimeoutSeconds = @{ 'start' = 40; 'restart' = 80; 'stop' = 45; 'status' 
 
 | 判定 | 證據／備註 |
 | --- | --- |
-| **PASS**（2026-08-11，第四版，依新標準） | **(a) 全新安裝只有離線 demo-fixture**：payload 的 `config\` 只有 `sources.example.json`（1080 bytes），個人 `sources.json` 已排除，`fixtures\beyblade-x.json` 已打包。生效來源恰為 `demo-fixture`（啟用）與 `example-jsonld`（停用）。<br><br>**(b) fixture 可正常運作**：首次啟動自動掃描 `demo-fixture: 3 items, 2 events`，2 則通知送出，`healthy=true`。<br><br>**(c) 使用者自行新增來源後可抓取**：由管理頁「貼上網址 → 預覽 → 加入」流程新增 `https://www.hlj.com/product/TKT09613`，解析成功（5446 ms，1 item／1 event），`hlj-com` `healthy=true`，全庫成長為 sources 3／products 3／offers 4。<br><br>**UI 端的繁中錯誤呈現仍未檢視** —— 本輪三個來源全數成功，沒有失敗案例可看。這是本項唯一未觸及的角落。 |
+| **PASS**（2026-08-11，第四版，依新標準） | **(a) 全新安裝只有離線 demo-fixture**：payload 的 `config\` 只有 `sources.example.json`（1080 bytes），個人 `sources.json` 已排除，`fixtures\beyblade-x.json` 已打包。生效來源恰為 `demo-fixture`（啟用）與 `example-jsonld`（停用）。<br><br>**(b) fixture 可正常運作**：首次啟動自動掃描 `demo-fixture: 3 items, 2 events`，2 則通知送出，`healthy=true`。<br><br>**(c) 使用者自行新增來源後可抓取**：由管理頁「貼上網址 → 預覽 → 加入」流程新增 `https://www.hlj.com/product/TKT09613`，解析成功（5446 ms，1 item／1 event），`hlj-com` `healthy=true`，全庫成長為 sources 3／products 3／offers 4。<br><br>**UI 端的繁中錯誤呈現仍未檢視** —— 本輪三個來源全數成功，沒有失敗案例可看。這是本項唯一未觸及的角落。<br><br>2026-08-11 後續：檢視程式後確認該呈現**原本就不成立**（抓取路徑的錯誤是英文，見 `BT-UX-003`），已實作三語可操作訊息，待下一版產物複驗（待辦 0b）。 |
 
 <details>
 <summary>第一輪結果（部分，保留作對照）</summary>

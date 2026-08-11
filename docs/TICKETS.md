@@ -31,7 +31,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
 | BT-UX-001 | P0 | In Review | 完成一般使用者雙擊安裝與單一入口驗收 | A-4b 無 Chrome 分支（需乾淨 VM）、BT-P0-001 的 signing |
 | BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | 問題回報按鈕於下一版產物複驗 |
-| BT-UX-003 | P1 | Proposed | 抓取失敗的來源錯誤訊息改為繁中且可操作 | — |
+| BT-UX-003 | P1 | In Review | 抓取失敗的來源錯誤訊息改為繁中且可操作 | A-9 錯誤呈現於下一版產物複驗 |
 | BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | 發布前確認文件進入 release payload |
@@ -223,7 +223,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-UX-003 — 抓取失敗的來源錯誤訊息改為繁中且可操作
 
 - Priority：P1
-- Status：Proposed
+- Status：In Review
 - Owner：待指定
 - 背景：A-9 的預期結果之一是「失敗時於來源管理頁顯示**可操作的繁中錯誤**」。此項至今從未被驗證 —— 歷輪驗收不是三個來源全數成功，就是失敗在別的地方。2026-08-11 檢視程式後確認**目前不成立**。
 - 現況：
@@ -238,8 +238,16 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 訊息不洩漏完整路徑、stack 或憑證；站方可控的字串仍必須逃逸。
   - 未知錯誤落到保留的泛用訊息，不把 exception message 當公開契約。
   - 每個對應都有測試；至少一項覆蓋「站方可控字串不得注入 markup」。
-- 已有的部分涵蓋：`test/web.test.js` 已驗證失敗會顯示在來源頁、帶失敗次數、且經過逃逸（含 `<img src=x onerror=...>` 注入案例）。該測試刻意不斷言語言，等本 Ticket 決定對應表後再補。
-- 相關：`BT-UX-002`（錯誤代碼 registry，可考慮共用同一套對應機制）、D-2（失效 URL 造成的 45 秒逾時是本問題最早的實例）
+- 相關：`BT-UX-002`（錯誤代碼 registry）、D-2（失效 URL 造成的 45 秒逾時是本問題最早的實例）
+
+- Verification evidence（2026-08-11）：已實作，等待實機複驗。
+  - **沿用既有機制而非另造一套**：`safeErrorClass()`（`src/core/operations.js`）本來就會把任何錯誤化約成有界、不含內容的類別（`http_NNN`、`timeout`、`dns`、`connection`、`tls`、`robots_blocked`、`access_blocked`、`network_paused`、`parse`、`not_found`、`validation`…），且設計上**永不回傳原始訊息**。因此它是安全的 join key。
+  - 新增 `sourceErrorMessageKey()` 做「類別 → 翻譯鍵」對應。10 個 HTTP 狀態各有專屬建議（404 是下架、429 是放慢、503 是等待，使用者該做的事不同），其餘落到泛用 HTTP 訊息並**帶上類別**，讓訊息不會比證據更模糊。
+  - **不需要 schema 變更**：分類在渲染時進行，因此既有的 `last_error` 資料也會受惠，不必 migration。
+  - 三語文案全數寫入 `src/i18n.js`（繁中／日文／英文）。
+  - 來源頁改為「可操作訊息在前，商店原文收在 `<details> 技術細節`」。原文不丟棄 —— 那才是回報時有用的東西 —— 但它可能含站方可控內容，所以維持逃逸並收在展開區。
+  - 回歸涵蓋：五種真實失敗訊息各自得到不同建議且不落入 catch-all；英日文各自有專屬用詞；**每個類別在三種語言都必須有翻譯**（缺翻譯會退回繁中，在英文頁上不會有人發現，所以特別立一條）；未知類別不得把自己洩漏進文案。反向確認：還原渲染後 3 項失敗。
+- **剩餘**：A-9 的「失敗時顯示可操作繁中錯誤」需於下一版產物實機複驗。做法：在測試帳號加一個必定失敗的來源（例如已下架的 shimamura URL，或任一不存在的商品頁），確認來源頁顯示的是建議而非英文原文。
 
 ### BT-P2-001 — HTTP conditional request 與 bounded cache
 

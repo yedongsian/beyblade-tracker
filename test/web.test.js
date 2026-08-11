@@ -807,27 +807,66 @@ test('source API disables by default instead of deleting history', async () => {
 // count, and is escaped: last_error holds text the remote site can influence (HTTP bodies,
 // redirect targets), so it must never be able to inject markup into the operator's own page.
 //
-// What is NOT guaranteed is the language. recordCrawlFailure stores String(error) verbatim and
-// src/net/http.js raises 'HTTP 404' / 'fetch failed' / 'response exceeds N bytes' in English,
-// while browser sources surface raw Playwright text. Only the preview path
-// (src/net/public-http.js) speaks Traditional Chinese. Deliberately not asserted either way -
-// see BT-UX-003.
+// BT-UX-003: the message itself is now localized. recordCrawlFailure still stores String(error)
+// verbatim - src/net/http.js raises 'HTTP 404' / 'fetch failed' in English and browser sources
+// surface raw Playwright text - so the page classifies at render time and shows text the operator
+// can act on, keeping the store's own words underneath for a bug report.
+function addFailingSource(db, key, error) {
+  db.run(
+    `INSERT INTO sources (key,name,connector,enabled,check_interval_seconds,connector_version,
+     recipe_version,managed_by,created_at,updated_at) VALUES (?,?,'jsonld',1,3600,'1.0.0',1,'ui','x','x')`,
+    [key, key.toUpperCase()]
+  );
+  const { id } = db.get('SELECT id FROM sources WHERE key=?', [key]);
+  recordCrawlFailure(db, id, error);
+  return id;
+}
+
 test('a failing source surfaces its error on the sources page without letting it inject markup', async () => {
   await withServer(async ({ db, base }) => {
-    db.run(
-      `INSERT INTO sources (key,name,connector,enabled,check_interval_seconds,connector_version,
-       recipe_version,managed_by,created_at,updated_at) VALUES ('hlj','HLJ','jsonld',1,3600,'1.0.0',1,'ui','x','x')`
-    );
-    const { id } = db.get("SELECT id FROM sources WHERE key='hlj'");
-    recordCrawlFailure(db, id, 'HTTP 404 <img src=x onerror="alert(1)">');
+    const id = addFailingSource(db, 'hlj', 'HTTP 404 <img src=x onerror="alert(1)">');
 
     const page = await (await fetch(`${base}/sources`)).text();
     assert.match(page, /class="status error"/, 'the failure must be visible, not only in the log');
-    assert.match(page, /HTTP 404/);
+    assert.match(page, /可能已下架/, 'the operator reads advice, not the library-s wording');
+    assert.match(page, /HTTP 404/, 'the original stays available for a bug report');
     assert.doesNotMatch(page, /<img src=x/, 'a site-controlled error must not become live markup');
     assert.match(page, /&lt;img src=x/);
     assert.equal(db.get('SELECT consecutive_failures c FROM sources WHERE id=?', [id]).c, 1);
   });
+});
+
+test('each kind of crawl failure gets its own advice rather than one generic line', async () => {
+  await withServer(async ({ db, base }) => {
+    // Every one of these is a message a real connector or the HTTP layer actually produces.
+    addFailingSource(db, 'gone', 'HTTP 410');
+    addFailingSource(db, 'slow', 'page.waitForSelector: Timeout 45000ms exceeded');
+    addFailingSource(db, 'missing', 'getaddrinfo ENOTFOUND shop.example');
+    addFailingSource(db, 'blocked', 'Access Denied: queue-it waiting room');
+    addFailingSource(db, 'unparsed', 'parser produced no valid listings (parse)');
+
+    const page = await (await fetch(`${base}/sources`)).text();
+    assert.match(page, /永久移除/, 'HTTP 410 is permanent, unlike a timeout');
+    assert.match(page, /等待商店回應逾時/);
+    assert.match(page, /找不到這個網域/);
+    assert.match(page, /本程式不會繞過/, 'a blocked source must say the app will not bypass it');
+    assert.match(page, /認不出商品資訊/);
+    // The catch-all exists, but a recognised failure must never fall into it.
+    assert.doesNotMatch(page, /上次抓取失敗/);
+  });
+});
+
+test('source error advice is translated, not pinned to Traditional Chinese', async () => {
+  for (const [language, expected] of [['en', /probably delisted/], ['ja', /販売終了/]]) {
+    await withServer(async ({ db, base }) => {
+      addFailingSource(db, 'hlj', 'HTTP 404');
+      saveOnboardingSettings(db, {
+        language, notification: 'app', scanFrequency: 'balanced', dataRetentionDays: 365,
+      });
+      const page = await (await fetch(`${base}/sources`)).text();
+      assert.match(page, expected, `${language} must get its own wording`);
+    });
+  }
 });
 
 test('Review Queue page and batch approval API create monitored data', async () => {

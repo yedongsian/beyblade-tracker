@@ -42,6 +42,7 @@ import { releaseInfo } from '../release/version.js';
 import { createDiagnosticsBundle } from '../maintenance/diagnostics.js';
 import {
   listRecentOperationEvents, newCorrelationId, operationsMetrics, recordOperationEvent, safeErrorClass,
+  sourceErrorMessageKey,
 } from '../core/operations.js';
 import { errorEnvelope } from '../errors/registry.js';
 
@@ -452,6 +453,20 @@ function communityPage(db, base) {
   return layout({ ...page, title: t('community.title'), current: '/community', body, extraScript: communityScript(t) });
 }
 
+/**
+ * Lead with what the operator can act on, and keep the store's own words underneath rather than
+ * discarding them: the raw text is what makes a bug report useful, but it is also attacker-adjacent
+ * (an HTTP body or redirect target can reach it), so it stays escaped and behind a disclosure.
+ */
+function sourceErrorPanel(lastError, t) {
+  if (!lastError) return '';
+  const errorClass = safeErrorClass(lastError);
+  const key = sourceErrorMessageKey(errorClass);
+  if (!key) return '';
+  return `<p class="status error">${esc(t(key, { class: errorClass }))}</p>
+    <details class="source-error-detail"><summary>${esc(t('sources.errorDetail'))}</summary><code>${esc(lastError)}</code></details>`;
+}
+
 function sourcesPage(db, base) {
   const page = pageOptions(db, base);
   const { t } = page;
@@ -477,7 +492,7 @@ function sourcesPage(db, base) {
     const statusKey = source.enabled ? 'sources.active' : discovery && !hasMonitorPages ? 'sources.discovery' : 'sources.disabled';
     return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : discovery && !hasMonitorPages ? 'warn' : ''}">${esc(t(statusKey))}</span></h3>
     <div class="meta"><span>${esc(source.registrable_domain || source.url || t('sources.noDomain'))}</span><span>${esc(source.connector)} v${esc(source.connector_version)}</span>${source.source_class ? `<span>${esc(t(`sourceClass.${source.source_class}`))}</span>` : ''}<span>${esc(t('sources.monitorUrls', { count: source.seed_count }))}</span><span>${esc(t('sources.offerCount', { count: source.offer_count }))}</span><span>${esc(t('sources.nextMonitor', { time: source.monitor_next_run_at || t('common.never') }))}</span><span>${esc(t('sources.monitorFailures', { count: source.monitor_failures || 0 }))}</span><span>${esc(t(source.managed_by === 'ui' ? 'sources.uiManaged' : 'sources.builtIn'))}</span>${source.site_id ? `<span>${esc(t('sources.pending', { count: discoverySites.get(Number(source.site_id))?.pending_candidates || 0 }))}</span>` : ''}</div>
-    ${source.last_error ? `<p class="status error">${esc(source.last_error)}</p>` : ''}${discovery?.recipe_error ? `<p class="status error">Recipe：${esc(discovery.recipe_error)}</p>` : ''}${settingPanel}</div><div class="actions">
+    ${sourceErrorPanel(source.last_error, t)}${discovery?.recipe_error ? `<p class="status error">Recipe：${esc(discovery.recipe_error)}</p>` : ''}${settingPanel}</div><div class="actions">
     ${source.site_id ? `<button class="btn secondary" type="button" data-discovery-site="${source.site_id}">${esc(t('sources.discover'))}</button>` : ''}
     ${canMonitor ? `<button class="btn secondary" type="button" data-source-action="check-now" data-source-id="${source.id}">${esc(t('sources.checkNow'))}</button><button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">${esc(t('sources.test'))}</button>
     <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${esc(t(source.enabled ? 'sources.disable' : 'sources.enable'))}</button>` : ''}</div></article>`;

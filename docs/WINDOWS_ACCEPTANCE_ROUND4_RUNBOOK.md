@@ -1,18 +1,24 @@
-# 第四輪實機驗收 — 操作步驟
+# 實機驗收 — 操作步驟
 
-> **狀態：已執行完畢（2026-08-11，Test_Darren）。**
+> **第四輪已執行完畢（2026-08-11，Test_Darren）**，A 段 10 PASS / 0 FAIL / 1 未測。
 > 結果與過程紀錄見 [WINDOWS_ACCEPTANCE_CHECKLIST.md](WINDOWS_ACCEPTANCE_CHECKLIST.md) 第 2.2 節。
-> A 段 10 PASS / 0 FAIL / 1 未測（A-4b 需乾淨 VM）。
 >
-> 本檔納入版控的理由：A-4b 之後要在乾淨 VM 上補做，屆時步驟 3～9 幾乎可以照抄；
-> 且路線 2 需要重跑一次完整 A 段。這是目前唯一一份「從頭到尾怎麼做」的紀錄。
->
-> 驗收腳本本身不在版控內，位於 `C:\Users\Public\BeybladeTracker-Acceptance\`（收尾清理時會刪除）。
+> **下一輪（第五版產物，乾淨 VM）要做三件事**，見文末「下一輪的三個增補項」：
+> A-4b（無 Chrome 分支）、A-6b 的問題回報按鈕、A-9 的失敗來源錯誤呈現。
+> 步驟 3～9 照抄即可，另加文末三項。
 
-產物：`BeybladeTracker-1.0.0-Setup.exe`
-SHA-256：`0d4a0c7306b95ab9fc2b7900138d8135c09b6810399181bc96111c274efc712d`（27,479,037 bytes）
+## 產物
 
-全程在 **Test_Darren** 帳號執行，實際耗時約 60 分鐘（含兩次重做）。
+| | |
+| --- | --- |
+| 檔案 | `BeybladeTracker-1.0.0-Setup.exe` |
+| SHA-256 | `a5b67183ba1d981e697ed0ea4876787e7d597a693c50df43df7ac68a9da18f3c` |
+| 大小 | 27,505,644 bytes（2026-08-11 第五次建置） |
+| 來源 | `main` @ `1395f0c`，含 D-3～D-7 修正、`BT-UX-002` 回報預填修正、`BT-UX-003` 錯誤訊息三語化 |
+| 驗證 | 單元測試 239/239；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors 6-6） |
+
+驗收腳本已納入版控（`scripts/acceptance/`），共用資料夾裡的是同一份副本。
+全程在測試帳號執行，第四輪實際耗時約 60 分鐘（含兩次重做）。
 
 ---
 
@@ -287,11 +293,56 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 
 ---
 
-## 本輪做不到的部分
+## 下一輪的三個增補項（第五版產物，乾淨 VM）
 
-**A-4b（無 Chrome 分支）。** Chrome 裝在 `C:\Program Files`，全機器共用，換帳號仍然看得到。
-需要乾淨 VM（Windows 11 Home 沒有 Hyper-V，得用 VirtualBox 或 VMware），
-是 A 段唯一無法在本機完成的項目。快照規劃見 checklist 第 2.3 節。
+上面的步驟照跑，另外加這三項。三項都只在產物上驗得到。
 
-**收尾清理**（刪除 Test_Darren 帳號、共用資料夾、`C:\Users\yedon\BeybladeTracker-backup-20260802`）
-等 A-4b 做完再進行 —— 共用資料夾的腳本還會用到。
+### 增補 1：A-4b 無 Chrome 分支 ⭐ 必須排在最前面
+
+**這一項只有在還沒安裝 Chrome 的狀態下測得到。** 一旦裝了 Chrome，要回到那個狀態就得還原快照。
+
+1. 建立乾淨 Windows VM，**先不要裝 Chrome** → 拍快照 **S0**
+2. 執行安裝器，在「準備安裝」頁確認**出現找不到 Chrome 的提示**
+3. 選「是」→ 應開啟 `https://www.google.com/chrome/`
+4. 還原 S0，重跑一次選「否」→ 應仍可完成安裝
+5. 安裝後確認 **HTTP-only 來源仍可掃描**（`demo-fixture` 是離線的，一定會過；再加一個 JSON-LD 來源，例如 HLJ，確認不需要 Chrome 也能抓）
+6. 還原 **S0** → 安裝 Chrome → 拍快照 **S1**，之後所有測試以 S1 為基準
+
+### 增補 2：A-6b「問題回報」按鈕
+
+`launcher.ps1` 的回報 URL 已修正（原本不會預填錯誤代碼與 App 版本）。修正本身已於線上表單實測，
+但**按鈕點下去實際開啟的 URL 尚未在產物上驗過**。
+
+跑 `a6-dialog.ps1` 時，除了原本四題與剪貼簿檢查，**多點一次「問題回報」按鈕**，確認：
+
+- 瀏覽器開啟的是 `.../issues/new?template=bug_report.yml&...`（**不是** `/issues/new/choose`）
+- 表單的「錯誤代碼」欄已填入 `BT-LCH-001`
+- 「App 版本」欄已填入版本（此情境為 `unknown`，屬設計行為）
+- **不要送出**，看完關掉即可
+
+### 增補 3：A-9 失敗來源的錯誤呈現
+
+A-9 的「失敗時顯示可操作的繁中錯誤」至今從未被檢視 —— 歷輪不是全成功就是失敗在別的地方。
+訊息已改為三語可操作版本（`BT-UX-003`），需要一個**必定失敗**的來源來驗。
+
+用這個已下架的商品頁（D-2 的那一個，必定 404 或逾時）：
+
+```
+https://www.shop-shimamura.com/item/0363100014177/
+```
+
+加入後等一次掃描，然後到來源管理頁確認：
+
+- 顯示的是**可操作的繁中建議**（例如「這個商品頁已不存在，可能已下架。請確認網址，或停用此來源。」）
+- **不是**英文原文（`HTTP 404`、`page.waitForSelector: Timeout ...`）
+- 展開「技術細節」後**看得到**原始訊息 —— 原文保留是刻意的，回報時需要
+- 把 UI 切成日文或英文，確認訊息跟著換語言
+
+---
+
+## 收尾清理（全部做完之後）
+
+刪除測試帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、
+`C:\Users\yedon\BeybladeTracker-backup-20260802`。
+
+驗收腳本已納入版控（`scripts/acceptance/`），所以刪掉共用資料夾不會遺失任何東西。

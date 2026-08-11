@@ -11,7 +11,7 @@ import { createTranslator } from '../src/i18n.js';
 import { acquireRollbackLock, canStartServiceDuringRollback, getRollbackLifecycle, releaseRollbackLock, signedPayload, writeRollbackStatus } from '../src/release/update.js';
 import { confirmSource, saveOnboardingSettings } from '../src/core/source-manager.js';
 import { processListing } from '../src/core/pipeline.js';
-import { upsertSource } from '../src/core/store.js';
+import { recordCrawlFailure, upsertSource } from '../src/core/store.js';
 import { importOfficialItem, registerDefaultOfficialSources } from '../src/core/official.js';
 import { importCommunityPost, registerDefaultCommunitySources } from '../src/core/community.js';
 
@@ -796,6 +796,37 @@ test('source API disables by default instead of deleting history', async () => {
     assert.equal(response.status, 200);
     assert.equal(db.get('SELECT enabled FROM sources WHERE id=1').enabled, 0);
     assert.equal(db.get('SELECT COUNT(*) n FROM sources').n, 1);
+  });
+});
+
+// A-9 expects a failing source to surface an actionable error on the sources page. Every
+// acceptance round so far either had all sources succeed or failed somewhere else, so this
+// rendering has never been exercised - by a test or by a person.
+//
+// What is guaranteed here is that the failure reaches the page at all, carries the failure
+// count, and is escaped: last_error holds text the remote site can influence (HTTP bodies,
+// redirect targets), so it must never be able to inject markup into the operator's own page.
+//
+// What is NOT guaranteed is the language. recordCrawlFailure stores String(error) verbatim and
+// src/net/http.js raises 'HTTP 404' / 'fetch failed' / 'response exceeds N bytes' in English,
+// while browser sources surface raw Playwright text. Only the preview path
+// (src/net/public-http.js) speaks Traditional Chinese. Deliberately not asserted either way -
+// see BT-UX-003.
+test('a failing source surfaces its error on the sources page without letting it inject markup', async () => {
+  await withServer(async ({ db, base }) => {
+    db.run(
+      `INSERT INTO sources (key,name,connector,enabled,check_interval_seconds,connector_version,
+       recipe_version,managed_by,created_at,updated_at) VALUES ('hlj','HLJ','jsonld',1,3600,'1.0.0',1,'ui','x','x')`
+    );
+    const { id } = db.get("SELECT id FROM sources WHERE key='hlj'");
+    recordCrawlFailure(db, id, 'HTTP 404 <img src=x onerror="alert(1)">');
+
+    const page = await (await fetch(`${base}/sources`)).text();
+    assert.match(page, /class="status error"/, 'the failure must be visible, not only in the log');
+    assert.match(page, /HTTP 404/);
+    assert.doesNotMatch(page, /<img src=x/, 'a site-controlled error must not become live markup');
+    assert.match(page, /&lt;img src=x/);
+    assert.equal(db.get('SELECT consecutive_failures c FROM sources WHERE id=?', [id]).c, 1);
   });
 });
 

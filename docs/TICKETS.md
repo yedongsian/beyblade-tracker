@@ -1,9 +1,11 @@
 # Delivery Tickets／Backlog
 
 > 狀態：Active
-> 最後更新：2026-08-02
+> 最後更新：2026-08-11
 > 規則：本檔是正式 backlog；Roadmap 只保存優先順序與里程碑。
-> 目前驗證基線：`codex/bt-upd-001` 於 2026-08-02 執行 `npm test` 通過 **219/219**（0 fail／0 skip／0 todo）。各 Ticket 內文保留當時的歷史測試數字，不回頭改寫。
+> 目前驗證基線：`codex/bt-api-001` 於 2026-08-11 執行 `npm test` 通過 **233/233**（0 fail／0 skip／0 todo），
+> 四項 release E2E 全綠（normal／stopfail／missing-launcher／launcher-errors 6-6）。
+> 各 Ticket 內文保留當時的歷史測試數字，不回頭改寫。
 
 ## 1. 工作流程
 
@@ -27,8 +29,9 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
-| BT-UX-001 | P0 | Ready | 完成一般使用者雙擊安裝與單一入口驗收 | BT-P0-001 的 signing／clean VM |
-| BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Windows native dialog 實機驗收 |
+| BT-UX-001 | P0 | In Review | 完成一般使用者雙擊安裝與單一入口驗收 | A-4b 無 Chrome 分支（需乾淨 VM）、BT-P0-001 的 signing |
+| BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Issue Form 預填的端到端驗證 |
+| BT-UX-003 | P1 | Proposed | 抓取失敗的來源錯誤訊息改為繁中且可操作 | — |
 | BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | 發布前確認文件進入 release payload |
@@ -110,8 +113,12 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
 ### BT-UX-001 — 完成一般使用者雙擊安裝與單一入口驗收
 
+> 實機驗收（2026-08-11，第四版產物 `0d4a0c73…`）：於本機測試帳號走完整輪，A 段 **10 PASS / 0 FAIL / 1 未測**。安裝、五個捷徑、登入自動啟動、首次導覽、實際抓取、兩個解除安裝分支皆通過，全程使用 GUI，未要求 Node、PowerShell 或工作排程器。首次啟動 26.9 秒（安裝後）與 34.7 秒（登入），未出現任何錯誤對話框。詳見 [WINDOWS_ACCEPTANCE_CHECKLIST.md](WINDOWS_ACCEPTANCE_CHECKLIST.md) 第 2.2 節。
+>
+> 狀態改為 In Review。剩餘兩項 acceptance criteria 無法在本機完成：**A-4b 無 Chrome 分支**（Chrome 為全機器安裝，換帳號仍可見，需乾淨 VM）與**verified publisher**（需 Authenticode 憑證，屬 `BT-P0-001`）。
+
 - Priority：P0
-- Status：Ready
+- Status：In Review
 - Owner：待指定 Windows Release Engineer
 - 背景：Inno Setup installer candidate、bundled runtime、Start Menu shortcuts 與 auto-start 已存在，但仍需以一般使用者體驗及正式簽章 artifact 完成驗收。
 - Scope：單一 Setup.exe、double-click install、per-user permissions、finish-page launch、捷徑、reinstall／upgrade／uninstall、Chrome prompt、SmartScreen。
@@ -138,6 +145,12 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Error code 與 App version 可預填 Issue Form，但使用者送出前能檢視。
   - 未知 internal error 使用保留的 generic code，不把 exception message 當公開契約。
 - Verification evidence（2026-07-29）：中央 registry、safe Local Web error envelope、可鍵盤操作的 copy／report dialog 與 hidden Launcher 的 `BT-LCH-001`～`005` mapping 已實作；catalog／registry、Web envelope 與 Launcher static regression tests 已新增。仍需在隔離 Windows 安裝目錄完成 native dialog 實機互動驗收後才能標記 Done。
+- Verification evidence（2026-08-11）：上述實機互動驗收**已完成，並在過程中找出並修好一個嚴重缺陷**。
+  - **D-4**：`launcher.vbs` 以 `SW_HIDE` 啟動 PowerShell，WinForms 第一個頂層視窗沿用該狀態，於是 `ShowDialog()` 開出一個看不見的強制回應對話框並永久阻塞。**所有經由捷徑或安裝器觸發的 `BT-LCH-*` 使用者都完全看不到**，整套錯誤 UX 在真實使用情境下無法觸及 —— 這正是本 Ticket 第二條 acceptance criteria 的核心，先前的 static regression test 完全測不到，因為它們只涵蓋 `-NonInteractive`。
+  - 修正：`Show-LauncherError` 於表單 `Shown` 事件強制 `ShowWindow(SW_SHOWNORMAL)` ＋ `SetForegroundWindow` ＋ `TopMost`。刻意不改 `launcher.vbs` 的 `shell.Run ... 0` —— 隱藏主控台本身是正確設計。
+  - 新增自動化：`scripts/phase7-launcher-errors.ps1` **案例 F** 走真實捷徑路徑（`wscript.exe launcher.vbs`），以 `EnumWindows` 列舉頂層視窗（`MainWindowHandle` 只回報可見視窗，正是它讓本缺陷看起來像「沒有對話框」），斷言可見、含代碼與三個按鈕、不含路徑或 URL，且 `WM_CLOSE` 後行程必須結束。反向確認：移除修正後回報 `visible=False buttons=5`。
+  - 實機（2026-08-11）：對話框可見、`BT-LCH-001`、繁中無亂碼、四鍵可用；「複製錯誤資訊」的剪貼簿內容恰為代碼／App version／UTC／Support reference 四行，12 項禁用字樣（路徑、使用者名稱、`.ps1`／`.vbs`、stack、URL、token、webhook）全部未命中。
+  - **仍待驗證**：第四條 criteria 的「Error code 與 App version 可預填 Issue Form」端到端未走過 —— 已確認按鈕存在且可點，但未實際送出並確認 GitHub Issue Form 的預填內容。這是標記 Done 前的最後一項。
 
 ### BT-UPD-001 — 實作使用者確認後的自動更新 UX
 
@@ -198,6 +211,27 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Support spec 有 GitHub Form fields、notification setup、triage 與 end-to-end acceptance。
   - Public repo／Issues／Release URL 已補齊；發布前確認文件進入 release payload。
 - Verification evidence（2026-08-02）：`SUPPORT.md` §「公開 URL」已填入正式 repository、Issues 與 Releases URL，`USER_GUIDE.md` §10 的問題回報連結同步指向 Issue Form；表格依賴欄的「Support／Release URL 待填」已過時並移除。`USER_GUIDE.md` §8 原本仍寫「目前版本尚未實作固定錯誤代碼」，與 `BT-UX-002` 已交付的 registry／Web envelope／Launcher dialog 不符，已改為「已實作但尚未隨公開 release 發布」。剩餘唯一條件為發布時確認 `USER_GUIDE.md`、`ERROR_CODES.md`、`SUPPORT.md` 實際進入 release payload。
+
+### BT-UX-003 — 抓取失敗的來源錯誤訊息改為繁中且可操作
+
+- Priority：P1
+- Status：Proposed
+- Owner：待指定
+- 背景：A-9 的預期結果之一是「失敗時於來源管理頁顯示**可操作的繁中錯誤**」。此項至今從未被驗證 —— 歷輪驗收不是三個來源全數成功，就是失敗在別的地方。2026-08-11 檢視程式後確認**目前不成立**。
+- 現況：
+  - `recordCrawlFailure`（`src/core/store.js:110`）把 `String(error).slice(0, 500)` 原封不動寫進 `sources.last_error`。
+  - 抓取路徑的 `src/net/http.js` 產生的是 `HTTP 404`、`fetch failed`、`response exceeds N bytes` 等英文訊息；browser connector 則直接吐出 Playwright 原文（例如 `page.waitForSelector: Timeout 45000ms exceeded`，見 D-2）。
+  - 來源頁（`src/web/server.js:480`）逐字顯示該字串。
+  - **對照組**：預覽路徑的 `src/net/public-http.js` 有完整繁中訊息（`網站回傳 HTTP 404。`、`頁面超過預覽大小限制。`）。所以問題不是沒有能力，而是抓取路徑沒做。
+- Scope：為抓取失敗建立 error class → 使用者訊息的對應，涵蓋繁中／日文／英文三種 UI 語言；來源頁顯示可操作訊息與建議動作；原始技術訊息保留在 log 與診斷匯出，不丟棄。
+- Out of scope：改變 `last_error` 的儲存內容（診斷仍需原文）；重寫 connector 的例外型別。
+- Acceptance criteria：
+  - 常見失敗（HTTP 4xx／5xx、逾時、DNS／連線失敗、內容過大、解析不到商品、robots 拒絕）在來源頁顯示對應 UI 語言的訊息與可操作建議。
+  - 訊息不洩漏完整路徑、stack 或憑證；站方可控的字串仍必須逃逸。
+  - 未知錯誤落到保留的泛用訊息，不把 exception message 當公開契約。
+  - 每個對應都有測試；至少一項覆蓋「站方可控字串不得注入 markup」。
+- 已有的部分涵蓋：`test/web.test.js` 已驗證失敗會顯示在來源頁、帶失敗次數、且經過逃逸（含 `<img src=x onerror=...>` 注入案例）。該測試刻意不斷言語言，等本 Ticket 決定對應表後再補。
+- 相關：`BT-UX-002`（錯誤代碼 registry，可考慮共用同一套對應機制）、D-2（失效 URL 造成的 45 秒逾時是本問題最早的實例）
 
 ### BT-P2-001 — HTTP conditional request 與 bounded cache
 

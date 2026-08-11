@@ -30,7 +30,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
 | BT-UX-001 | P0 | In Review | 完成一般使用者雙擊安裝與單一入口驗收 | A-4b 無 Chrome 分支（需乾淨 VM）、BT-P0-001 的 signing |
-| BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | Issue Form 預填的端到端驗證 |
+| BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | 問題回報按鈕於下一版產物複驗 |
 | BT-UX-003 | P1 | Proposed | 抓取失敗的來源錯誤訊息改為繁中且可操作 | — |
 | BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
@@ -150,7 +150,15 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 修正：`Show-LauncherError` 於表單 `Shown` 事件強制 `ShowWindow(SW_SHOWNORMAL)` ＋ `SetForegroundWindow` ＋ `TopMost`。刻意不改 `launcher.vbs` 的 `shell.Run ... 0` —— 隱藏主控台本身是正確設計。
   - 新增自動化：`scripts/phase7-launcher-errors.ps1` **案例 F** 走真實捷徑路徑（`wscript.exe launcher.vbs`），以 `EnumWindows` 列舉頂層視窗（`MainWindowHandle` 只回報可見視窗，正是它讓本缺陷看起來像「沒有對話框」），斷言可見、含代碼與三個按鈕、不含路徑或 URL，且 `WM_CLOSE` 後行程必須結束。反向確認：移除修正後回報 `visible=False buttons=5`。
   - 實機（2026-08-11）：對話框可見、`BT-LCH-001`、繁中無亂碼、四鍵可用；「複製錯誤資訊」的剪貼簿內容恰為代碼／App version／UTC／Support reference 四行，12 項禁用字樣（路徑、使用者名稱、`.ps1`／`.vbs`、stack、URL、token、webhook）全部未命中。
-  - **仍待驗證**：第四條 criteria 的「Error code 與 App version 可預填 Issue Form」端到端未走過 —— 已確認按鈕存在且可點，但未實際送出並確認 GitHub Issue Form 的預填內容。這是標記 Done 前的最後一項。
+- Verification evidence（2026-08-11，第四條 criteria）：「Error code 與 App version 可預填 Issue Form」**先前不成立，已修正並於線上表單實測通過**。
+  - 缺陷：三個回報入口（`release/windows/launcher.ps1`、`src/web/ui.js`、`src/errors/registry.js`）都連到 `/issues/new/choose?title=…&body=…`。但本專案的表單是 **GitHub Issue Form**（`.github/ISSUE_TEMPLATE/bug_report.yml`），沒有自由格式 body —— 每個欄位由自己的 `id` 定址，`body=` 無處可綁而被丟棄。
+  - 實測（舊 URL）：標題有填入，但**「錯誤代碼」與「App 版本」兩欄皆空白** —— 正是本條 criteria 要預填的兩欄。使用者仍得自己重打。
+  - 修正：改連 `/issues/new?template=bug_report.yml&title=…&error_code=…&app_version=…`，使用表單實際定義的欄位 id。
+  - 實測（新 URL）：標題 `[問題回報] BT-LCH-003`、錯誤代碼 `BT-LCH-003`、App 版本 `1.0.0` 皆已填入，其餘欄位留白由使用者填寫。**驗證方式為載入表單頁面讀取欄位值，未送出任何 issue。**
+  - 只預填這兩欄：它們是使用者無法準確重打的，也是表單有對應 id 的。support reference 沒有對應欄位，留在「複製錯誤資訊」的內容裡，不硬塞進不相干的欄位。URL 不帶任何路徑、token 或 stack。
+  - 回歸涵蓋：`test/error-contract.test.js` 直接讀 `bug_report.yml` 取出真實欄位 id，斷言 URL 的每個參數都對得上（`template`／`title` 除外），並禁止 `body=`；另有一項確保三個入口共用同一份契約。反向確認：還原修正後 2 項失敗。
+  - **順帶更正一個我方的錯誤推論**：原本以為 `/issues/new/choose` 會在使用者選擇模板時丟掉 query string。實測顯示**它會帶過去** —— 失效的唯一原因就是 Issue Form 忽略 `body=`。相關註解已改正，以免後人依據錯誤機制做判斷。
+- **剩餘**：`release/windows/launcher.ps1` 已變更，A-6b 的「問題回報」按鈕需於下一版產物複驗（點擊後實際開啟的 URL 是否為修正後的形式）。這是標記 Done 前的最後一項。
 
 ### BT-UPD-001 — 實作使用者確認後的自動更新 UX
 

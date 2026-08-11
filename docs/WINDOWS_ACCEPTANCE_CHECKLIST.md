@@ -106,7 +106,8 @@ Ed25519 manifest 簽章管線已驗證可用（含負向與竄改控制），金
 | 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含**第四版**安裝器、`SHA256.txt`、`verify-installer.ps1`（雜湊皆已同步並實測 `MATCH`）、`ROUND4-RUNBOOK.md`、各項驗收腳本與歷輪結果檔 |
 | 第一輪安裝 log | 已改名為 `install-testdarren-20260802.log` 保存，避免被後續輪次覆蓋 |
 | A-11 安全備份 | `a11-safety-copy`（8 檔，2026-08-11）。A-11 判定不依賴它，可自行刪除 |
-| 分支 | `codex/bt-api-001`，**未 push**（分支名沿用自 `BT-API-001`，但其上內容全部是驗收與缺陷修正，與該 ticket 無關） |
+| 分支 | **已合併回 `main`**（[PR #2](https://github.com/yedongsian/beyblade-tracker/pull/2)，2026-08-11，merge commit `656e142`）。D-3～D-7 五個修正自此在 `main` 上，從 `main` 建置的產物不再帶著它們出貨。<br>分支名 `codex/bt-api-001` 沿用自 `BT-API-001`，但其上內容全部是驗收與缺陷修正，與該 ticket 無關 |
+| 驗收腳本 | 已納入版控：`scripts/acceptance/`（21 支腳本＋README），以 `$PSScriptRoot` 定位，整個資料夾可複製到乾淨 VM 使用。收尾清理刪掉共用資料夾也不會遺失 |
 | 8787 | 淨空、無殘留行程 |
 
 ### ⚠ D-3 改變了全新安裝的預設行為

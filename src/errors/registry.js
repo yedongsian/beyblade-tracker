@@ -1,4 +1,14 @@
-const ISSUE_FORM_URL = 'https://github.com/yedongsian/beyblade-tracker/issues/new/choose';
+// The template is a GitHub Issue *Form* (.github/ISSUE_TEMPLATE/bug_report.yml), which has no
+// free-form body: every field is addressed by its own `id`, so a `body=` parameter binds to
+// nothing and is silently discarded. Observed on the live form - the old
+// `/issues/new/choose?title=&body=` link filled the title and left 錯誤代碼 and App 版本 empty,
+// which are the two fields BT-UX-002 exists to prefill.
+//
+// The picker does carry its query string through to the template, so linking straight at the
+// template is for directness rather than necessity: it drops a click and makes the parameter
+// contract visible at the call site.
+const ISSUE_FORM_TEMPLATE = 'bug_report.yml';
+const ISSUE_FORM_URL = 'https://github.com/yedongsian/beyblade-tracker/issues/new';
 
 const definitions = [
   ['BT-INS-001', '安裝無法完成', '安裝器無法寫入使用者安裝目錄。', ['關閉舊安裝器後再試一次', '確認磁碟空間與防毒軟體設定']],
@@ -70,10 +80,19 @@ export function errorEnvelope(error, { appVersion = 'unknown', supportRef, times
   };
 }
 
-export function issueReportUrl({ code, appVersion, supportRef }) {
+/**
+ * Only `error_code` and `app_version` are prefilled: they are the two the user cannot be expected
+ * to retype accurately, and they are the two field ids the form actually exposes. The support
+ * reference has no field of its own and is left to the copy action rather than forced into an
+ * unrelated one. Nothing user- or system-derived beyond these is sent, so the URL cannot leak a
+ * path, token or stack the way a free-form body could.
+ */
+export function issueReportUrl({ code, appVersion }) {
   const query = new URLSearchParams({
-    title: `[${code}] Beyblade Tracker 問題回報`,
-    body: `錯誤代碼：${code}\nApp version：${appVersion}\nSupport reference：${supportRef}\n\n送出前請確認未包含 Token、Webhook、資料庫、完整 log、URL 或路徑。`,
+    template: ISSUE_FORM_TEMPLATE,
+    title: `[問題回報] ${code}`,
+    error_code: code,
+    app_version: appVersion,
   });
   return `${ISSUE_FORM_URL}?${query}`;
 }

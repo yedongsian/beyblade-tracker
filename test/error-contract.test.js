@@ -26,6 +26,58 @@ test('unknown internal errors use the reserved generic code and public report UR
   assert.doesNotMatch(reportUrl, /very-secret|private/);
 });
 
+// BT-UX-002 requires the code and version to reach the Issue Form prefilled. Every report link
+// pointed at /issues/new/choose with title= and body=, and an Issue Form has no free-form body:
+// every field is addressed by its own id, so body= binds to nothing. Verified against the live
+// form - the old link filled the title and left 錯誤代碼 and App 版本 empty, which are exactly the
+// two fields the criterion is about.
+//
+// Asserting the parameter names against the form's real ids is what makes this stay fixed:
+// renaming a field in bug_report.yml now fails here rather than silently dropping the prefill.
+function issueFormFieldIds() {
+  const form = readFileSync(new URL('../.github/ISSUE_TEMPLATE/bug_report.yml', import.meta.url), 'utf8');
+  return new Set([...form.matchAll(/^\s*id:\s*(\S+)\s*$/gm)].map((match) => match[1]));
+}
+
+test('the report link prefills fields the Issue Form actually defines', () => {
+  const ids = issueFormFieldIds();
+  assert.ok(ids.has('error_code') && ids.has('app_version'), 'the form must still expose the fields worth prefilling');
+
+  const envelope = errorEnvelope(trackerError('BT-LCH-003'), {
+    appVersion: '1.0.0', supportRef: 'safe-ref', timestamp: '2026-07-29T00:00:00.000Z',
+  });
+  const url = new URL(issueReportUrl(envelope));
+
+  assert.equal(url.pathname, '/yedongsian/beyblade-tracker/issues/new', 'link straight at the template, not the picker');
+  assert.equal(url.searchParams.get('template'), 'bug_report.yml');
+  assert.equal(url.searchParams.get('error_code'), 'BT-LCH-003');
+  assert.equal(url.searchParams.get('app_version'), '1.0.0');
+  assert.equal(url.searchParams.get('body'), null, 'an Issue Form silently discards body=');
+
+  for (const name of url.searchParams.keys()) {
+    if (name === 'template' || name === 'title') continue;
+    assert.ok(ids.has(name), `${name} is not a field id in bug_report.yml, so it would be ignored`);
+  }
+});
+
+test('every report entry point uses the same prefill contract', () => {
+  // The launcher builds its URL in PowerShell and the Web dialog in emitted JavaScript, so neither
+  // can share the registry helper. They can still be held to the same shape.
+  const sources = {
+    'launcher.ps1': readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url)).subarray(3).toString('utf8'),
+    'ui.js': readFileSync(new URL('../src/web/ui.js', import.meta.url), 'utf8'),
+  };
+  for (const [name, source] of Object.entries(sources)) {
+    assert.match(source, /issues\/new\?/, `${name} must target the template, not the picker`);
+    assert.doesNotMatch(source, /issues\/new\/choose\?/, `${name} still links to the picker`);
+    // One builds the query as a literal string, the other through URLSearchParams, so match the
+    // parameter name and value rather than a particular serialisation of them.
+    assert.match(source, /template[=:]\s*'?bug_report\.yml'?/, `${name} must name the template`);
+    assert.match(source, /error_code/, `${name} must prefill the error code`);
+    assert.match(source, /app_version/, `${name} must prefill the app version`);
+  }
+});
+
 test('Local Web failures return a safe error envelope and render an accessible copy/report dialog', async () => {
   const db = new Database(':memory:');
   const server = createWebServer(db, { appConfig: { update: {} } });

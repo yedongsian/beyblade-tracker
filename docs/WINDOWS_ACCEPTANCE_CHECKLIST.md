@@ -83,6 +83,7 @@ SHA-256：**`0d4a0c7306b95ab9fc2b7900138d8135c09b6810399181bc96111c274efc712d`**
 
 | # | 待辦 | 需要什麼 | 備註 |
 | --- | --- | --- | --- |
+| 0 | **A-6b「問題回報」按鈕複驗** | 下一版產物 | `launcher.ps1` 的回報 URL 已於 2026-08-11 修正（原本不會預填錯誤代碼與 App 版本，見 `BT-UX-002`）。修正本身已於線上表單實測通過，但**按鈕點擊後實際開啟的 URL 尚未在產物上複驗**。可與 A-4b 的 VM 輪合併執行 |
 | 1 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.3 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware。**A 段唯一未完成項**，且本機環境結構上做不到 —— Chrome 安裝於 `C:\Program Files`，全機器共用，換帳號仍可見 |
 | 2 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802`。**A-4b 完成前先別動**，共用資料夾的腳本還會用到 |
 

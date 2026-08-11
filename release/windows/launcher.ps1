@@ -55,7 +55,17 @@ function Show-LauncherError([string]$Code) {
   $copy.Add_Click({ [System.Windows.Forms.Clipboard]::SetText($copyText) })
   $report = New-Object System.Windows.Forms.Button
   $report.Text = '問題回報'; $report.Location = New-Object System.Drawing.Point(160, 220); $report.Size = New-Object System.Drawing.Size(100, 32)
-  $report.Add_Click({ $body = [uri]::EscapeDataString("錯誤代碼：$Code`r`nApp version：$appVersion`r`nSupport reference：$supportRef`r`n`r`n送出前請確認未包含 Token、Webhook、資料庫、完整 log、URL 或路徑。"); Start-Process "https://github.com/yedongsian/beyblade-tracker/issues/new/choose?title=%5B$Code%5D%20Beyblade%20Tracker&body=$body" })
+  # The template is a GitHub Issue Form, which has no free-form body: every field is addressed by its
+  # own id, so a body= parameter binds to nothing. The old link filled only the title and left 錯誤代碼
+  # and App 版本 empty — the two fields this is supposed to prefill. Field ids come from
+  # .github/ISSUE_TEMPLATE/bug_report.yml; only the two the user cannot retype accurately are sent.
+  $report.Add_Click({
+    $query = 'template=bug_report.yml' +
+      '&title=' + [uri]::EscapeDataString("[問題回報] $Code") +
+      '&error_code=' + [uri]::EscapeDataString($Code) +
+      '&app_version=' + [uri]::EscapeDataString($appVersion)
+    Start-Process "https://github.com/yedongsian/beyblade-tracker/issues/new?$query"
+  })
   $status = New-Object System.Windows.Forms.Button
   $status.Text = '服務狀態'; $status.Location = New-Object System.Drawing.Point(271, 220); $status.Size = New-Object System.Drawing.Size(100, 32)
   $status.Add_Click({ Start-Process 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action status" })

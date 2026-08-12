@@ -11,7 +11,7 @@ import {
   upsertCatalogPart,
 } from '../src/core/catalog.js';
 import { createTranslator } from '../src/i18n.js';
-import { sourceErrorMessageKey } from '../src/core/operations.js';
+import { safeErrorClass, sourceErrorMessageKey } from '../src/core/operations.js';
 
 const OPTS = { preorderIsPurchasable: false, eventCooldownSeconds: 0, priceChangeThreshold: 0.05 };
 
@@ -102,7 +102,7 @@ test('every source error class resolves to a message translated in all three lan
     'timeout', 'dns', 'connection', 'tls', 'robots_blocked', 'access_blocked', 'network_paused',
     'parse', 'maintenance', 'empty', 'not_found', 'validation', 'error', 'unknown',
     'http_400', 'http_401', 'http_403', 'http_404', 'http_410', 'http_429',
-    'http_500', 'http_502', 'http_503', 'http_504', 'http_418',
+    'http_500', 'http_502', 'http_503', 'http_504', 'http_418', 'too_large',
   ];
   const zh = createTranslator('zh-TW');
   for (const errorClass of classes) {
@@ -116,6 +116,37 @@ test('every source error class resolves to a message translated in all three lan
       assert.notEqual(translated, baseline, `${key} falls back to Chinese on ${locale}`);
     }
   }
+});
+
+// Classification is only useful if it catches the failures that actually happen. These are the
+// literal strings src/net/http.js and the connectors raise, taken from the source rather than
+// imagined - 'fetch failed' in particular is what undici reports when the machine is offline, which
+// is the failure a home user meets most often.
+test('the errors the crawl path really raises all classify into specific advice', () => {
+  const cases = [
+    ['TypeError: fetch failed', 'connection'],
+    ['Error: fetch failed', 'connection'],
+    ['Error: getaddrinfo ENOTFOUND www.example.com', 'dns'],
+    ['Error: connect ECONNREFUSED 203.0.113.1:443', 'connection'],
+    ['Error: HTTP 404', 'http_404'],
+    ['Error: HTTP 503', 'http_503'],
+    ['Error: response exceeds 2097152 bytes', 'too_large'],
+    ['page.waitForSelector: Timeout 45000ms exceeded', 'timeout'],
+    ['Error: parser produced no valid listings (parse)', 'parse'],
+  ];
+  const zh = createTranslator('zh-TW');
+  for (const [message, expected] of cases) {
+    assert.equal(safeErrorClass(message), expected, `${message} should classify as ${expected}`);
+    const key = sourceErrorMessageKey(expected);
+    assert.notEqual(key, 'srcErr.unknown', `${message} must not fall into the catch-all`);
+    assert.notEqual(zh(key, { class: expected }), key, `${key} needs a message`);
+  }
+});
+
+// A byte ceiling small enough to look like a status code must not be read as one.
+test('a size limit is never mistaken for an HTTP status', () => {
+  assert.equal(safeErrorClass('Error: response exceeds 500 bytes'), 'too_large');
+  assert.equal(safeErrorClass('Error: response exceeds 404 bytes'), 'too_large');
 });
 
 test('an unrecognized error class falls back instead of leaking itself into the message', () => {

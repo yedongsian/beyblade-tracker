@@ -25,6 +25,18 @@ test('config source creates one Site and SeedUrl and merges seeds into runtime c
   db.close();
 });
 
+// The other half of A-4b's residual risk. A browser source can only come from a hand-edited config
+// file, never from the UI, so a user without Chrome cannot walk themselves into needing one through
+// the normal add-a-source flow.
+test('a source added through the UI never requires a browser', () => {
+  const db = new Database(':memory:');
+  const added = confirmSource(db, { url: 'https://www.example.com/p/one', name: 'Example', confirmed: true });
+  const stored = db.get('SELECT connector FROM sources WHERE id=?', [added.source.id]);
+  assert.equal(stored.connector, 'jsonld');
+  assert.equal(db.get("SELECT COUNT(*) n FROM sources WHERE connector='browser'").n, 0);
+  db.close();
+});
+
 test('confirming the same domain adds a seed instead of duplicating a Site', () => {
   const db = new Database(':memory:');
   const first = confirmSource(db, { url: 'https://www.example.com/p/one', name: 'Example', confirmed: true });

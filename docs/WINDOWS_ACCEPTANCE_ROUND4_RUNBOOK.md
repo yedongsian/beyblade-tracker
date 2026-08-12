@@ -3,9 +3,13 @@
 > **第四輪已執行完畢（2026-08-11，Test_Darren）**，A 段 10 PASS / 0 FAIL / 1 未測。
 > 結果與過程紀錄見 [WINDOWS_ACCEPTANCE_CHECKLIST.md](WINDOWS_ACCEPTANCE_CHECKLIST.md) 第 2.2 節。
 >
-> **下一輪（第五版產物，乾淨 VM）要做三件事**，見文末「下一輪的三個增補項」：
-> A-4b（無 Chrome 分支）、A-6b 的問題回報按鈕、A-9 的失敗來源錯誤呈現。
-> 步驟 3～9 照抄即可，另加文末三項。
+> **下一輪（第五版產物，乾淨 VM）要做三件事**：A-4b（無 Chrome 分支）、
+> A-6b 的問題回報按鈕、A-9 的失敗來源錯誤呈現。細節見文末「下一輪的三個增補項」。
+>
+> **從安裝 VirtualBox 到完成該輪的完整順序，見
+> [WINDOWS_ACCEPTANCE_VM_ROUND.md](WINDOWS_ACCEPTANCE_VM_ROUND.md)** ——
+> 順序很重要，A-4b 卡在「尚未安裝 Chrome」的窗口裡，排錯就得重來。
+> 本檔的步驟 1～9 是該輪的階段 3。
 
 ## 產物
 

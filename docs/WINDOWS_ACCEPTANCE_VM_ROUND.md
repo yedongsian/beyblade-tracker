@@ -18,8 +18,8 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 | | |
 | --- | --- |
 | 檔案 | `BeybladeTracker-1.0.0-Setup.exe` |
-| SHA-256 | `a5b67183ba1d981e697ed0ea4876787e7d597a693c50df43df7ac68a9da18f3c` |
-| 大小 | 27,505,644 bytes（第五次建置） |
+| SHA-256 | `acb01dc5fb4161d6175c08bdd2ebacabd2677272e7346d72c47f935a48022925` |
+| 大小 | 27,508,234 bytes（第六次建置） |
 | 位置 | `C:\Users\Public\BeybladeTracker-Acceptance\` |
 
 ---
@@ -176,7 +176,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 
 照 [ROUND4 runbook](WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md) 的**步驟 1～9** 跑。
 
-> **範圍選擇**：第四版產物已在本機測試帳號完成 A 段 10 PASS，第五版只改了
+> **範圍選擇**：第四版產物已在本機測試帳號完成 A 段 10 PASS，第六版只改了
 > 「錯誤發生後顯示什麼」與「回報連結長什麼樣」，沒動安裝、啟動、解除安裝路徑。
 >
 > - **最小範圍**：只做階段 1、4、5，約 30 分鐘

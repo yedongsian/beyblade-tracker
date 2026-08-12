@@ -1,8 +1,8 @@
 # Windows 實機驗收清單（RC 1.0.0）
 
 對象產物：`BeybladeTracker-1.0.0-Setup.exe`
-SHA-256：**`a5b67183ba1d981e697ed0ea4876787e7d597a693c50df43df7ac68a9da18f3c`**（27,505,644 bytes，2026-08-11 第五次建置）
-建立日期：2026-08-02（第一輪）／2026-08-06（第二、三輪）／2026-08-07（第四輪）／2026-08-11（第五輪）
+SHA-256：**`acb01dc5fb4161d6175c08bdd2ebacabd2677272e7346d72c47f935a48022925`**（27,508,234 bytes，2026-08-11 第六次建置）
+建立日期：2026-08-02（第一輪）／2026-08-06（第二、三輪）／2026-08-07（第四輪）／2026-08-11（第五、六輪）
 
 ### 產物沿革
 
@@ -12,13 +12,16 @@ SHA-256：**`a5b67183ba1d981e697ed0ea4876787e7d597a693c50df43df7ac68a9da18f3c`**
 | 第二輪 | `cf2187c6…` | 含 D-3／D-4／D-5／D-6 修正 | 作廢。四項修正皆已實機驗證；於此產物再找出 **D-7** |
 | 第三輪 | `c8959c9b…` | 再加入 **D-7** 的逾時常數修正 | 作廢。D-7 已於此產物實機驗證，但殘留風險未解 |
 | 第四輪 | `0d4a0c73…` | 改為 **D-7 的根本解法**（逾時不再等同啟動失敗） | **A 段 10 PASS / 0 FAIL / 1 未測即在此產物完成**，見 2.2 節 |
-| **第五輪** | **`a5b67183…`** | 加入 `BT-UX-002` 的問題回報預填修正與 `BT-UX-003` 的來源錯誤三語化 | **現行驗收對象**，待乾淨 VM 輪 |
+| 第五輪 | `a5b67183…` | 加入 `BT-UX-002` 的問題回報預填修正與 `BT-UX-003` 的來源錯誤三語化 | 作廢。未經實機驗收即被第六輪取代 |
+| **第六輪** | **`acb01dc5…`** | 再加入 `BT-UX-003` 漏掉的兩個分類（`fetch failed`、`too_large`） | **現行驗收對象**，待乾淨 VM 輪 |
 
-> 第四輪的 A 段結論在機制上不受第五輪影響 —— 第五輪只改變「錯誤發生後顯示什麼」與「回報連結長什麼樣」，不動安裝、啟動或解除安裝路徑。因此不需重跑整個 A 段，只需補驗待辦 0a／0b 兩項與 A-4b。
+> 第四輪的 A 段結論在機制上不受第五、六輪影響 —— 兩者只改變「錯誤發生後顯示什麼」與「回報連結長什麼樣」，不動安裝、啟動或解除安裝路徑。因此不需重跑整個 A 段，只需補驗待辦 0a／0b 兩項與 A-4b。
 
-> **第五版的建置端驗證**：來源 `main` @ `1395f0c`；單元測試 **239/239**；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors **6-6**）；8787 淨空、無 temp 殘留、無殘留行程。
+> **為什麼第五輪作廢**：撰寫 0b 的實機步驟時發現，斷網產生的 `fetch failed` 當時仍落在泛用訊息，驗收者會誤以為 `BT-UX-003` 沒生效。與其交出一份已知會失敗的步驟，先修分類再重建。第五版未曾用於實機驗收。
 
-> **共用資料夾已同步**：`C:\Users\Public\BeybladeTracker-Acceptance\` 的 Setup.exe、`SHA256.txt`、`verify-installer.ps1` 與全部驗收腳本皆已更新為第五版，並實際執行過 `verify-installer.ps1` 得到 `MATCH`。腳本以版控中的 `scripts/acceptance/` 為準重新同步。
+> **第六版的建置端驗證**：來源 `main` @ `a346e89`；單元測試 **245/245**；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors **6-6**）；8787 淨空、無 temp 殘留、無殘留行程。
+
+> **共用資料夾已同步**：`C:\Users\Public\BeybladeTracker-Acceptance\` 的 Setup.exe、`SHA256.txt`、`verify-installer.ps1` 與全部驗收腳本皆已更新為第六版，並實際執行過 `verify-installer.ps1` 得到 `MATCH`。腳本以版控中的 `scripts/acceptance/` 為準重新同步。
 
 ## 驗收現況與待辦（最後更新 2026-08-11）
 
@@ -139,7 +142,7 @@ Ed25519 manifest 簽章管線已驗證可用（含負向與竄改控制），金
 | 項目 | 狀態 |
 | --- | --- |
 | 測試帳號 | `Test_Darren`，**目前無任何安裝、無使用者資料**（2026-08-11 A-11 以「刪除資料」收尾）。帳號本身保留，A-4b 之外若需複驗可直接重裝 |
-| 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含**第五版**安裝器、`SHA256.txt`、`verify-installer.ps1`（雜湊皆已同步並實測 `MATCH`）、`ROUND4-RUNBOOK.md`、各項驗收腳本與歷輪結果檔。腳本以版控中的 `scripts/acceptance/` 為準 |
+| 共用資料夾 | `C:\Users\Public\BeybladeTracker-Acceptance`，含**第六版**安裝器、`SHA256.txt`、`verify-installer.ps1`（雜湊皆已同步並實測 `MATCH`）、`ROUND4-RUNBOOK.md`、各項驗收腳本與歷輪結果檔。腳本以版控中的 `scripts/acceptance/` 為準 |
 | 第一輪安裝 log | 已改名為 `install-testdarren-20260802.log` 保存，避免被後續輪次覆蓋 |
 | A-11 安全備份 | `a11-safety-copy`（8 檔，2026-08-11）。A-11 判定不依賴它，可自行刪除 |
 | 分支 | **已合併回 `main`**（[PR #2](https://github.com/yedongsian/beyblade-tracker/pull/2)，2026-08-11，merge commit `656e142`）。D-3～D-7 五個修正自此在 `main` 上，從 `main` 建置的產物不再帶著它們出貨。<br>分支名 `codex/bt-api-001` 沿用自 `BT-API-001`，但其上內容全部是驗收與缺陷修正，與該 ticket 無關 |

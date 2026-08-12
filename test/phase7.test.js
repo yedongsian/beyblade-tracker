@@ -341,6 +341,26 @@ test('Windows installer declares per-user install, startup task, shortcuts, and 
   assert.doesNotMatch(serviceControl, /\/IM/);
 });
 
+// BT-P1-003 fixed this for the launcher; it bit again in the acceptance scripts on 2026-08-11.
+// Windows PowerShell 5.1 reads a BOM-less file as ANSI, so Traditional Chinese turns to mojibake -
+// and worse, the mangled bytes can unbalance a quote and take the whole parse down, which is how it
+// presented: a parser error on an ASCII-only line further down.
+test('every PowerShell script carrying localized text has a UTF-8 BOM', () => {
+  const dir = new URL('../scripts/acceptance/', import.meta.url);
+  const scripts = readdirSync(dir).filter((name) => name.endsWith('.ps1'));
+  assert.ok(scripts.length > 0, 'the acceptance scripts must still be here');
+  for (const name of [...scripts.map((n) => new URL(n, dir)),
+    new URL('../scripts/phase7-launcher-errors.ps1', import.meta.url),
+    new URL('../scripts/phase7-e2e.ps1', import.meta.url)]) {
+    const bytes = readFileSync(name);
+    if (!/[^\x00-\x7F]/.test(bytes.toString('utf8'))) continue;
+    assert.deepEqual(
+      [...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf],
+      `${name.pathname.split('/').pop()} has non-ASCII text but no UTF-8 BOM`
+    );
+  }
+});
+
 test('Windows PowerShell 5.1 launcher uses a UTF-8 BOM for localized text', () => {
   const launcher = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url));
   assert.deepEqual([...launcher.subarray(0, 3)], [0xef, 0xbb, 0xbf]);

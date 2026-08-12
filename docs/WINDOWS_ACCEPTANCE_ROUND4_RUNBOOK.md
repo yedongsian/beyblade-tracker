@@ -3,7 +3,7 @@
 > **第四輪已執行完畢（2026-08-11，Test_Darren）**，A 段 10 PASS / 0 FAIL / 1 未測。
 > 結果與過程紀錄見 [WINDOWS_ACCEPTANCE_CHECKLIST.md](WINDOWS_ACCEPTANCE_CHECKLIST.md) 第 2.2 節。
 >
-> **下一輪（第五版產物，乾淨 VM）要做三件事**：A-4b（無 Chrome 分支）、
+> **下一輪（第六版產物，乾淨 VM）要做三件事**：A-4b（無 Chrome 分支）、
 > A-6b 的問題回報按鈕、A-9 的失敗來源錯誤呈現。細節見文末「下一輪的三個增補項」。
 >
 > **從安裝 VirtualBox 到完成該輪的完整順序，見
@@ -16,10 +16,10 @@
 | | |
 | --- | --- |
 | 檔案 | `BeybladeTracker-1.0.0-Setup.exe` |
-| SHA-256 | `a5b67183ba1d981e697ed0ea4876787e7d597a693c50df43df7ac68a9da18f3c` |
-| 大小 | 27,505,644 bytes（2026-08-11 第五次建置） |
-| 來源 | `main` @ `1395f0c`，含 D-3～D-7 修正、`BT-UX-002` 回報預填修正、`BT-UX-003` 錯誤訊息三語化 |
-| 驗證 | 單元測試 239/239；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors 6-6） |
+| SHA-256 | `acb01dc5fb4161d6175c08bdd2ebacabd2677272e7346d72c47f935a48022925` |
+| 大小 | 27,508,234 bytes（2026-08-11 第六次建置） |
+| 來源 | `main` @ `a346e89`，含 D-3～D-7 修正、`BT-UX-002` 回報預填修正、`BT-UX-003` 錯誤訊息三語化（含 `fetch failed`／`too_large` 兩個分類） |
+| 驗證 | 單元測試 245/245；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors 6-6） |
 
 驗收腳本已納入版控（`scripts/acceptance/`），共用資料夾裡的是同一份副本。
 全程在測試帳號執行，第四輪實際耗時約 60 分鐘（含兩次重做）。
@@ -297,7 +297,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 
 ---
 
-## 下一輪的三個增補項（第五版產物，乾淨 VM）
+## 下一輪的三個增補項（第六版產物，乾淨 VM）
 
 上面的步驟照跑，另外加這三項。三項都只在產物上驗得到。
 

@@ -52,6 +52,9 @@ const KNOWN_ERROR_CLASSES = new Set([
   // that distinguish "no page to parse", a maintenance page, and a crawl that
   // produced some usable listings alongside invalid/failed rows.
   'no_url', 'maintenance', 'empty', 'partial',
+  // A page that blew past the download ceiling: distinct from a parse failure, because the fix is
+  // to point at a lighter page rather than to adjust selectors.
+  'too_large',
 ]);
 
 function isKnownErrorClass(value) {
@@ -151,12 +154,17 @@ export function safeErrorClass(error) {
 
   const httpStatus = haystack.match(/\b(?:HTTP\s*|status\s*|status[_-]?code[=:\s]*)(\d{3})\b/i);
   if (httpStatus) return `http_${httpStatus[1]}`;
+  // Ahead of the loose status heuristic below: src/net/http.js raises "response exceeds N bytes",
+  // and a three-digit N would otherwise be read as a status code.
+  if (/exceeds \d+ bytes|too large|size limit|超過.*大小/i.test(haystack)) return 'too_large';
   if (/\b(4\d\d|5\d\d)\b/.test(message) && /http|status|response|request/i.test(message)) {
     return `http_${message.match(/\b([45]\d\d)\b/)[1]}`;
   }
   if (/timeout|timed out|ETIMEDOUT|ESOCKETTIMEDOUT/i.test(haystack)) return 'timeout';
   if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(haystack)) return 'dns';
-  if (/ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE|socket hang up|network/i.test(haystack)) return 'connection';
+  // 'fetch failed' is what undici reports for most offline and unreachable-host cases, and it is
+  // the failure a home user hits most often, so it must not land in the generic bucket.
+  if (/ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE|socket hang up|network|fetch failed/i.test(haystack)) return 'connection';
   if (/certificate|self[- ]signed|TLS|SSL|ERR_TLS|DEPTH_ZERO/i.test(haystack)) return 'tls';
   if (/robots/i.test(haystack)) return 'robots_blocked';
   if (/CAPTCHA|queue-?it|access denied|forbidden|paywall/i.test(haystack)) return 'access_blocked';
@@ -183,6 +191,7 @@ const SOURCE_ERROR_MESSAGE_KEYS = new Map([
   ['parse', 'srcErr.parse'],
   ['maintenance', 'srcErr.parse'],
   ['empty', 'srcErr.parse'],
+  ['too_large', 'srcErr.tooLarge'],
   ['not_found', 'srcErr.notFound'],
   ['validation', 'srcErr.validation'],
 ]);

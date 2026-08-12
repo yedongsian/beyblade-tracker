@@ -218,6 +218,55 @@ test('browser detection selects only an installed system Chrome candidate', () =
   assert.equal(detectSupportedBrowser({ env, platform: 'linux' }).available, false);
 });
 
+// A-4b - the branch where the machine has no Chrome at all - cannot run here: Chrome is installed
+// per-machine, so no account on this host can see its absence. The only negative case covered until
+// now was a non-Windows platform, which exercises the early return and none of the probing. This is
+// the closest an automated test gets to that branch.
+test('browser detection reports unavailable, and still offers the download, when Windows has no Chrome', () => {
+  const env = {
+    PROGRAMFILES: 'C:\\Program Files',
+    'PROGRAMFILES(X86)': 'C:\\Program Files (x86)',
+    LOCALAPPDATA: 'C:\\Users\\Test\\AppData\\Local',
+  };
+  const probed = [];
+  const detected = detectSupportedBrowser({
+    env, platform: 'win32', exists: (path) => { probed.push(path); return false; },
+  });
+
+  assert.equal(detected.available, false);
+  assert.equal(detected.path, null);
+  assert.equal(detected.name, null);
+  // The prompt and the settings page both hand the user this link precisely when nothing was found,
+  // so it has to survive the miss rather than being derived from a located install.
+  assert.equal(detected.downloadUrl, 'https://www.google.com/chrome/');
+  // Every documented location must actually be probed; dropping one would silently narrow detection.
+  assert.deepEqual(probed, [
+    join(env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    join(env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    join(env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  ]);
+
+  const overridden = detectSupportedBrowser({
+    env: { ...env, CHROME_PATH: 'D:\\portable\\chrome.exe' },
+    platform: 'win32',
+    exists: (path) => path === 'D:\\portable\\chrome.exe',
+  });
+  assert.equal(overridden.available, true, 'CHROME_PATH must still win when it points at a real binary');
+});
+
+// This is what makes A-4b's residual risk small: a user without Chrome never meets a source that
+// needs one, because nothing shipped enabled requires a browser. If a browser source is ever added
+// to the defaults, that stops being true and this fails rather than being discovered on a VM.
+test('nothing in the shipped default sources needs a browser', () => {
+  const example = JSON.parse(readFileSync(new URL('../config/sources.example.json', import.meta.url), 'utf8'));
+  const sources = example.sources || [];
+  assert.ok(sources.some((source) => source.enabled), 'a fresh install must have something enabled to do');
+  for (const source of sources) {
+    assert.notEqual(source.connector, 'browser', `default source ${source.key} would require Chrome`);
+    assert.notEqual(source.config?.channel, 'chrome', `default source ${source.key} would require Chrome`);
+  }
+});
+
 test('Windows installer declares per-user install, startup task, shortcuts, and data-preserving uninstall', () => {
   const installer = readFileSync(new URL('../release/windows/installer.iss', import.meta.url), 'utf8');
   assert.match(installer, /PrivilegesRequired=lowest/);

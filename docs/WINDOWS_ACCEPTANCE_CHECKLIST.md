@@ -88,10 +88,41 @@ SHA-256：**`a5b67183ba1d981e697ed0ea4876787e7d597a693c50df43df7ac68a9da18f3c`**
 | --- | --- | --- | --- |
 | 0a | **A-6b「問題回報」按鈕複驗** | 下一版產物 | `launcher.ps1` 的回報 URL 已於 2026-08-11 修正（原本不會預填錯誤代碼與 App 版本，見 `BT-UX-002`）。修正本身已於線上表單實測通過，但**按鈕點擊後實際開啟的 URL 尚未在產物上複驗** |
 | 0b | **A-9 失敗來源的錯誤呈現** | 下一版產物 ＋ 一個必定失敗的來源 | 來源頁的錯誤訊息已於 2026-08-11 改為三語可操作訊息（`BT-UX-003`）。做法：加一個必定失敗的來源（例如已下架的 shimamura URL），確認顯示的是建議而非英文原文。**這是 A-9 唯一從未被檢視過的角落** |
-| 1 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.3 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware。**A 段唯一未完成項**，且本機環境結構上做不到 —— Chrome 安裝於 `C:\Program Files`，全機器共用，換帳號仍可見 |
+| 1 | **A-4b 無 Chrome 分支** | **乾淨 VM**（見 2.3 節快照規劃） | Windows 11 Home 無 Hyper-V，需 VirtualBox／VMware。**A 段唯一未完成項**，且本機環境結構上做不到 —— Chrome 安裝於 `C:\Program Files`，全機器共用，換帳號仍可見。<br>**剩餘風險已於 2026-08-11 縮小**，見下方「A-4b 的剩餘風險有多大」 |
 | 2 | 收尾清理 | — | 刪除 Test_Darren 帳號、共用資料夾 `C:\Users\Public\BeybladeTracker-Acceptance`、`C:\Users\yedon\BeybladeTracker-backup-20260802`。**A-4b 完成前先別動**，共用資料夾的腳本還會用到 |
 
 > 分支 `codex/bt-api-001` 仍未 push，這是另一件待決事項，不列入驗收待辦。
+
+### 三之一、A-4b 的剩餘風險有多大（2026-08-11 評估）
+
+A-4b 需要乾淨 VM，短期內不一定會做，所以先把「不做會怎樣」查清楚並記下來，而不是讓它掛在那裡當一個模糊的未知數。
+
+**能自動化涵蓋的部分已經補上**（3 項測試，皆經反向確認）：
+
+| 涵蓋 | 測試 |
+| --- | --- |
+| Windows 上四條路徑都不存在時，回報 `available=false` 且**仍提供下載連結**（提示要用它），並確認三條路徑**確實都被探測過** | `test/phase7.test.js` |
+| 出貨的預設來源**沒有任何** `browser` connector 或 `channel: chrome` | `test/phase7.test.js` |
+| 從 UI 新增的來源**一律是 `jsonld`**，不可能產生 browser 來源 | `test/source-manager.test.js` |
+
+原本的負向涵蓋只有 `platform: 'linux'`，那只走到提前返回，完全沒有探測邏輯。
+
+**因此剩餘風險的範圍是：**
+
+沒有 Chrome 的使用者，在**預設路徑上根本碰不到瀏覽器** —— 預設來源是離線 fixture 與停用的範例，而 UI 新增的來源永遠是 `jsonld`。`browser` connector 只能靠手動編輯 `config/sources.json` 產生。這三件事現在都被測試鎖住了。
+
+**真正只能靠 VM 驗的，只剩安裝精靈那個提示：**
+
+```pascal
+if (CurPageID = wpReady) and (not WizardSilent) and (not ChromeInstalled) then
+  MsgBox('找不到 Google Chrome。…是否開啟官方 Chrome 下載頁？', mbConfirmation, MB_YESNO);
+```
+
+即 [installer.iss:65-79](../release/windows/installer.iss)：三個 `FileExists` 加一個 `MsgBox`。靜默模式**不該**跳提示這個負向已由 E2E 涵蓋；未涵蓋的是互動模式**該跳時跳不跳得出來**、以及「是」會不會開啟下載頁。
+
+**評估**：複雜度低，但這正是 D-4 給的教訓所在 —— D-4 也是「對話框該跳時跳不出來」，而且同樣通過了當時所有測試。差別在於 D-4 的成因（`SW_HIDE` 繼承）是結構性的、自動化構不到；這裡是 Inno Setup 的原生 MsgBox，沒有同類機制。所以風險確實較低，但**不是零**。
+
+**若最終決定不做 VM**：必須在發佈說明明確寫出「沒有 Chrome 的機器上，安裝精靈的提示未經實機驗證」，不得默默省略。
 
 ### 四、B 段（公開發佈閘門，仍全數受阻）
 

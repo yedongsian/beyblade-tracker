@@ -82,7 +82,7 @@ SHA-256：**`a5b67183ba1d981e697ed0ea4876787e7d597a693c50df43df7ac68a9da18f3c`**
 
 ### 三、待辦（依建議順序）
 
-2026-08-11 的驗收輪把原本的六項待辦收掉四項，同日又因 `BT-UX-002`／`BT-UX-003` 兩項修正新增兩項複驗。**四項都能在同一輪乾淨 VM 裡做完**，步驟見 [ROUND4 runbook](WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md) 的「下一輪的三個增補項」。
+2026-08-11 的驗收輪把原本的六項待辦收掉四項，同日又因 `BT-UX-002`／`BT-UX-003` 兩項修正新增兩項複驗。**四項都能在同一輪乾淨 VM 裡做完** —— 從安裝 VirtualBox 到收尾的完整順序見 [WINDOWS_ACCEPTANCE_VM_ROUND.md](WINDOWS_ACCEPTANCE_VM_ROUND.md)。
 
 | # | 待辦 | 需要什麼 | 備註 |
 | --- | --- | --- | --- |

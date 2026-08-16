@@ -24,6 +24,45 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 
 ---
 
+---
+
+## 執行進度（2026-08-16）
+
+**主機準備與 VM 建立已完成，`S0-no-chrome` 快照已拍。下次從第三部分階段 1（A-4b）開始。**
+
+| 項目 | 狀態 |
+| --- | --- |
+| VirtualBox | 7.2.14 r174565 已安裝 |
+| VM | `Beyblade-Acceptance`，6144 MB／4 核心／128 MB VRAM／64 GB 動態磁碟 |
+| 韌體 | EFI + TPM `v2_0` + UEFI Secure Boot enabled（皆已驗證至 `.vbox` 設定檔層級） |
+| Windows | 11 Enterprise 評估版 25H2 zh-tw 已安裝 |
+| Guest Additions | 7.2.14 已安裝，RunLevel 2 |
+| 共用資料夾 | `BTAcceptance` → `C:\Users\Public\BeybladeTracker-VM-Round`（自動掛載、可寫；VM 內為 `Z:`） |
+| 驗收帳號 | `AcceptanceUser`（標準使用者，已確認不在 Administrators 群組） |
+| 驗收檔案 | 已複製至 VM 的 `C:\Users\Public\BeybladeTracker-Acceptance`（29 個檔） |
+| **快照** | **`S0-no-chrome`**（UUID `1fbe2d2d-fa45-4913-abce-f2405ca1521c`）**已建立** |
+| 磁碟 | VDI 21.3 GB＋差異碟 0.4 GB；主機 C: 剩 48.6 GB |
+
+### 建立過程中值得記下的三件事
+
+1. **安全開機需要四個步驟**，本文原先未載明：`modifynvram inituefivarstore` →
+   `enrollmssignatures` → **`enrollorclpk`**（註冊平台金鑰，缺這步 `secureboot --enable`
+   會失敗並回報 "platform key (PK) is not enrolled"）→ `secureboot --enable`。
+   另 `--tpm-type` 的值必須以 `=` 連寫（`--tpm-type=2.0`），空白分隔會靜默失效。
+2. **本 VM 為 Entra ID 加入之裝置**。OOBE 時以個人的學校帳號登入，因此 `葉東憲` 為
+   `AzureAD\` 帳號。驗收者評估該帳號已無組織管控（校友身分）後決定沿用。
+   影響：登入畫面預設走組織帳號，本機帳號須輸入 `.\AcceptanceUser` 才登得進去。
+   **此為環境變因，記錄於此以供日後判讀。**
+3. 共用資料夾在 VM 內視為網路磁碟機，`.ps1` 會被執行原則擋下。一律以
+   `powershell -NoProfile -ExecutionPolicy Bypass -File Z:\<script>.ps1` 執行。
+
+### 下次開始前
+
+VM 目前為執行中。接續時直接登入 `AcceptanceUser`（**非提權**視窗），
+先跑 `Z:\s0-precheck.ps1` 確認四項條件仍成立，再進入階段 1。
+
+---
+
 # 第一部分：主機準備
 
 ## 1.1 先知道這件事

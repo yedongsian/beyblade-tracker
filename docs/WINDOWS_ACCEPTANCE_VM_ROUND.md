@@ -303,6 +303,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 | 未直接曝露英文原文 | **PASS** — 原文收在「技術細節」可展開處 |
 | 切換語言 | **PASS** — English 顯示 "That domain could not be found. Check the spelling and whether the domain still exists."，`Monitor failures: 2` 同步 |
 
+| 接回網路後可自行復原 | **PASS** — 連續失敗 2→0、`lastSuccessAt` 更新為 15:40:19Z、`lastError` 清除；`lastFailureAt` 保留為 14:57:01Z |
+
+復原行為正確：成功後清除當前錯誤與失敗計數，但保留曾經失敗的時間戳，
+使「此來源過去出過問題」的事實不致被抹除。
+
 > **判讀注意**：失敗後**必須重新整理頁面**才看得到。首次觀察時頁面仍是失敗前渲染的舊畫面
 > （`下次監控` 仍為舊值、連續失敗顯示 0），一度被誤判為「沒有顯示錯誤」。
 

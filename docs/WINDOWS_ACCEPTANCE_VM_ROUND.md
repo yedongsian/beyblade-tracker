@@ -56,6 +56,37 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 3. 共用資料夾在 VM 內視為網路磁碟機，`.ps1` 會被執行原則擋下。一律以
    `powershell -NoProfile -ExecutionPolicy Bypass -File Z:\<script>.ps1` 執行。
 
+### 階段 1（A-4b）進度：2026-08-17
+
+| 步驟 | 結果 | 證據 |
+| --- | --- | --- |
+| 1 準備安裝頁出現找不到 Chrome 提示 | **PASS** | 文案：「找不到 Google Chrome。一般 HTTP 商店仍可使用，但需要瀏覽器的來源將無法掃描。是否開啟官方 Chrome 下載頁？」明確載明後果與補救 |
+| 2 選「是」開啟官方下載頁 | **PASS** | 實際導向 `https://www.google.com/chrome/` |
+| 3 還原 S0 後選「否」仍可完成安裝 | **PASS** | 安裝於 `C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker`，`current.json={"version":"1.0.0"}`，內建 node、`launcher.ps1`、5 個開始功能表捷徑、`Run` 機碼（含 `noninteractive`）、解除安裝登錄項目皆齊全，全程未要求提權 |
+| 4 服務啟動與瀏覽器偵測 | **PASS** | `/health=ok`；`browser.available=False`；`browser.downloadUrl=https://www.google.com/chrome/`；8787 監聽、無殘留 launcher 行程 |
+| 4b 離線 demo fixture | **PASS** | `demo-fixture` enabled/healthy，掃描得 3 items、2 events，送出 2 則通知 |
+| 5 JSON-LD 來源（無 Chrome 亦可抓） | 待執行 | — |
+| 6 設定頁顯示找不到 Chrome 並提供下載連結 | 待執行 | — |
+
+#### 附帶取得：D-3 使用者可見效果的首次驗證
+
+本次是**全新使用者設定檔上的全新安裝**，來源清單為：
+
+```
+demo-fixture    enabled=True   healthy=True
+example-jsonld  enabled=False  healthy=True
+```
+
+即 `sources.example.json` 的內容，**不含建置者的三個真實商店，也不含任何 browser connector**。
+先前各輪皆在既有使用者資料的機器上進行，來源一直是自移機檔還原的個人設定，因此
+D-3 的終端使用者效果直到此刻才真正被證實。**A-9 新標準的前半（離線 fixture 可運作）亦於此通過。**
+
+#### 判讀注意
+
+首次安裝後服務就緒需時較久（VM 走 Hyper-V 後端），過早蒐證會得到「`/health` 連不上、
+資料庫未就緒、log 為空」的輸出，與「安裝失敗」完全無法區分。本輪即發生一次。
+蒐證腳本應等待至少 180 秒再判定。
+
 ### 下次開始前
 
 VM 目前為執行中。接續時直接登入 `AcceptanceUser`（**非提權**視窗），

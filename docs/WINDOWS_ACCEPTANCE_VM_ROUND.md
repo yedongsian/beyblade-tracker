@@ -65,8 +65,15 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 | 3 還原 S0 後選「否」仍可完成安裝 | **PASS** | 安裝於 `C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker`，`current.json={"version":"1.0.0"}`，內建 node、`launcher.ps1`、5 個開始功能表捷徑、`Run` 機碼（含 `noninteractive`）、解除安裝登錄項目皆齊全，全程未要求提權 |
 | 4 服務啟動與瀏覽器偵測 | **PASS** | `/health=ok`；`browser.available=False`；`browser.downloadUrl=https://www.google.com/chrome/`；8787 監聽、無殘留 launcher 行程 |
 | 4b 離線 demo fixture | **PASS** | `demo-fixture` enabled/healthy，掃描得 3 items、2 events，送出 2 則通知 |
-| 5 JSON-LD 來源（無 Chrome 亦可抓） | 待執行 | — |
-| 6 設定頁顯示找不到 Chrome 並提供下載連結 | 待執行 | — |
+| 5 JSON-LD 來源（無 Chrome 亦可抓） | **PASS** | 以 UI 新增 `https://www.hlj.com/product/TKT09613`；log：`parser extract hlj-com success validCount:1 pageCount:1`、`source hlj-com: 1 items, 1 events`；筆數 products 2→3、offers 3→4、events 2→3、observations 3→4；`last_success_at=14:13:52`。**在完全沒有 Chrome 的機器上抓到真實商品** |
+| 6 設定頁顯示找不到 Chrome 並提供下載連結 | **PASS** | 設定頁顯示「瀏覽器：找不到 Google Chrome」與「前往官方 Chrome 下載頁」，HTML 含 `google.com/chrome` |
+
+**A-4b 六項全數通過 —— 本輪唯一非 VM 不可的項目完成。**
+
+附帶佐證：`sources` 表顯示 UI 新增的來源 `managed_by='ui'`、`connector='jsonld'`，
+與文件所述「UI 新增的來源一律為 jsonld，不會是 browser connector」相符。
+另外此 VM **未安裝任何 Node.js**（診斷腳本必須改用安裝包內建的 `runtime\node.exe`），
+是「一般使用者不需開發工具」這項主張的實地佐證。
 
 #### 附帶取得：D-3 使用者可見效果的首次驗證
 

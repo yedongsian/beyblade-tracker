@@ -70,6 +70,26 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 
 **A-4b 六項全數通過 —— 本輪唯一非 VM 不可的項目完成。**
 
+### 階段 4（A-6b）：**PASS**，2026-08-17
+
+以真實捷徑路徑（`wscript.exe launcher.vbs`，隱藏視窗）觸發 `BT-LCH-001`：
+
+| 檢查 | 結果 |
+| --- | --- |
+| 對話框出現且可操作 | **PASS** — 代碼、標題「找不到目前版本」、繁中復原指引無亂碼，四個按鈕皆可點 |
+| 「複製錯誤資訊」內容 | **PASS** — 恰好四行：`錯誤代碼：BT-LCH-001`／`App version：unknown`／`UTC：…`／`Support reference：72255034ffc8`；未含路徑、stack、URL 或憑證字樣 |
+| 「問題回報」網址 | **PASS** — `issues/new?template=bug_report.yml&…`，非舊的 `/issues/new/choose` |
+| 表單預填 | **PASS** — 標題 `[問題回報] BT-LCH-001`、「錯誤代碼」欄 `BT-LCH-001`、「App 版本」欄 `unknown` |
+| 關閉後行程結束 | **PASS** — 無殘留，暫存目錄已清除 |
+
+`App 版本` 為 `unknown` 屬設計行為：本情境刻意移除 `current.json`，版本本就讀不到。
+
+附帶觀察：GitHub 要求登入時，`return_to` 完整保留了整串 query，登入後仍正確帶入所有預填欄位。
+
+> **判讀注意**：結果檔中「沒有偵測到標題為 Beyblade Tracker 的視窗」一行是**腳本偵測過早**所致
+> （原本只等 8 秒，VM 走 Hyper-V 後端較慢），**不是** D-4 回歸 —— 對話框確實出現且可操作。
+> 已將該偵測改為輪詢至多 40 秒。
+
 附帶佐證：`sources` 表顯示 UI 新增的來源 `managed_by='ui'`、`connector='jsonld'`，
 與文件所述「UI 新增的來源一律為 jsonld，不會是 browser connector」相符。
 另外此 VM **未安裝任何 Node.js**（診斷腳本必須改用安裝包內建的 `runtime\node.exe`），

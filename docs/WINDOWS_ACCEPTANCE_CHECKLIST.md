@@ -1011,6 +1011,36 @@ logger.warn(`web request failed: code=${envelope.code} supportRef=${envelope.sup
 
 ---
 
+### D-9 非中文語系的來源管理頁排版被擠壞
+
+2026-08-17 於乾淨 VM 發現。同一張來源卡片，繁中排版正常（資訊各佔一行、按鈕靠右對齊），
+切換為 English 後左側文字欄被壓縮到約三分之一寬，`Next monitor` 的時間戳被折成兩行、
+錯誤訊息折成四行，整張卡片高度暴增。
+
+#### 根因
+
+`src/web/ui.js:30`：
+
+```css
+.source-card{display:grid;grid-template-columns:minmax(0,1fr) auto;…}
+```
+
+右欄為 `auto`，寬度由按鈕文字決定。英文按鈕明顯較長
+（`Disable and keep history`、`Discover products`、`Test connection`），
+右欄因此撐大並壓縮左側 `minmax(0,1fr)` 的文字欄。
+
+改為單欄的媒體查詢在 `@media(max-width:820px)`（`ui.js:50`），一般桌面寬度不會觸發，
+所以問題在正常視窗大小下就會出現。
+
+日文語系尚未實測，但按鈕字串長度介於中英之間，可能有相同或較輕的問題。
+
+#### 建議修正方向
+
+限制動作欄的最大寬度（例如 `minmax(0,1fr) minmax(auto,42%)`），或提高改為單欄的斷點，
+使長字串語系提早堆疊。無論採哪種，修正後應在三種語系各看一次來源管理頁。
+
+---
+
 ### 已排除：log 中文亂碼（**非缺陷**）
 
 第一版診斷腳本以 `Get-Content` 未指定編碼讀取 `tracker.log`，在 Windows PowerShell 5.1 下以 ANSI 解讀 UTF-8，導致輸出呈現 `?? New product @ Yodobashi ??2450 JPY`。

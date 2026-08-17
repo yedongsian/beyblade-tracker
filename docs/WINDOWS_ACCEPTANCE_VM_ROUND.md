@@ -291,6 +291,39 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 - 「App 版本」欄顯示 `unknown`（此情境讀不到 `current.json`，屬設計行為）
 - **不要送出**，看完關掉
 
+### 階段 5（A-9）結果：**PASS**，2026-08-17
+
+以主機端 `VBoxManage controlvm … setlinkstate1 off` 拔除虛擬網路線，再按「立即重新檢查」。
+
+| 檢查 | 結果 |
+| --- | --- |
+| 掃描確實失敗並分類 | **PASS** — log：`source monitor hlj-com status:"failed" errorClass:"dns"`、`getaddrinfo ENOTFOUND www.hlj.com`，連續失敗累計為 2 |
+| 離線 fixture 不受影響 | **PASS** — 同時段 `demo-fixture` 仍 success |
+| UI 顯示可行動的繁中 | **PASS** — 「找不到這個網域。請確認網址拼寫，以及網域是否仍然存在。」 |
+| 未直接曝露英文原文 | **PASS** — 原文收在「技術細節」可展開處 |
+| 切換語言 | **PASS** — English 顯示 "That domain could not be found. Check the spelling and whether the domain still exists."，`Monitor failures: 2` 同步 |
+
+> **判讀注意**：失敗後**必須重新整理頁面**才看得到。首次觀察時頁面仍是失敗前渲染的舊畫面
+> （`下次監控` 仍為舊值、連續失敗顯示 0），一度被誤判為「沒有顯示錯誤」。
+
+#### 附帶發現一：離線時的建議語會誤導
+
+拔網路線造成的是 `getaddrinfo ENOTFOUND`，被分類為 `dns`，因此顯示「請確認網址拼寫，以及網域是否仍然存在」。
+但該來源**先前已成功抓取過**（`lastSuccessAt` 有值），網域顯然存在 —— 真正的原因是本機沒有網路。
+對筆電斷線這種最常見的情境，這句話會把使用者導向錯誤的方向（去檢查網址拼寫）。
+
+建議：分類為 `dns` 時，若該來源曾經成功過、或本機無任何網路連線，改用連線相關的建議語。
+
+#### 附帶發現二：操作回饋顯示在看不到的地方
+
+`ui.js:153`／`154` 的「立即重新檢查」與「探索商品」**都有寫入回饋**，但目標是整頁共用的
+單一狀態列 `#source-action-status`（位於頁面上方）。使用者在下方的來源卡片按下按鈕時，
+回饋出現在捲動範圍之外，因此看起來像「按了沒反應」——本輪即因此連按兩次而觸發 D-8。
+
+建議：回饋顯示在被操作的那張卡片內，或按下後將狀態列捲入視野。
+
+---
+
 ## 階段 5：A-9 失敗來源錯誤呈現
 
 > **不能用 D-2 那個已下架的 shimamura URL。** 2026-08-11 實測：UI 新增來源會先做預覽，

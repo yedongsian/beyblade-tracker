@@ -114,10 +114,23 @@ D-3 的終端使用者效果直到此刻才真正被證實。**A-9 新標準的�
 資料庫未就緒、log 為空」的輸出，與「安裝失敗」完全無法區分。本輪即發生一次。
 蒐證腳本應等待至少 180 秒再判定。
 
-### 下次開始前
+### 下次開始前（2026-08-17 更新）
 
-VM 目前為執行中。接續時直接登入 `AcceptanceUser`（**非提權**視窗），
-先跑 `Z:\s0-precheck.ps1` 確認四項條件仍成立，再進入階段 1。
+**階段 1、4、5 已完成**（A-4b、A-6b、A-9 全數 PASS）。**下次從階段 2 開始。**
+
+接續步驟：
+
+1. **還原 `S0-no-chrome`**（階段 2 的第一步）。目前狀態已裝好 App 並含測試資料，
+   還原會全部捨棄 —— 這是預期的，所有證據都已寫在主機端的共用資料夾，不受影響。
+2. 登入 `AcceptanceUser` → **安裝 Google Chrome** → 拍快照 **`S1-with-chrome`**
+3. 依 [ROUND4 runbook](WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md) 步驟 1～9 跑 A 段主流程（階段 3）
+
+> **磁碟提醒**：2026-08-17 收工時差異磁碟已達 32.7 GB（VM 合計 54 GB），主機 C: 僅餘 22.9 GB。
+> **還原 S0 會丟棄該差異碟，可立即回收約 32 GB** —— 這也正是階段 2 的第一個動作，
+> 因此接續前先還原，空間問題與流程需求可一併解決。拍 S1 之後仍會再長，期間勿往 C: 存放大檔。
+
+已產出的證據（主機端 `C:\Users\Public\BeybladeTracker-VM-Round\`）：
+`a4b-result.txt`、`a4b-installcheck.txt`、`a6-dialog-result.txt`、`discovery-diag.txt`。
 
 ---
 

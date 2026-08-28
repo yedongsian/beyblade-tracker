@@ -211,11 +211,18 @@ const EXPLAINED_HTTP_STATUSES = new Set(['400', '401', '403', '404', '410', '429
  * Map a bounded error class onto the translation key describing it. Unrecognized classes fall back
  * to the generic key rather than leaking the class itself into user-facing prose.
  */
-export function sourceErrorMessageKey(errorClass) {
+/**
+ * A DNS failure on a source that has succeeded before is almost never a wrong URL - the domain
+ * demonstrably existed - it is usually the machine having no network at all. Telling that user to
+ * "check the spelling" sends them the wrong way, which is exactly what the clean-VM round observed
+ * when the virtual cable was pulled. `hasSucceededBefore` lets the caller say so.
+ */
+export function sourceErrorMessageKey(errorClass, { hasSucceededBefore = false } = {}) {
   const raw = normalizeErrorClass(errorClass);
   if (!raw) return null;
   const http = raw.match(/^http_(\d{3})$/);
   if (http) return EXPLAINED_HTTP_STATUSES.has(http[1]) ? `srcErr.http_${http[1]}` : 'srcErr.http';
+  if (raw === 'dns' && hasSucceededBefore) return 'srcErr.dnsAfterSuccess';
   return SOURCE_ERROR_MESSAGE_KEYS.get(raw) || 'srcErr.unknown';
 }
 

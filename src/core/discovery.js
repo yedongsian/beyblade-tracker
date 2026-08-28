@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import * as cheerio from 'cheerio';
 import { computeAvailability, exclusionReason } from './classify.js';
+import { trackerError } from '../errors/registry.js';
 import { extractModel, normalizePrice, normalizeUrl, normalizeWhitespace } from './normalize.js';
 import { canonicalizeSeedUrl, registrableDomain } from './site.js';
 import { parseProductPage } from '../connectors/parse.js';
@@ -353,18 +354,18 @@ function updateRecipe(db, siteId, successful, error = null) {
 
 export async function runSiteDiscovery(db, siteId, options = {}) {
   const site = db.get('SELECT * FROM sites WHERE id=?', [siteId]);
-  if (!site) throw new Error('找不到要探索的商店。');
+  if (!site) throw trackerError('BT-SRC-004', '找不到要探索的商店。');
   const running = db.get(
     "SELECT id FROM discovery_runs WHERE site_id=? AND status='running' AND finished_at IS NULL LIMIT 1",
     [siteId]
   );
-  if (running) throw new Error('這間商店已有探索工作正在執行，請等待完成。');
+  if (running) throw trackerError('BT-SRC-005', '這間商店已有探索工作正在執行，請等待完成。');
   const seed = options.seedUrl || db.get(
     `SELECT original_url FROM seed_urls WHERE site_id=? AND enabled=1
      ORDER BY CASE purpose WHEN 'discovery' THEN 0 ELSE 1 END,id LIMIT 1`, [siteId]
   )?.original_url;
-  if (!seed) throw new Error('這間商店沒有可用的探索網址。');
-  if (!sameSite(seed, site.registrable_domain)) throw new Error('探索網址不在這間商店的網域內。');
+  if (!seed) throw trackerError('BT-SRC-006', '這間商店沒有可用的探索網址。');
+  if (!sameSite(seed, site.registrable_domain)) throw trackerError('BT-SRC-007', '探索網址不在這間商店的網域內。');
 
   let settings = db.get('SELECT * FROM discovery_settings WHERE site_id=?', [siteId]);
   if (!settings) settings = ensureDiscoverySettings(db, siteId);

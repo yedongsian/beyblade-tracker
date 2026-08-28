@@ -122,7 +122,37 @@ test('a cooldown is reported as its own condition, not an unexpected internal er
 
 test('the cooldown reaches the API as a conflict rather than a bad request', () => {
   const source = readFileSync(new URL('../src/web/server.js', import.meta.url), 'utf8');
-  assert.match(source, /envelope\.code === 'BT-SRC-003' \? 409/);
+  assert.ok(source.includes("CONFLICT = new Set(['BT-SRC-003', 'BT-SRC-005'])"), 'the cooldown must map to 409');
   const monitor = readFileSync(new URL('../src/core/monitor.js', import.meta.url), 'utf8');
   assert.match(monitor, /error\.code = 'BT-SRC-003'/, 'the code belongs at the throw site, not in a message regex');
+});
+
+// D-8's remaining slices. runSiteDiscovery's four guards each had a clear sentence and no code, so
+// the envelope replaced every one of them with "an unexpected internal error" - the same failure the
+// cooldown had. Discovery takes minutes, so "already running" is the one an operator meets most.
+test('the discovery guards report their own conditions instead of the generic code', () => {
+  const source = readFileSync(new URL('../src/core/discovery.js', import.meta.url), 'utf8');
+  for (const code of ['BT-SRC-004', 'BT-SRC-005', 'BT-SRC-006', 'BT-SRC-007']) {
+    assert.ok(source.includes(`trackerError('${code}'`), `${code} must be raised at its guard`);
+    assert.ok(ERROR_REGISTRY[code], `${code} must be registered`);
+    assert.ok(ERROR_REGISTRY[code].recovery.length > 0, `${code} must tell the user what to do`);
+  }
+  assert.doesNotMatch(source, /throw new Error\('這間商店已有探索工作正在執行/, 'the bare throw is what lost the message');
+});
+
+test('a coded guard keeps its sentence for the log while the user gets the code', () => {
+  const error = trackerError('BT-SRC-005', '這間商店已有探索工作正在執行，請等待完成。');
+  assert.equal(error.code, 'BT-SRC-005');
+  assert.match(error.message, /已有探索工作正在執行/, 'diagnostics still need the detail');
+  const envelope = errorEnvelope(error, { appVersion: '1.0.0', supportRef: 'ref', timestamp: '2026-08-28T00:00:00.000Z' });
+  assert.equal(envelope.code, 'BT-SRC-005');
+  assert.notEqual(envelope.code, 'BT-LCH-999');
+  // The internal sentence must not become the public contract.
+  assert.doesNotMatch(JSON.stringify(envelope), /請等待完成/);
+});
+
+test('discovery conflicts and misses get their own HTTP statuses', () => {
+  const server = readFileSync(new URL('../src/web/server.js', import.meta.url), 'utf8');
+  assert.match(server, /CONFLICT = new Set\(\['BT-SRC-003', 'BT-SRC-005'\]\)/);
+  assert.match(server, /envelope\.code === 'BT-SRC-004' \? 404/);
 });

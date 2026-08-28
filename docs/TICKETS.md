@@ -291,7 +291,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 首片修正：新增 `BT-SRC-003`（含 recovery 指引與錯誤代碼目錄條目）；代碼設在**丟出點**而非事後比對訊息字串；冷卻改回傳 **409**，與 malformed request 區分。
   - 剩餘秒數刻意不進入 envelope —— 那是動態值，不該成為公開契約的一部分；使用者看到的是穩定的「稍候片刻再試」。
   - 反向確認：移除代碼或 409 對應後，各有 5 項測試失敗。
-  - **只修了 D-8 的一個切片**：冷卻這條路徑。D-8 另記載 `runSiteDiscovery` 的四道守門（找不到商店／已有工作執行中／沒有探索網址／網址不在網域內），訊息**同樣會被換掉，尚未處理**。
+  - **2026-08-28 第二片**：`runSiteDiscovery` 的四道守門也改為帶穩定代碼（`BT-SRC-004`～`007`），「已有探索工作正在執行」與「找不到商店」另外對應 409／404。`trackerError` 擴充為可同時帶代碼與訊息 —— 代碼給使用者，原句留給 log 與診斷，不成為公開契約。
   - **剩餘範圍不變**：其餘 validation／policy／conflict／not-found 的完整對應仍待處理。
 - 背景：`docs/API_SPEC.md` §12 與 §13 已記錄此限制——目前實作把 validation、policy、network 及多數 internal error 統一回傳 `400`，只有 route／Product／被辨識為 not found 的 error message 會回 `404`。`BT-UX-002` 交付的中央 error registry 已提供穩定的 `BT-<AREA>-<NNN>` 代碼與安全 envelope，因此 status code 已不是識別錯誤類別的唯一手段，但仍讓「使用者輸入錯誤」與「伺服器內部失敗」在 HTTP 層無法區分。
 - 使用者影響：一般使用者不直接受影響（Local Web UI 讀的是 envelope 內的錯誤代碼）。影響的是除錯、log 判讀與未來任何以 status code 做重試決策的客戶端——目前 `500` 級失敗會被誤判為可由使用者修正的 `400`。

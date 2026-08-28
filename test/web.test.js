@@ -994,3 +994,38 @@ test('the source card caps its action column so long button labels cannot squeez
     assert.match(rule[1], /minmax\(0,\s*1fr\)\s+minmax\(0,\s*\d+%\)/, 'the action column needs an upper bound');
   });
 });
+
+// VM round finding, 2026-08-17: "check now" and "discover products" wrote their feedback to a single
+// status bar at the top of the page. Pressing a button on a card further down produced no visible
+// response, so the operator pressed again - which is how both that round and the 2026-08-28 session
+// triggered D-8. Feedback now lands in the card that was acted on.
+test('source actions report back inside the card, not only at the top of the page', async () => {
+  await withServer(async ({ db, base }) => {
+    confirmSource(db, { url: 'https://shop.example/p/one', name: 'Shop', confirmed: true });
+    const page = await (await fetch(`${base}/sources`)).text();
+    assert.match(page, /<p class="status card-status" role="status" aria-live="polite">/, 'each card needs its own live region');
+    assert.match(page, /function statusFor\(el\)\{return el\.closest\('\.source-card'\)/);
+    // Every per-card handler must resolve its target through the helper; a bare lookup of the
+    // page-level bar is the bug.
+    const perCard = page.match(/data-source-action\]'\)\.forEach[\s\S]{0,4000}?data-save-discovery/);
+    assert.ok(perCard, 'the per-card handlers must still be present');
+    assert.doesNotMatch(perCard[0], /getElementById\('source-action-status'\)/,
+      'a per-card action must not write only to the page-level status bar');
+  });
+});
+
+// The clean-VM round pulled the virtual network cable and got "check the spelling of the URL" for a
+// source that had fetched successfully minutes earlier. The domain was fine; the machine was offline.
+test('a DNS failure on a source that worked before blames the connection, not the spelling', async () => {
+  await withServer(async ({ db, base }) => {
+    const id = addFailingSource(db, 'hlj', 'getaddrinfo ENOTFOUND www.hlj.com');
+    const fresh = await (await fetch(`${base}/sources`)).text();
+    assert.match(fresh, /找不到這個網域。請確認網址拼寫/, 'with no history, spelling is a fair thing to suspect');
+
+    db.run("UPDATE sources SET last_success_at='2026-08-28T00:00:00.000Z' WHERE id=?", [id]);
+    const proven = await (await fetch(`${base}/sources`)).text();
+    assert.match(proven, /先前抓取成功過/, 'once it has worked, the domain is not the suspect');
+    assert.match(proven, /沒有網路連線/);
+    assert.doesNotMatch(proven, /請確認網址拼寫，以及網域是否仍然存在/);
+  });
+});

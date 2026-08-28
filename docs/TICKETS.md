@@ -3,7 +3,7 @@
 > 狀態：Active
 > 最後更新：2026-08-11
 > 規則：本檔是正式 backlog；Roadmap 只保存優先順序與里程碑。
-> 目前驗證基線：`codex/bt-api-001` 於 2026-08-11 執行 `npm test` 通過 **233/233**（0 fail／0 skip／0 todo），
+> 目前驗證基線：`main` 於 2026-08-11 執行 `npm test` 通過 **249/249**（0 fail／0 skip／0 todo），
 > 四項 release E2E 全綠（normal／stopfail／missing-launcher／launcher-errors 6-6）。
 > 各 Ticket 內文保留當時的歷史測試數字，不回頭改寫。
 
@@ -38,7 +38,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
 | BT-P2-002 | P2 | Proposed | Chrome browser pool 與 concurrency control | 效能基準 |
 | BT-P2-003 | P2 | Proposed | Queue backpressure、priority 與效能基準 | BT-P1-002 |
-| BT-API-001 | P2 | Proposed | 細分 Local Web API 的 HTTP status mapping | BT-UX-002 error registry |
+| BT-API-001 | P2 | In Progress | 細分 Local Web API 的 HTTP status mapping | 首片已交付（冷卻→409）；其餘狀態待處理 |
 | BT-EXT-001 | P1 | Blocked | Takara Tomy Mall 真實 Discovery 驗收 | Queue-it 自然解除 |
 | BT-EXT-002 | P2 | Blocked | X 社群來源付費 API 啟用 | 使用者費用同意與 Developer Project |
 | BT-FUT-001 | P3 | Proposed | 跨裝置同步 threat model | 明確產品需求 |
@@ -252,6 +252,11 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - **`response exceeds N bytes`** —— `src/net/http.js` 的下載上限錯誤。原本同樣落到泛用訊息，而「內容過大」本來就寫在本 Ticket 的 scope 裡。新增 `too_large` 類別與三語文案（建議改用單一商品頁而非分類頁）。
   - 該規則刻意排在寬鬆的 HTTP 狀態啟發式**之前**：若上限剛好是三位數（例如 `exceeds 500 bytes`），否則會被誤讀成 `http_500`。已有測試涵蓋。
   - 新增測試以 `src/net/http.js` 與 connector **實際會拋出的字串**逐一斷言分類，而非憑想像列舉。反向確認：移除任一規則後對應測試失敗。
+- Verification evidence（2026-08-11，實機驗收發現）：驗收者在**英文介面**上看到來源錯誤已翻譯，但其下的 Recipe 那一行仍是繁中。
+  - 根因：`src/core/discovery.js` 把中文句子寫進 `site_recipes.last_error`，而 `src/web/server.js` 逐字輸出並硬寫 `Recipe：` 前綴 —— 與 BT-UX-003 修好的那一行只差一行，被我漏掉。
+  - 修正：discovery 改存穩定 token `RECIPE_NO_CANDIDATES`，文案由 i18n 提供；新增 `no_candidates` 類別與三語文案；`Recipe` 標籤本身也改為可翻譯。
+  - **既有安裝不受影響**：分類同時認得舊資料裡的中文散文，不會退回泛用訊息。
+  - 反向確認：把渲染改回逐字輸出後測試失敗。
 - **剩餘**：A-9 的「失敗時顯示可操作繁中錯誤」需於下一版產物實機複驗。做法：加入一個正常來源（`https://www.hlj.com/product/TKT09613`）後**中斷網路**並按「立即重新檢查」，確認顯示「無法連線到商店…」而非 `TypeError: fetch failed`。
   - **不可用已下架的 shimamura URL**：2026-08-11 實測，它在 UI 的**預覽**階段就以「網站重新導向超過 3 次。」被擋下，加不進去；且該訊息來自 `src/net/public-http.js`（預覽路徑），本來就是中文的，測不到本 Ticket 的範圍。
 
@@ -279,8 +284,14 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 ### BT-API-001 — 細分 Local Web API 的 HTTP status mapping
 
 - Priority：P2
-- Status：Proposed
+- Status：In Progress
 - Owner：待指定
+- Verification evidence（2026-08-11，實機驗收發現，**首片已交付**）：驗收者連按兩次「立即重新檢查」，畫面跳出 `BT-LCH-999`「發生未預期的內部錯誤」。
+  - 根因：`requestImmediateMonitor` 丟出的冷卻錯誤沒有穩定代碼，落到 `errorEnvelope` 的泛用分支。**丟出點本來就有一句清楚的繁中訊息「立即重新檢查仍在冷卻中，請 N 秒後再試。」，卻被 envelope 丟棄，換成一句與事實不符的話。** HTTP 狀態也與格式錯誤共用 `400`。
+  - 首片修正：新增 `BT-SRC-003`（含 recovery 指引與錯誤代碼目錄條目）；代碼設在**丟出點**而非事後比對訊息字串；冷卻改回傳 **409**，與 malformed request 區分。
+  - 剩餘秒數刻意不進入 envelope —— 那是動態值，不該成為公開契約的一部分；使用者看到的是穩定的「稍候片刻再試」。
+  - 反向確認：移除代碼或 409 對應後，各有 5 項測試失敗。
+  - **剩餘範圍不變**：其餘 validation／policy／conflict／not-found 的完整對應仍待處理。
 - 背景：`docs/API_SPEC.md` §12 與 §13 已記錄此限制——目前實作把 validation、policy、network 及多數 internal error 統一回傳 `400`，只有 route／Product／被辨識為 not found 的 error message 會回 `404`。`BT-UX-002` 交付的中央 error registry 已提供穩定的 `BT-<AREA>-<NNN>` 代碼與安全 envelope，因此 status code 已不是識別錯誤類別的唯一手段，但仍讓「使用者輸入錯誤」與「伺服器內部失敗」在 HTTP 層無法區分。
 - 使用者影響：一般使用者不直接受影響（Local Web UI 讀的是 envelope 內的錯誤代碼）。影響的是除錯、log 判讀與未來任何以 status code 做重試決策的客戶端——目前 `500` 級失敗會被誤判為可由使用者修正的 `400`。
 - Scope：

@@ -952,6 +952,95 @@ const applied = applyPendingTransfer(incomingConfig);   // 未傳入 { pidFile }
 
 ---
 
+### D-8 可預期的領域錯誤被顯示為「未預期的錯誤」，且無法追查
+
+2026-08-17 於乾淨 VM 發現。按「探索商品」後畫面無明顯反應（該操作實際需約 3 分鐘），
+使用者再按一次，隨即跳出：
+
+```
+BT-LCH-999  發生未預期的錯誤
+Beyblade Tracker 發生未預期的內部錯誤。
+Support reference：7-zHcIZbVatV
+```
+
+#### 根因：好訊息在送到畫面前被換掉
+
+`src/core/discovery.js:352-365` 的 `runSiteDiscovery` 有四道守門，每一道的訊息都清楚可行動：
+
+```js
+if (!site)     throw new Error('找不到要探索的商店。');
+if (running)   throw new Error('這間商店已有探索工作正在執行，請等待完成。');
+if (!seed)     throw new Error('這間商店沒有可用的探索網址。');
+if (!sameSite) throw new Error('探索網址不在這間商店的網域內。');
+```
+
+但 `src/errors/registry.js` 的 `errorCodeFor()` 只比對少數特定模式（SHA-256、更新相關字樣），
+其餘一律 `return 'BT-LCH-999'`。上述四句因此全部被替換成「發生未預期的內部錯誤」。
+
+本次資料庫證據指向**守門 2**：`discovery_runs` 唯一一筆為
+`site_id=3 status=success started=14:10:42 finished=14:13:54`，
+而兩次失敗發生於 `14:10:49` 與 `14:12:13`，皆落在該區間內 —— 即「已有探索正在執行」。
+
+**探索功能本身正常**：95 頁、19,368,370 bytes、找到 8 個候選、`error=null`。
+壞掉的只有錯誤呈現。
+
+#### 更嚴重的一面：support reference 對不到任何東西
+
+`src/web/server.js:930` 僅記錄代碼與參考編號：
+
+```js
+logger.warn(`web request failed: code=${envelope.code} supportRef=${envelope.supportRef}`);
+```
+
+**實際的錯誤訊息從未被記錄到任何地方。** 因此使用者依照對話框指示「複製錯誤資訊後回報」，
+開發者拿到 `7-zHcIZbVatV`、翻遍完整 log 也無從得知發生什麼事。
+這使**所有** `BT-LCH-999` 都不可診斷，不限於本情境。
+
+#### 附帶的 UX 成因
+
+「探索商品」按下後沒有立即回饋，而該操作耗時約 3 分鐘，使用者自然會再按一次 ——
+重複點擊幾乎是被誘發的，而非誤用。
+
+#### 建議修正方向
+
+1. `errorCodeFor()` 對已知的領域錯誤給予專屬代碼（或允許呼叫端以 `trackerError` 標註），
+   讓「已有探索執行中」「沒有可用的探索網址」等訊息如實呈現給使用者。
+2. 伺服器端記錄原始錯誤訊息與堆疊，並與 `supportRef` 關聯，使回報編號可被查詢。
+   對外仍只回傳安全的訊息，兩者並不衝突。
+3. 探索觸發後立即給予「已開始，約需數分鐘」的回饋，並在執行期間停用該按鈕。
+
+---
+
+### D-9 非中文語系的來源管理頁排版被擠壞
+
+2026-08-17 於乾淨 VM 發現。同一張來源卡片，繁中排版正常（資訊各佔一行、按鈕靠右對齊），
+切換為 English 後左側文字欄被壓縮到約三分之一寬，`Next monitor` 的時間戳被折成兩行、
+錯誤訊息折成四行，整張卡片高度暴增。
+
+#### 根因
+
+`src/web/ui.js:30`：
+
+```css
+.source-card{display:grid;grid-template-columns:minmax(0,1fr) auto;…}
+```
+
+右欄為 `auto`，寬度由按鈕文字決定。英文按鈕明顯較長
+（`Disable and keep history`、`Discover products`、`Test connection`），
+右欄因此撐大並壓縮左側 `minmax(0,1fr)` 的文字欄。
+
+改為單欄的媒體查詢在 `@media(max-width:820px)`（`ui.js:50`），一般桌面寬度不會觸發，
+所以問題在正常視窗大小下就會出現。
+
+日文語系尚未實測，但按鈕字串長度介於中英之間，可能有相同或較輕的問題。
+
+#### 建議修正方向
+
+限制動作欄的最大寬度（例如 `minmax(0,1fr) minmax(auto,42%)`），或提高改為單欄的斷點，
+使長字串語系提早堆疊。無論採哪種，修正後應在三種語系各看一次來源管理頁。
+
+---
+
 ### 已排除：log 中文亂碼（**非缺陷**）
 
 第一版診斷腳本以 `Get-Content` 未指定編碼讀取 `tracker.log`，在 Windows PowerShell 5.1 下以 ANSI 解讀 UTF-8，導致輸出呈現 `?? New product @ Yodobashi ??2450 JPY`。

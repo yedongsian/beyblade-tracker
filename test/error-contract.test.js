@@ -101,3 +101,28 @@ test('Local Web failures return a safe error envelope and render an accessible c
     db.close();
   }
 });
+
+// Found during the 2026-08-11 acceptance run: double-clicking "check now" produced a BT-LCH-999
+// "unexpected internal error" dialog. A cooldown is a designed outcome with a known remedy, and the
+// throw site already carried a clear, localized sentence - the envelope discarded it and told the
+// user something untrue. First slice of BT-API-001.
+test('a cooldown is reported as its own condition, not an unexpected internal error', () => {
+  const cooldown = new Error('立即重新檢查仍在冷卻中，請 47 秒後再試。');
+  cooldown.code = 'BT-SRC-003';
+  cooldown.retryAfterSeconds = 47;
+
+  assert.equal(errorCodeFor(cooldown), 'BT-SRC-003');
+  const envelope = errorEnvelope(cooldown, { appVersion: '1.0.0', supportRef: 'ref', timestamp: '2026-08-11T00:00:00.000Z' });
+  assert.equal(envelope.code, 'BT-SRC-003');
+  assert.notEqual(envelope.title, ERROR_REGISTRY['BT-LCH-999'].title);
+  assert.ok(envelope.recovery.length > 0, 'the user must be told what to do about it');
+  // The thrown sentence names a specific remaining time, so it must not become the public contract.
+  assert.doesNotMatch(JSON.stringify(envelope), /47/);
+});
+
+test('the cooldown reaches the API as a conflict rather than a bad request', () => {
+  const source = readFileSync(new URL('../src/web/server.js', import.meta.url), 'utf8');
+  assert.match(source, /envelope\.code === 'BT-SRC-003' \? 409/);
+  const monitor = readFileSync(new URL('../src/core/monitor.js', import.meta.url), 'utf8');
+  assert.match(monitor, /error\.code = 'BT-SRC-003'/, 'the code belongs at the throw site, not in a message regex');
+});

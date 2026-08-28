@@ -163,7 +163,10 @@ export function requestImmediateMonitor(db, sourceId, { now = isoNow() } = {}) {
   const cooldownMs = Number(settings.manual_cooldown_seconds || 60) * 1000;
   if (last && current - last < cooldownMs) {
     const retryAfterSeconds = Math.ceil((cooldownMs - (current - last)) / 1000);
+    // A cooldown is an expected outcome, not a fault. Carrying a stable code means the web layer
+    // can say so instead of falling through to the generic 'unexpected internal error' envelope.
     const error = new Error(`立即重新檢查仍在冷卻中，請 ${retryAfterSeconds} 秒後再試。`);
+    error.code = 'BT-SRC-003';
     error.retryAfterSeconds = retryAfterSeconds;
     throw error;
   }

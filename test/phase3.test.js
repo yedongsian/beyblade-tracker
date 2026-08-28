@@ -102,7 +102,7 @@ test('every source error class resolves to a message translated in all three lan
     'timeout', 'dns', 'connection', 'tls', 'robots_blocked', 'access_blocked', 'network_paused',
     'parse', 'maintenance', 'empty', 'not_found', 'validation', 'error', 'unknown',
     'http_400', 'http_401', 'http_403', 'http_404', 'http_410', 'http_429',
-    'http_500', 'http_502', 'http_503', 'http_504', 'http_418', 'too_large',
+    'http_500', 'http_502', 'http_503', 'http_504', 'http_418', 'too_large', 'no_candidates',
   ];
   const zh = createTranslator('zh-TW');
   for (const errorClass of classes) {

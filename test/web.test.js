@@ -12,6 +12,8 @@ import { acquireRollbackLock, canStartServiceDuringRollback, getRollbackLifecycl
 import { confirmSource, saveOnboardingSettings } from '../src/core/source-manager.js';
 import { processListing } from '../src/core/pipeline.js';
 import { recordCrawlFailure, upsertSource } from '../src/core/store.js';
+import { RECIPE_NO_CANDIDATES } from '../src/core/discovery.js';
+import { safeErrorClass } from '../src/core/operations.js';
 import { importOfficialItem, registerDefaultOfficialSources } from '../src/core/official.js';
 import { importCommunityPost, registerDefaultCommunitySources } from '../src/core/community.js';
 
@@ -759,7 +761,11 @@ test('product detail exposes price and stock timeline, and check-now API wakes t
     assert.equal(queued.status, 202);
     assert.equal(wakes, 1);
     const cooled = await fetch(`${base}/api/sources/${source.id}/check-now`, { method: 'POST', headers, body: '{}' });
-    assert.equal(cooled.status, 400);
+    // A cooldown is a state conflict, not a malformed request: sharing 400 with validation errors
+    // is what let it surface to the user as BT-LCH-999 'unexpected internal error'.
+    assert.equal(cooled.status, 409);
+    const cooledBody = await cooled.json();
+    assert.equal(cooledBody.error.code, 'BT-SRC-003');
   }, { onMonitorRequested: () => { wakes += 1; } });
 });
 
@@ -937,4 +943,37 @@ test('saved UI language renders English and Japanese pages with translated state
     assert.match(japanese, /商品識別/);
     assert.match(japanese, /UX-20/);
   });
+});
+
+// Spotted on a real English page during the 2026-08-11 acceptance run: the source error had been
+// translated but the Recipe line under it was still Traditional Chinese. discovery.js wrote a
+// Chinese sentence into site_recipes.last_error and the page printed it verbatim with a hardcoded
+// "Recipe：" prefix - the same defect BT-UX-003 fixed one line above, missed one line below.
+test('the discovery recipe error is translated too, not just the source error', async () => {
+  await withServer(async ({ db, base }) => {
+    const added = confirmSource(db, {
+      url: 'https://shop.example/category/beyblade', confirmed: true, discoveryOnly: true,
+    });
+    const siteId = db.get('SELECT site_id FROM sources WHERE id=?', [added.source.id]).site_id;
+    db.run(
+      `INSERT INTO site_recipes (site_id,version,status,config_json,last_failure_at,last_error,created_at,updated_at)
+       VALUES (?,1,'needs_review','{}',?,?,?,?)`,
+      [siteId, 'x', RECIPE_NO_CANDIDATES, 'x', 'x']
+    );
+
+    const zh = await (await fetch(`${base}/sources`)).text();
+    assert.match(zh, /探索 Recipe/, 'the label itself must be translatable');
+    assert.match(zh, /沒有辨識到任何候選商品/);
+
+    saveOnboardingSettings(db, { language: 'en', notification: 'app', scanFrequency: 'balanced', dataRetentionDays: 365 });
+    const en = await (await fetch(`${base}/sources`)).text();
+    assert.match(en, /Discovery Recipe/);
+    assert.match(en, /recognised no candidate products/);
+    assert.doesNotMatch(en, /沒有辨識到任何候選商品/, 'the English page must not fall back to Chinese');
+  });
+});
+
+// Rows written before the stable token existed still say it in Chinese prose.
+test('a recipe error stored before the token was introduced still resolves', () => {
+  assert.equal(safeErrorClass('本次探索沒有辨識到候選商品，已停止擴大並等待調整 Recipe。'), 'no_candidates');
 });

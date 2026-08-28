@@ -24,6 +24,116 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 
 ---
 
+---
+
+## 執行進度（2026-08-16）
+
+**主機準備與 VM 建立已完成，`S0-no-chrome` 快照已拍。下次從第三部分階段 1（A-4b）開始。**
+
+| 項目 | 狀態 |
+| --- | --- |
+| VirtualBox | 7.2.14 r174565 已安裝 |
+| VM | `Beyblade-Acceptance`，6144 MB／4 核心／128 MB VRAM／64 GB 動態磁碟 |
+| 韌體 | EFI + TPM `v2_0` + UEFI Secure Boot enabled（皆已驗證至 `.vbox` 設定檔層級） |
+| Windows | 11 Enterprise 評估版 25H2 zh-tw 已安裝 |
+| Guest Additions | 7.2.14 已安裝，RunLevel 2 |
+| 共用資料夾 | `BTAcceptance` → `C:\Users\Public\BeybladeTracker-VM-Round`（自動掛載、可寫；VM 內為 `Z:`） |
+| 驗收帳號 | `AcceptanceUser`（標準使用者，已確認不在 Administrators 群組） |
+| 驗收檔案 | 已複製至 VM 的 `C:\Users\Public\BeybladeTracker-Acceptance`（29 個檔） |
+| **快照** | **`S0-no-chrome`**（UUID `1fbe2d2d-fa45-4913-abce-f2405ca1521c`）**已建立** |
+| 磁碟 | VDI 21.3 GB＋差異碟 0.4 GB；主機 C: 剩 48.6 GB |
+
+### 建立過程中值得記下的三件事
+
+1. **安全開機需要四個步驟**，本文原先未載明：`modifynvram inituefivarstore` →
+   `enrollmssignatures` → **`enrollorclpk`**（註冊平台金鑰，缺這步 `secureboot --enable`
+   會失敗並回報 "platform key (PK) is not enrolled"）→ `secureboot --enable`。
+   另 `--tpm-type` 的值必須以 `=` 連寫（`--tpm-type=2.0`），空白分隔會靜默失效。
+2. **本 VM 為 Entra ID 加入之裝置**。OOBE 時以個人的學校帳號登入，因此 `葉東憲` 為
+   `AzureAD\` 帳號。驗收者評估該帳號已無組織管控（校友身分）後決定沿用。
+   影響：登入畫面預設走組織帳號，本機帳號須輸入 `.\AcceptanceUser` 才登得進去。
+   **此為環境變因，記錄於此以供日後判讀。**
+3. 共用資料夾在 VM 內視為網路磁碟機，`.ps1` 會被執行原則擋下。一律以
+   `powershell -NoProfile -ExecutionPolicy Bypass -File Z:\<script>.ps1` 執行。
+
+### 階段 1（A-4b）進度：2026-08-17
+
+| 步驟 | 結果 | 證據 |
+| --- | --- | --- |
+| 1 準備安裝頁出現找不到 Chrome 提示 | **PASS** | 文案：「找不到 Google Chrome。一般 HTTP 商店仍可使用，但需要瀏覽器的來源將無法掃描。是否開啟官方 Chrome 下載頁？」明確載明後果與補救 |
+| 2 選「是」開啟官方下載頁 | **PASS** | 實際導向 `https://www.google.com/chrome/` |
+| 3 還原 S0 後選「否」仍可完成安裝 | **PASS** | 安裝於 `C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker`，`current.json={"version":"1.0.0"}`，內建 node、`launcher.ps1`、5 個開始功能表捷徑、`Run` 機碼（含 `noninteractive`）、解除安裝登錄項目皆齊全，全程未要求提權 |
+| 4 服務啟動與瀏覽器偵測 | **PASS** | `/health=ok`；`browser.available=False`；`browser.downloadUrl=https://www.google.com/chrome/`；8787 監聽、無殘留 launcher 行程 |
+| 4b 離線 demo fixture | **PASS** | `demo-fixture` enabled/healthy，掃描得 3 items、2 events，送出 2 則通知 |
+| 5 JSON-LD 來源（無 Chrome 亦可抓） | **PASS** | 以 UI 新增 `https://www.hlj.com/product/TKT09613`；log：`parser extract hlj-com success validCount:1 pageCount:1`、`source hlj-com: 1 items, 1 events`；筆數 products 2→3、offers 3→4、events 2→3、observations 3→4；`last_success_at=14:13:52`。**在完全沒有 Chrome 的機器上抓到真實商品** |
+| 6 設定頁顯示找不到 Chrome 並提供下載連結 | **PASS** | 設定頁顯示「瀏覽器：找不到 Google Chrome」與「前往官方 Chrome 下載頁」，HTML 含 `google.com/chrome` |
+
+**A-4b 六項全數通過 —— 本輪唯一非 VM 不可的項目完成。**
+
+### 階段 4（A-6b）：**PASS**，2026-08-17
+
+以真實捷徑路徑（`wscript.exe launcher.vbs`，隱藏視窗）觸發 `BT-LCH-001`：
+
+| 檢查 | 結果 |
+| --- | --- |
+| 對話框出現且可操作 | **PASS** — 代碼、標題「找不到目前版本」、繁中復原指引無亂碼，四個按鈕皆可點 |
+| 「複製錯誤資訊」內容 | **PASS** — 恰好四行：`錯誤代碼：BT-LCH-001`／`App version：unknown`／`UTC：…`／`Support reference：72255034ffc8`；未含路徑、stack、URL 或憑證字樣 |
+| 「問題回報」網址 | **PASS** — `issues/new?template=bug_report.yml&…`，非舊的 `/issues/new/choose` |
+| 表單預填 | **PASS** — 標題 `[問題回報] BT-LCH-001`、「錯誤代碼」欄 `BT-LCH-001`、「App 版本」欄 `unknown` |
+| 關閉後行程結束 | **PASS** — 無殘留，暫存目錄已清除 |
+
+`App 版本` 為 `unknown` 屬設計行為：本情境刻意移除 `current.json`，版本本就讀不到。
+
+附帶觀察：GitHub 要求登入時，`return_to` 完整保留了整串 query，登入後仍正確帶入所有預填欄位。
+
+> **判讀注意**：結果檔中「沒有偵測到標題為 Beyblade Tracker 的視窗」一行是**腳本偵測過早**所致
+> （原本只等 8 秒，VM 走 Hyper-V 後端較慢），**不是** D-4 回歸 —— 對話框確實出現且可操作。
+> 已將該偵測改為輪詢至多 40 秒。
+
+附帶佐證：`sources` 表顯示 UI 新增的來源 `managed_by='ui'`、`connector='jsonld'`，
+與文件所述「UI 新增的來源一律為 jsonld，不會是 browser connector」相符。
+另外此 VM **未安裝任何 Node.js**（診斷腳本必須改用安裝包內建的 `runtime\node.exe`），
+是「一般使用者不需開發工具」這項主張的實地佐證。
+
+#### 附帶取得：D-3 使用者可見效果的首次驗證
+
+本次是**全新使用者設定檔上的全新安裝**，來源清單為：
+
+```
+demo-fixture    enabled=True   healthy=True
+example-jsonld  enabled=False  healthy=True
+```
+
+即 `sources.example.json` 的內容，**不含建置者的三個真實商店，也不含任何 browser connector**。
+先前各輪皆在既有使用者資料的機器上進行，來源一直是自移機檔還原的個人設定，因此
+D-3 的終端使用者效果直到此刻才真正被證實。**A-9 新標準的前半（離線 fixture 可運作）亦於此通過。**
+
+#### 判讀注意
+
+首次安裝後服務就緒需時較久（VM 走 Hyper-V 後端），過早蒐證會得到「`/health` 連不上、
+資料庫未就緒、log 為空」的輸出，與「安裝失敗」完全無法區分。本輪即發生一次。
+蒐證腳本應等待至少 180 秒再判定。
+
+### 下次開始前（2026-08-17 更新）
+
+**階段 1、4、5 已完成**（A-4b、A-6b、A-9 全數 PASS）。**下次從階段 2 開始。**
+
+接續步驟：
+
+1. **還原 `S0-no-chrome`**（階段 2 的第一步）。目前狀態已裝好 App 並含測試資料，
+   還原會全部捨棄 —— 這是預期的，所有證據都已寫在主機端的共用資料夾，不受影響。
+2. 登入 `AcceptanceUser` → **安裝 Google Chrome** → 拍快照 **`S1-with-chrome`**
+3. 依 [ROUND4 runbook](WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md) 步驟 1～9 跑 A 段主流程（階段 3）
+
+> **磁碟提醒**：2026-08-17 收工時差異磁碟已達 32.7 GB（VM 合計 54 GB），主機 C: 僅餘 22.9 GB。
+> **還原 S0 會丟棄該差異碟，可立即回收約 32 GB** —— 這也正是階段 2 的第一個動作，
+> 因此接續前先還原，空間問題與流程需求可一併解決。拍 S1 之後仍會再長，期間勿往 C: 存放大檔。
+
+已產出的證據（主機端 `C:\Users\Public\BeybladeTracker-VM-Round\`）：
+`a4b-result.txt`、`a4b-installcheck.txt`、`a6-dialog-result.txt`、`discovery-diag.txt`。
+
+---
+
 # 第一部分：主機準備
 
 ## 1.1 先知道這件事
@@ -193,6 +303,44 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 - 表單的**「錯誤代碼」欄已填入** `BT-LCH-001`
 - 「App 版本」欄顯示 `unknown`（此情境讀不到 `current.json`，屬設計行為）
 - **不要送出**，看完關掉
+
+### 階段 5（A-9）結果：**PASS**，2026-08-17
+
+以主機端 `VBoxManage controlvm … setlinkstate1 off` 拔除虛擬網路線，再按「立即重新檢查」。
+
+| 檢查 | 結果 |
+| --- | --- |
+| 掃描確實失敗並分類 | **PASS** — log：`source monitor hlj-com status:"failed" errorClass:"dns"`、`getaddrinfo ENOTFOUND www.hlj.com`，連續失敗累計為 2 |
+| 離線 fixture 不受影響 | **PASS** — 同時段 `demo-fixture` 仍 success |
+| UI 顯示可行動的繁中 | **PASS** — 「找不到這個網域。請確認網址拼寫，以及網域是否仍然存在。」 |
+| 未直接曝露英文原文 | **PASS** — 原文收在「技術細節」可展開處 |
+| 切換語言 | **PASS** — English 顯示 "That domain could not be found. Check the spelling and whether the domain still exists."，`Monitor failures: 2` 同步 |
+
+| 接回網路後可自行復原 | **PASS** — 連續失敗 2→0、`lastSuccessAt` 更新為 15:40:19Z、`lastError` 清除；`lastFailureAt` 保留為 14:57:01Z |
+
+復原行為正確：成功後清除當前錯誤與失敗計數，但保留曾經失敗的時間戳，
+使「此來源過去出過問題」的事實不致被抹除。
+
+> **判讀注意**：失敗後**必須重新整理頁面**才看得到。首次觀察時頁面仍是失敗前渲染的舊畫面
+> （`下次監控` 仍為舊值、連續失敗顯示 0），一度被誤判為「沒有顯示錯誤」。
+
+#### 附帶發現一：離線時的建議語會誤導
+
+拔網路線造成的是 `getaddrinfo ENOTFOUND`，被分類為 `dns`，因此顯示「請確認網址拼寫，以及網域是否仍然存在」。
+但該來源**先前已成功抓取過**（`lastSuccessAt` 有值），網域顯然存在 —— 真正的原因是本機沒有網路。
+對筆電斷線這種最常見的情境，這句話會把使用者導向錯誤的方向（去檢查網址拼寫）。
+
+建議：分類為 `dns` 時，若該來源曾經成功過、或本機無任何網路連線，改用連線相關的建議語。
+
+#### 附帶發現二：操作回饋顯示在看不到的地方
+
+`ui.js:153`／`154` 的「立即重新檢查」與「探索商品」**都有寫入回饋**，但目標是整頁共用的
+單一狀態列 `#source-action-status`（位於頁面上方）。使用者在下方的來源卡片按下按鈕時，
+回饋出現在捲動範圍之外，因此看起來像「按了沒反應」——本輪即因此連按兩次而觸發 D-8。
+
+建議：回饋顯示在被操作的那張卡片內，或按下後將狀態列捲入視野。
+
+---
 
 ## 階段 5：A-9 失敗來源錯誤呈現
 

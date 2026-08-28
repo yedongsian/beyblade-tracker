@@ -20,7 +20,7 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 | 檔案 | `BeybladeTracker-1.0.0-Setup.exe` |
 | SHA-256 | `58ac1ee8b84f0c669a6eb386aa4bb462dd47eb41f3a67d66a6138bc87eb5be8d` |
 | 大小 | 27,509,937 bytes（2026-08-28 第八次建置） |
-| 位置 | `C:\Users\Public\BeybladeTracker-Acceptance\` |
+| 位置 | 主機 `C:\Users\Public\BeybladeTracker-VM-Round`（**VM 掛載的是這個**，VM 內為 `Z:`）。`BeybladeTracker-Acceptance` 是路線 1 用的另一個資料夾，兩者都已同步為第八版 |
 
 ---
 
@@ -124,6 +124,9 @@ D-3 的終端使用者效果直到此刻才真正被證實。**A-9 新標準的�
    還原會全部捨棄 —— 這是預期的，所有證據都已寫在主機端的共用資料夾，不受影響。
 2. 登入 `AcceptanceUser` → **安裝 Google Chrome** → 拍快照 **`S1-with-chrome`**
 3. 依 [ROUND4 runbook](WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md) 步驟 1～9 跑 A 段主流程（階段 3）
+
+> **2026-08-28 更新**：產物已換第八版，另有六項修正需在主流程中一併確認。
+> **逐步操作見本檔最末的「第八版：階段 2 ＋ 階段 3 詳細步驟」。**
 
 > **磁碟提醒**：2026-08-17 收工時差異磁碟已達 32.7 GB（VM 合計 54 GB），主機 C: 僅餘 22.9 GB。
 > **還原 S0 會丟棄該差異碟，可立即回收約 32 GB** —— 這也正是階段 2 的第一個動作，
@@ -402,3 +405,175 @@ A-4b 停在「未測」，`BT-UX-001` 無法結案，A 段停在 10/11。
 加一個 `MsgBox` 沒被驗過。複雜度低，但 D-4 同樣是「對話框該跳時跳不出來」且通過了當時所有測試。
 
 **若決定不做，發佈說明必須明寫「沒有 Chrome 的機器上，安裝精靈的提示未經實機驗證」**，不得默默省略。
+
+---
+
+# 第八版：階段 2 ＋ 階段 3 詳細步驟（2026-08-28）
+
+> 階段 1、4、5 已於 08-17 完成（A-4b、A-6b、A-9 全數 PASS）。本節是**剩下的部分**。
+> 產物已換成第八版，帶著六項尚未在產物上看過的修正，本節把它們併進主流程一起驗。
+
+## 產物與環境
+
+| | |
+| --- | --- |
+| SHA-256 | `58ac1ee8b84f0c669a6eb386aa4bb462dd47eb41f3a67d66a6138bc87eb5be8d` |
+| 大小 | 27,509,937 bytes |
+| 主機共用資料夾 | `C:\Users\Public\BeybladeTracker-VM-Round`（**VM 掛載的是這個**，不是 `BeybladeTracker-Acceptance`） |
+| VM 內磁碟機 | `Z:` |
+| 驗收帳號 | `AcceptanceUser`（登入時要輸入 **`.\AcceptanceUser`**，因為本 VM 是 Entra ID 加入的裝置） |
+
+### 三個每次都會踩到的地方
+
+1. **共用資料夾是網路磁碟機，`.ps1` 會被執行原則擋下。** 一律用
+   `powershell -NoProfile -ExecutionPolicy Bypass -File Z:\<script>.ps1`
+2. **服務就緒很慢**（VM 走 Hyper-V 後端）。蒐證前至少等 **180 秒**，否則會得到
+   「`/health` 連不上、資料庫未就緒、log 為空」——那跟「安裝失敗」長得一模一樣。
+3. **失敗訊息要重新整理頁面才看得到。** 頁面不會自己更新，08-17 就因此誤判過一次。
+
+---
+
+## 階段 2：還原 S0 → 裝 Chrome → 拍 S1
+
+### 2.1 還原 `S0-no-chrome`
+
+VirtualBox → 快照 → 選 `S0-no-chrome` → 還原。
+
+> 目前 VM 裡裝著 App 和測試資料，**還原會全部捨棄 —— 這是預期的**。
+> 所有證據都已寫在主機端的共用資料夾，不受影響。
+>
+> **順帶回收磁碟**：08-17 收工時差異磁碟已 32.7 GB，主機 C: 只剩 22.9 GB。
+> 還原 S0 會丟棄該差異碟，**立即回收約 32 GB**。
+
+### 2.2 安裝 Chrome
+
+登入 `.\AcceptanceUser`，用 Edge 到 `https://www.google.com/chrome/` 下載安裝。
+這一步就是把 VM 從「A-4b 的無 Chrome 狀態」變成「一般使用者的正常狀態」。
+
+### 2.3 拍快照 `S1-with-chrome`
+
+**這步不要跳過。** 之後任何一項搞砸都能還原重來，不必重裝 Windows。
+
+---
+
+## 階段 3：A 段主流程 ＋ 六項複驗
+
+照 [ROUND4 runbook](WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md) **步驟 1～9** 跑，
+並在下列時機順便確認六件事。**六件都只有自動化測試，從未在產物上看過。**
+
+### 3.1 安裝（runbook 步驟 1～3）
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\verify-installer.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\install-with-log.ps1
+```
+
+`verify-installer` 須 `MATCH`（預期雜湊會顯示「來自 SHA256.txt」，那是正常的）。
+`install-with-log` 的**離開代碼必須是 0**。
+
+裝完**等三分鐘**再繼續。然後：
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\r2-install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\r2-startup-timing.ps1
+```
+
+Chrome 已裝，所以這次 `/health` 應顯示 `browser available=True name=Google Chrome`
+（A-4b 那輪是 `False`）。
+
+### 3.2 導覽（runbook 步驟 4）
+
+開管理頁 → 導覽跳出 → 填完儲存 → **關掉重開，導覽不該再出現**。
+
+### 3.3 ⭐ 檢查 ①：D-9 排版
+
+管理頁右上角語言切成 **English**，看來源管理頁的卡片。
+
+- **應該**：左側文字欄佔約一半以上，時間戳不折行
+- **不該**：左欄被壓到約三分之一、`Next monitor` 折成兩行、錯誤訊息折成四行
+
+主機端量到的是 37% → 57%。用眼睛看得出來差別就對了。看完切回繁中。
+
+### 3.4 加來源（runbook 步驟 5）
+
+用「貼上網址 → 預覽 → 確認加入」加：
+
+```
+https://www.hlj.com/product/TKT09613
+```
+
+確認掃描成功。
+
+### 3.5 ⭐ 檢查 ②：卡片內回饋
+
+在 `Hlj` 那張卡片按「**立即重新檢查**」。
+
+- **應該**：訊息出現在**那張卡片自己的區域**（按鈕下方）
+- **不該**：只出現在頁面最上方（那是舊行為，也正是讓人以為沒反應而連按的原因）
+
+### 3.6 ⭐ 檢查 ③：冷卻不再誤報
+
+**立刻再按一次**「立即重新檢查」（60 秒冷卻內）。
+
+- **應該**：`BT-SRC-003`，標題「**仍在冷卻中**」，訊息「這個來源剛剛才手動檢查過。」
+- **不該**：`BT-LCH-999`「發生未預期的錯誤」
+
+### 3.7 ⭐ 檢查 ④：探索守門
+
+在任一有「探索商品」按鈕的卡片按下去，**立刻再按一次**。
+
+- **應該**：`BT-SRC-005`，標題「**探索已在執行中**」，訊息「這間商店已有一個探索工作正在進行。」
+- **不該**：`BT-LCH-999`
+
+> 探索本身要跑數分鐘，不必等它跑完，看到第二次的回應就夠了。
+
+### 3.8 ⭐ 檢查 ⑤：dns 建議語
+
+1. 主機端拔虛擬網路線：
+   `VBoxManage controlvm "Beyblade-Acceptance" setlinkstate1 off`
+   （或 VM 選單 → 裝置 → 網路 → 取消「連接網路卡」）
+2. 等冷卻過後按「立即重新檢查」
+3. **重新整理頁面**
+
+- **應該**：「找不到這個網域，**但這個來源先前抓取成功過**，所以網域應該仍然存在。
+  通常代表這台電腦目前沒有網路連線。請確認網路後再試。」
+- **不該**：「找不到這個網域。請確認網址拼寫，以及網域是否仍然存在。」
+  ← 這是舊的誤導版本，08-17 就是看到這句
+
+展開「技術細節」應看得到 `getaddrinfo ENOTFOUND www.hlj.com`。
+
+驗完把網路線接回（`setlinkstate1 on`）。
+
+### 3.9 ⭐ 檢查 ⑥：Recipe 三語
+
+語言切 **English**，看有 Recipe 錯誤的那張卡片。
+
+- **應該**：`Discovery Recipe：Discovery ran but recognised no candidate products…`
+- **不該**：`Recipe：本次探索沒有辨識到候選商品…`（中文出現在英文頁）
+
+> 若卡片上沒有 Recipe 錯誤，可在 3.7 讓探索跑完（沒有候選商品時就會出現）。
+
+### 3.10 其餘主流程（runbook 步驟 6～9）
+
+捷徑（`a2-shortcuts.ps1`）→ 錯誤對話框（`a6-dialog.ps1`）→ 登出登入（`a3-logon.ps1`）
+→ A-10 保留資料解除安裝 → 重裝 → A-11 刪除資料解除安裝。
+
+> `a6-dialog.ps1` 的視窗偵測已放寬到 40 秒（VM 較慢），不會再誤報「沒有偵測到視窗」。
+
+---
+
+## 回報
+
+腳本的 `*-result.txt` 都寫在 `Z:`（即主機的 `BeybladeTracker-VM-Round`），我可以直接讀。
+請另外告訴我只有你看得到的：
+
+| # | 回報 |
+| --- | --- |
+| 1 | 六項檢查各自的結果（尤其是**看到的實際文字**） |
+| 2 | 首次啟動耗時、登入→就緒耗時 |
+| 3 | 導覽儲存後是否不再跳出 |
+| 4 | `/health` 的 `browser available` 是否為 True |
+| 5 | 任何非預期的視窗、對話框或 `BT-*` 代碼 |
+
+完成後 `BT-UX-002`／`BT-UX-003` 可結案，**RUNBOOK 第 13 節的 clean VM gate 也才真正滿足** ——
+那是路線 1 從頭到尾沒達成過的。

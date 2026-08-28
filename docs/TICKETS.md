@@ -3,7 +3,7 @@
 > 狀態：Active
 > 最後更新：2026-08-11
 > 規則：本檔是正式 backlog；Roadmap 只保存優先順序與里程碑。
-> 目前驗證基線：`main` 於 2026-08-11 執行 `npm test` 通過 **249/249**（0 fail／0 skip／0 todo），
+> 目前驗證基線：`main` 於 2026-08-28 執行 `npm test` 通過 **249/249**（0 fail／0 skip／0 todo），
 > 四項 release E2E 全綠（normal／stopfail／missing-launcher／launcher-errors 6-6）。
 > 各 Ticket 內文保留當時的歷史測試數字，不回頭改寫。
 
@@ -29,9 +29,9 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
-| BT-UX-001 | P0 | In Review | 完成一般使用者雙擊安裝與單一入口驗收 | A-4b 無 Chrome 分支（需乾淨 VM）、BT-P0-001 的 signing |
-| BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | 問題回報按鈕於下一版產物複驗 |
-| BT-UX-003 | P1 | In Review | 抓取失敗的來源錯誤訊息改為繁中且可操作 | A-9 錯誤呈現於下一版產物複驗 |
+| BT-UX-001 | P0 | In Review | 完成一般使用者雙擊安裝與單一入口驗收 | A 段已全數 PASS；剩 verified publisher（`BT-P0-001` 的簽章） |
+| BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | 五條 criteria 皆已實機驗證，但 **D-8 顯示可預期錯誤仍會被報成 `BT-LCH-999`**，僅修了冷卻一條路徑 |
+| BT-UX-003 | P1 | In Review | 抓取失敗的來源錯誤訊息改為繁中且可操作 | Recipe 行三語化尚未實機複驗；另有「dns 建議語在單純斷網時誤導」待處理 |
 | BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | 發布前確認文件進入 release payload |
@@ -240,7 +240,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - 每個對應都有測試；至少一項覆蓋「站方可控字串不得注入 markup」。
 - 相關：`BT-UX-002`（錯誤代碼 registry）、D-2（失效 URL 造成的 45 秒逾時是本問題最早的實例）
 
-- Verification evidence（2026-08-11）：已實作，等待實機複驗。
+- Verification evidence（2026-08-11 實作，**2026-08-17 於乾淨 VM 通過**）：斷網後 UI 顯示「找不到這個網域…」，英文同步為 "That domain could not be found…"，原文收在「技術細節」，接回網路後連續失敗 2→0 自行復原。詳見 VM_ROUND.md 階段 5。
   - **沿用既有機制而非另造一套**：`safeErrorClass()`（`src/core/operations.js`）本來就會把任何錯誤化約成有界、不含內容的類別（`http_NNN`、`timeout`、`dns`、`connection`、`tls`、`robots_blocked`、`access_blocked`、`network_paused`、`parse`、`not_found`、`validation`…），且設計上**永不回傳原始訊息**。因此它是安全的 join key。
   - 新增 `sourceErrorMessageKey()` 做「類別 → 翻譯鍵」對應。10 個 HTTP 狀態各有專屬建議（404 是下架、429 是放慢、503 是等待，使用者該做的事不同），其餘落到泛用 HTTP 訊息並**帶上類別**，讓訊息不會比證據更模糊。
   - **不需要 schema 變更**：分類在渲染時進行，因此既有的 `last_error` 資料也會受惠，不必 migration。
@@ -252,7 +252,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - **`response exceeds N bytes`** —— `src/net/http.js` 的下載上限錯誤。原本同樣落到泛用訊息，而「內容過大」本來就寫在本 Ticket 的 scope 裡。新增 `too_large` 類別與三語文案（建議改用單一商品頁而非分類頁）。
   - 該規則刻意排在寬鬆的 HTTP 狀態啟發式**之前**：若上限剛好是三位數（例如 `exceeds 500 bytes`），否則會被誤讀成 `http_500`。已有測試涵蓋。
   - 新增測試以 `src/net/http.js` 與 connector **實際會拋出的字串**逐一斷言分類，而非憑想像列舉。反向確認：移除任一規則後對應測試失敗。
-- Verification evidence（2026-08-11，實機驗收發現）：驗收者在**英文介面**上看到來源錯誤已翻譯，但其下的 Recipe 那一行仍是繁中。
+- Verification evidence（2026-08-28，實機驗收發現）：驗收者在**英文介面**上看到來源錯誤已翻譯，但其下的 Recipe 那一行仍是繁中。
   - 根因：`src/core/discovery.js` 把中文句子寫進 `site_recipes.last_error`，而 `src/web/server.js` 逐字輸出並硬寫 `Recipe：` 前綴 —— 與 BT-UX-003 修好的那一行只差一行，被我漏掉。
   - 修正：discovery 改存穩定 token `RECIPE_NO_CANDIDATES`，文案由 i18n 提供；新增 `no_candidates` 類別與三語文案；`Recipe` 標籤本身也改為可翻譯。
   - **既有安裝不受影響**：分類同時認得舊資料裡的中文散文，不會退回泛用訊息。
@@ -286,11 +286,12 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 - Priority：P2
 - Status：In Progress
 - Owner：待指定
-- Verification evidence（2026-08-11，實機驗收發現，**首片已交付**）：驗收者連按兩次「立即重新檢查」，畫面跳出 `BT-LCH-999`「發生未預期的內部錯誤」。
+- Verification evidence（2026-08-28，**修正已記載的 D-8**）：本問題**並非新發現** —— checklist 的 **D-8「可預期的領域錯誤被顯示為未預期的錯誤，且無法追查」** 已於 2026-08-17 在乾淨 VM 記錄，根因分析相同（好訊息在送到畫面前被 envelope 換掉），但當時只寫了建議方向、未修。2026-08-28 於 Test_Darren 再次重現（連按兩次「立即重新檢查」），本次予以修正。
   - 根因：`requestImmediateMonitor` 丟出的冷卻錯誤沒有穩定代碼，落到 `errorEnvelope` 的泛用分支。**丟出點本來就有一句清楚的繁中訊息「立即重新檢查仍在冷卻中，請 N 秒後再試。」，卻被 envelope 丟棄，換成一句與事實不符的話。** HTTP 狀態也與格式錯誤共用 `400`。
   - 首片修正：新增 `BT-SRC-003`（含 recovery 指引與錯誤代碼目錄條目）；代碼設在**丟出點**而非事後比對訊息字串；冷卻改回傳 **409**，與 malformed request 區分。
   - 剩餘秒數刻意不進入 envelope —— 那是動態值，不該成為公開契約的一部分；使用者看到的是穩定的「稍候片刻再試」。
   - 反向確認：移除代碼或 409 對應後，各有 5 項測試失敗。
+  - **只修了 D-8 的一個切片**：冷卻這條路徑。D-8 另記載 `runSiteDiscovery` 的四道守門（找不到商店／已有工作執行中／沒有探索網址／網址不在網域內），訊息**同樣會被換掉，尚未處理**。
   - **剩餘範圍不變**：其餘 validation／policy／conflict／not-found 的完整對應仍待處理。
 - 背景：`docs/API_SPEC.md` §12 與 §13 已記錄此限制——目前實作把 validation、policy、network 及多數 internal error 統一回傳 `400`，只有 route／Product／被辨識為 not found 的 error message 會回 `404`。`BT-UX-002` 交付的中央 error registry 已提供穩定的 `BT-<AREA>-<NNN>` 代碼與安全 envelope，因此 status code 已不是識別錯誤類別的唯一手段，但仍讓「使用者輸入錯誤」與「伺服器內部失敗」在 HTTP 層無法區分。
 - 使用者影響：一般使用者不直接受影響（Local Web UI 讀的是 envelope 內的錯誤代碼）。影響的是除錯、log 判讀與未來任何以 status code 做重試決策的客戶端——目前 `500` 級失敗會被誤判為可由使用者修正的 `400`。

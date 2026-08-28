@@ -27,7 +27,7 @@ h1,h2,h3{line-height:1.2}h1{font-size:clamp(1.8rem,4vw,2.8rem);margin:.25rem 0 .
 .stat strong{display:block;font-size:1.85rem}.stat span,.muted{color:var(--muted)}
 .section-head{display:flex;justify-content:space-between;align-items:start;gap:1rem;margin-bottom:1rem}.section-head p{margin:.2rem 0;color:var(--muted)}
 .two-col{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr)}.source-list{display:grid;gap:.85rem}
-.source-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1rem;padding:1rem;border:1px solid var(--line);border-radius:14px;background:#fff}
+.source-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,40%);gap:1rem;padding:1rem;border:1px solid var(--line);border-radius:14px;background:#fff}
 .source-card h3{margin:0 0 .3rem;font-size:1rem}.meta{display:flex;flex-wrap:wrap;gap:.4rem .8rem;color:var(--muted);font-size:.88rem}
 .actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}.pill{display:inline-flex;align-items:center;padding:.2rem .55rem;border-radius:999px;font-size:.78rem;font-weight:700;background:#eef2f8;color:#344054}
 .pill.good{background:#e8f7f0;color:var(--good)}.pill.bad{background:#feeceb;color:var(--bad)}.pill.warn{background:#fff4e5;color:var(--warn)}

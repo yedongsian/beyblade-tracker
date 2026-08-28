@@ -977,3 +977,20 @@ test('the discovery recipe error is translated too, not just the source error', 
 test('a recipe error stored before the token was introduced still resolves', () => {
   assert.equal(safeErrorClass('本次探索沒有辨識到候選商品，已停止擴大並等待調整 Recipe。'), 'no_candidates');
 });
+
+// D-9, found on the clean VM 2026-08-17 and visible again in the 2026-08-28 English screenshots:
+// the action column was `auto`, so it sized to the widest button label. English labels
+// ("Disable and keep history", "Discover products") pushed it wide enough to squeeze the text
+// column to about a third, wrapping timestamps and error messages over several lines. The
+// single-column breakpoint is 820px, so a normal desktop window never rescued it.
+//
+// Capping the track lets the buttons wrap inside their own column instead of stealing the text's.
+test('the source card caps its action column so long button labels cannot squeeze the text', async () => {
+  await withServer(async ({ base }) => {
+    const page = await (await fetch(`${base}/sources`)).text();
+    const rule = page.match(/\.source-card\{display:grid;grid-template-columns:([^;]+);/);
+    assert.ok(rule, 'the source card grid rule must still exist');
+    assert.doesNotMatch(rule[1], /\bauto\b/, 'an auto track sizes to the longest label in any language');
+    assert.match(rule[1], /minmax\(0,\s*1fr\)\s+minmax\(0,\s*\d+%\)/, 'the action column needs an upper bound');
+  });
+});

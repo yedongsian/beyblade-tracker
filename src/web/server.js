@@ -458,10 +458,10 @@ function communityPage(db, base) {
  * discarding them: the raw text is what makes a bug report useful, but it is also attacker-adjacent
  * (an HTTP body or redirect target can reach it), so it stays escaped and behind a disclosure.
  */
-function sourceErrorPanel(lastError, t, label = null) {
+function sourceErrorPanel(lastError, t, label = null, { hasSucceededBefore = false } = {}) {
   if (!lastError) return '';
   const errorClass = safeErrorClass(lastError);
-  const key = sourceErrorMessageKey(errorClass);
+  const key = sourceErrorMessageKey(errorClass, { hasSucceededBefore });
   if (!key) return '';
   const prefix = label ? `${esc(label)}：` : '';
   return `<p class="status error">${prefix}${esc(t(key, { class: errorClass }))}</p>
@@ -493,10 +493,10 @@ function sourcesPage(db, base) {
     const statusKey = source.enabled ? 'sources.active' : discovery && !hasMonitorPages ? 'sources.discovery' : 'sources.disabled';
     return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : discovery && !hasMonitorPages ? 'warn' : ''}">${esc(t(statusKey))}</span></h3>
     <div class="meta"><span>${esc(source.registrable_domain || source.url || t('sources.noDomain'))}</span><span>${esc(source.connector)} v${esc(source.connector_version)}</span>${source.source_class ? `<span>${esc(t(`sourceClass.${source.source_class}`))}</span>` : ''}<span>${esc(t('sources.monitorUrls', { count: source.seed_count }))}</span><span>${esc(t('sources.offerCount', { count: source.offer_count }))}</span><span>${esc(t('sources.nextMonitor', { time: source.monitor_next_run_at || t('common.never') }))}</span><span>${esc(t('sources.monitorFailures', { count: source.monitor_failures || 0 }))}</span><span>${esc(t(source.managed_by === 'ui' ? 'sources.uiManaged' : 'sources.builtIn'))}</span>${source.site_id ? `<span>${esc(t('sources.pending', { count: discoverySites.get(Number(source.site_id))?.pending_candidates || 0 }))}</span>` : ''}</div>
-    ${sourceErrorPanel(source.last_error, t)}${sourceErrorPanel(discovery?.recipe_error, t, t('sources.recipeLabel'))}${settingPanel}</div><div class="actions">
+    ${sourceErrorPanel(source.last_error, t, null, { hasSucceededBefore: Boolean(source.last_success_at) })}${sourceErrorPanel(discovery?.recipe_error, t, t('sources.recipeLabel'))}${settingPanel}</div><div class="actions">
     ${source.site_id ? `<button class="btn secondary" type="button" data-discovery-site="${source.site_id}">${esc(t('sources.discover'))}</button>` : ''}
     ${canMonitor ? `<button class="btn secondary" type="button" data-source-action="check-now" data-source-id="${source.id}">${esc(t('sources.checkNow'))}</button><button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">${esc(t('sources.test'))}</button>
-    <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${esc(t(source.enabled ? 'sources.disable' : 'sources.enable'))}</button>` : ''}</div></article>`;
+    <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${esc(t(source.enabled ? 'sources.disable' : 'sources.enable'))}</button>` : ''}<p class="status card-status" role="status" aria-live="polite"></p></div></article>`;
   }).join('');
   const networkCard = `<section class="card ${network.enabled ? '' : 'notice warn'}" style="margin-bottom:1rem"><div class="section-head"><div><h2>${esc(t('network.title'))}</h2><p>${esc(t(network.enabled ? 'network.enabledHint' : 'network.disabledHint'))}${network.reason ? `：${esc(network.reason)}` : ''}</p></div><button id="network-toggle" class="btn ${network.enabled ? 'danger' : ''}" data-enable="${network.enabled ? 'false' : 'true'}" type="button">${esc(t(network.enabled ? 'network.pause' : 'network.resume'))}</button></div></section>`;
   const body = `${networkCard}<div class="section-head"><div><p class="eyebrow">${esc(t('sources.eyebrow'))}</p><h1>${esc(t('sources.title'))}</h1><p>${esc(t('sources.intro'))}</p></div></div><div class="grid two-col"><section class="card"><h2>${esc(t('sources.paste'))}</h2>
@@ -947,7 +947,11 @@ export function createWebServer(db, options = {}) {
       // A cooldown or other state conflict is an expected outcome the caller can retry, so it must
       // not share a status with a malformed request (BT-API-001). Everything else keeps its
       // previous mapping; widening this is that ticket, not this fix.
-      const status = envelope.code === 'BT-SRC-003' ? 409
+      // BT-API-001, second slice. A state conflict is retryable and a missing thing is not the
+      // caller's syntax being wrong; both were indistinguishable from a malformed request.
+      const CONFLICT = new Set(['BT-SRC-003', 'BT-SRC-005']);
+      const status = CONFLICT.has(envelope.code) ? 409
+        : envelope.code === 'BT-SRC-004' ? 404
         : /找不到|not found|見つかり/i.test(err.message) ? 404 : 400;
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ status: 'error', error: envelope }));

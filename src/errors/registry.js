@@ -39,6 +39,10 @@ const definitions = [
   ['BT-SRC-001', '來源持續失敗', '單一來源連續失敗。', ['到來源管理執行一次測試']],
   ['BT-SRC-002', '來源無法辨識商品', '來源頁可讀，但無法辨識商品。', ['停用來源後回報頁面類型']],
   ['BT-SRC-003', '仍在冷卻中', '這個來源剛剛才手動檢查過。', ['稍候片刻再按一次「立即重新檢查」', '排程仍會依原本的週期自動檢查']],
+  ['BT-SRC-004', '找不到這間商店', '要探索的商店已不存在。', ['重新整理來源管理頁', '若該商店已被刪除，請重新加入']],
+  ['BT-SRC-005', '探索已在執行中', '這間商店已有一個探索工作正在進行。', ['等待目前的探索完成後再試', '探索需要數分鐘，期間不必重複按']],
+  ['BT-SRC-006', '沒有可用的探索網址', '這間商店沒有設定可供探索的網址。', ['到來源管理加入一個分類頁或商品頁']],
+  ['BT-SRC-007', '探索網址超出商店範圍', '探索網址不在這間商店的網域內。', ['改用同一個網域下的網址']],
   ['BT-NTF-001', 'Telegram 設定失敗', 'Telegram 設定或測試失敗。', ['確認 Bot、Chat ID 與網路設定']],
   ['BT-NTF-002', 'Discord Webhook 無法使用', 'Discord Webhook 被拒絕或已失效。', ['重新建立 Webhook，且不要公開完整網址']],
 ];
@@ -49,8 +53,13 @@ export const ERROR_REGISTRY = Object.freeze(Object.fromEntries(definitions.map((
 
 export const ERROR_CODES = Object.freeze(Object.keys(ERROR_REGISTRY));
 
-export function trackerError(code) {
-  const error = new Error(code);
+/**
+ * The code is what the user sees; the message is what the log and a diagnostics export keep. Passing
+ * both means a guard can stay descriptive internally without that sentence becoming the public
+ * contract - which is the mistake D-8 was made of.
+ */
+export function trackerError(code, message = code) {
+  const error = new Error(message);
   error.code = ERROR_REGISTRY[code] ? code : 'BT-LCH-999';
   return error;
 }

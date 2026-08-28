@@ -149,6 +149,21 @@ test('a size limit is never mistaken for an HTTP status', () => {
   assert.equal(safeErrorClass('Error: response exceeds 404 bytes'), 'too_large');
 });
 
+// Reachable only through the option, so the loop above cannot see it - but a missing translation
+// here would still surface Chinese on an English page.
+test('the dns-after-success message is translated in all three languages', () => {
+  const key = sourceErrorMessageKey('dns', { hasSucceededBefore: true });
+  assert.equal(key, 'srcErr.dnsAfterSuccess');
+  assert.notEqual(key, sourceErrorMessageKey('dns'), 'prior success must change the advice');
+  const zh = createTranslator('zh-TW')(key);
+  assert.notEqual(zh, key);
+  for (const locale of ['ja', 'en']) {
+    const translated = createTranslator(locale)(key);
+    assert.notEqual(translated, key, key + ' is missing from the ' + locale + ' catalog');
+    assert.notEqual(translated, zh, key + ' falls back to Chinese on ' + locale);
+  }
+});
+
 test('an unrecognized error class falls back instead of leaking itself into the message', () => {
   assert.equal(sourceErrorMessageKey('no_url'), 'srcErr.unknown');
   assert.equal(sourceErrorMessageKey('BT-SRC-001'), 'srcErr.unknown');

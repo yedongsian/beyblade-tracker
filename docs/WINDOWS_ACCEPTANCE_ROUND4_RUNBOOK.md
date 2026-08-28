@@ -16,10 +16,10 @@
 | | |
 | --- | --- |
 | 檔案 | `BeybladeTracker-1.0.0-Setup.exe` |
-| SHA-256 | `2e11a4bd5fb450e7ad12c7f1b7a0da1ae7cf9731b0c78b34340f0e225760c05f` |
-| 大小 | 27,513,416 bytes（2026-08-11 第七次建置） |
-| 來源 | `main` @ `c868fbe`，含 D-3～D-7 修正、`BT-UX-002` 回報預填修正、`BT-UX-003` 錯誤訊息三語化（含 `fetch failed`／`too_large` 兩個分類） |
-| 驗證 | 單元測試 249/249；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors 6-6） |
+| SHA-256 | `58ac1ee8b84f0c669a6eb386aa4bb462dd47eb41f3a67d66a6138bc87eb5be8d` |
+| 大小 | 27,509,937 bytes（2026-08-28 第八次建置） |
+| 來源 | `main` @ `f76eb36`，含 D-3～D-7 修正、`BT-UX-002` 回報預填修正、`BT-UX-003` 錯誤訊息三語化（含 `fetch failed`／`too_large` 兩個分類） |
+| 驗證 | 單元測試 256/256；release E2E 四項全綠（normal／stopfail／missing-launcher／launcher-errors 6-6） |
 
 驗收腳本已納入版控（`scripts/acceptance/`），共用資料夾裡的是同一份副本。
 全程在測試帳號執行，第四輪實際耗時約 60 分鐘（含兩次重做）。

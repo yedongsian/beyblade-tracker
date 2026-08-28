@@ -18,8 +18,8 @@ A 段各項的詳細操作步驟見 [WINDOWS_ACCEPTANCE_ROUND4_RUNBOOK.md](WINDO
 | | |
 | --- | --- |
 | 檔案 | `BeybladeTracker-1.0.0-Setup.exe` |
-| SHA-256 | `2e11a4bd5fb450e7ad12c7f1b7a0da1ae7cf9731b0c78b34340f0e225760c05f` |
-| 大小 | 27,513,416 bytes（第七次建置） |
+| SHA-256 | `58ac1ee8b84f0c669a6eb386aa4bb462dd47eb41f3a67d66a6138bc87eb5be8d` |
+| 大小 | 27,509,937 bytes（2026-08-28 第八次建置） |
 | 位置 | `C:\Users\Public\BeybladeTracker-Acceptance\` |
 
 ---

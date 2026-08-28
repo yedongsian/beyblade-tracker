@@ -335,6 +335,8 @@ function finishRun(db, runId, status, counters, error = null) {
   );
 }
 
+export const RECIPE_NO_CANDIDATES = 'no candidates recognised';
+
 function updateRecipe(db, siteId, successful, error = null) {
   const ts = now();
   db.run(
@@ -479,7 +481,9 @@ export async function runSiteDiscovery(db, siteId, options = {}) {
     const budgetStopped = /預算/.test(counters.stopReason || '');
     const status = counters.stopReason ? (budgetStopped ? 'budget_exhausted' : 'stopped') : 'success';
     if (counters.candidates.size === 0) {
-      updateRecipe(db, siteId, false, '本次探索沒有辨識到候選商品，已停止擴大並等待調整 Recipe。');
+      // A stable token, not prose: the sources page turns this into localized text, and storing
+      // a sentence would pin the message to one language forever (BT-UX-003).
+      updateRecipe(db, siteId, false, RECIPE_NO_CANDIDATES);
     } else updateRecipe(db, siteId, true);
     finishRun(db, runId, status, counters);
   } catch (err) {

@@ -458,12 +458,13 @@ function communityPage(db, base) {
  * discarding them: the raw text is what makes a bug report useful, but it is also attacker-adjacent
  * (an HTTP body or redirect target can reach it), so it stays escaped and behind a disclosure.
  */
-function sourceErrorPanel(lastError, t) {
+function sourceErrorPanel(lastError, t, label = null) {
   if (!lastError) return '';
   const errorClass = safeErrorClass(lastError);
   const key = sourceErrorMessageKey(errorClass);
   if (!key) return '';
-  return `<p class="status error">${esc(t(key, { class: errorClass }))}</p>
+  const prefix = label ? `${esc(label)}：` : '';
+  return `<p class="status error">${prefix}${esc(t(key, { class: errorClass }))}</p>
     <details class="source-error-detail"><summary>${esc(t('sources.errorDetail'))}</summary><code>${esc(lastError)}</code></details>`;
 }
 
@@ -492,7 +493,7 @@ function sourcesPage(db, base) {
     const statusKey = source.enabled ? 'sources.active' : discovery && !hasMonitorPages ? 'sources.discovery' : 'sources.disabled';
     return `<article class="source-card"><div><h3>${esc(source.name)} <span class="pill ${source.enabled ? 'good' : discovery && !hasMonitorPages ? 'warn' : ''}">${esc(t(statusKey))}</span></h3>
     <div class="meta"><span>${esc(source.registrable_domain || source.url || t('sources.noDomain'))}</span><span>${esc(source.connector)} v${esc(source.connector_version)}</span>${source.source_class ? `<span>${esc(t(`sourceClass.${source.source_class}`))}</span>` : ''}<span>${esc(t('sources.monitorUrls', { count: source.seed_count }))}</span><span>${esc(t('sources.offerCount', { count: source.offer_count }))}</span><span>${esc(t('sources.nextMonitor', { time: source.monitor_next_run_at || t('common.never') }))}</span><span>${esc(t('sources.monitorFailures', { count: source.monitor_failures || 0 }))}</span><span>${esc(t(source.managed_by === 'ui' ? 'sources.uiManaged' : 'sources.builtIn'))}</span>${source.site_id ? `<span>${esc(t('sources.pending', { count: discoverySites.get(Number(source.site_id))?.pending_candidates || 0 }))}</span>` : ''}</div>
-    ${sourceErrorPanel(source.last_error, t)}${discovery?.recipe_error ? `<p class="status error">Recipe：${esc(discovery.recipe_error)}</p>` : ''}${settingPanel}</div><div class="actions">
+    ${sourceErrorPanel(source.last_error, t)}${sourceErrorPanel(discovery?.recipe_error, t, t('sources.recipeLabel'))}${settingPanel}</div><div class="actions">
     ${source.site_id ? `<button class="btn secondary" type="button" data-discovery-site="${source.site_id}">${esc(t('sources.discover'))}</button>` : ''}
     ${canMonitor ? `<button class="btn secondary" type="button" data-source-action="check-now" data-source-id="${source.id}">${esc(t('sources.checkNow'))}</button><button class="btn secondary" type="button" data-source-action="test" data-source-id="${source.id}">${esc(t('sources.test'))}</button>
     <button class="btn ${source.enabled ? 'danger' : 'secondary'}" type="button" data-source-action="${source.enabled ? 'disable' : 'enable'}" data-source-id="${source.id}">${esc(t(source.enabled ? 'sources.disable' : 'sources.enable'))}</button>` : ''}</div></article>`;
@@ -943,7 +944,11 @@ export function createWebServer(db, options = {}) {
         supportRef,
       });
       logger.warn(`web request failed: code=${envelope.code} supportRef=${envelope.supportRef}`);
-      const status = /找不到|not found|見つかり/i.test(err.message) ? 404 : 400;
+      // A cooldown or other state conflict is an expected outcome the caller can retry, so it must
+      // not share a status with a malformed request (BT-API-001). Everything else keeps its
+      // previous mapping; widening this is that ticket, not this fix.
+      const status = envelope.code === 'BT-SRC-003' ? 409
+        : /找不到|not found|見つかり/i.test(err.message) ? 404 : 400;
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ status: 'error', error: envelope }));
     }

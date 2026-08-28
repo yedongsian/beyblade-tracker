@@ -55,6 +55,8 @@ const KNOWN_ERROR_CLASSES = new Set([
   // A page that blew past the download ceiling: distinct from a parse failure, because the fix is
   // to point at a lighter page rather than to adjust selectors.
   'too_large',
+  // Discovery ran but recognised nothing: the fix is to adjust the Recipe, not the URL.
+  'no_candidates',
 ]);
 
 function isKnownErrorClass(value) {
@@ -166,6 +168,9 @@ export function safeErrorClass(error) {
   // the failure a home user hits most often, so it must not land in the generic bucket.
   if (/ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE|socket hang up|network|fetch failed/i.test(haystack)) return 'connection';
   if (/certificate|self[- ]signed|TLS|SSL|ERR_TLS|DEPTH_ZERO/i.test(haystack)) return 'tls';
+  // The second alternative matches rows written before RECIPE_NO_CANDIDATES existed, so an
+  // existing install does not fall back to the generic message.
+  if (/no candidates recognised|沒有辨識到候選商品/i.test(haystack)) return 'no_candidates';
   if (/robots/i.test(haystack)) return 'robots_blocked';
   if (/CAPTCHA|queue-?it|access denied|forbidden|paywall/i.test(haystack)) return 'access_blocked';
   if (/暫停|paused|network.*disabled|disabled.*network/i.test(haystack)) return 'network_paused';
@@ -192,6 +197,7 @@ const SOURCE_ERROR_MESSAGE_KEYS = new Map([
   ['maintenance', 'srcErr.parse'],
   ['empty', 'srcErr.parse'],
   ['too_large', 'srcErr.tooLarge'],
+  ['no_candidates', 'srcErr.noCandidates'],
   ['not_found', 'srcErr.notFound'],
   ['validation', 'srcErr.validation'],
 ]);

@@ -90,6 +90,7 @@ UI 不顯示 stack trace、Token、完整 URL、DB row、private path 或 signin
 | `BT-BRS-002` | Browser page 被 CAPTCHA、Queue-it 或登入限制。 | 停止重試並等待，不要繞過限制。 |
 | `BT-SRC-001` | 單一來源連續失敗。 | 到來源管理執行一次測試；其他來源仍會繼續。 |
 | `BT-SRC-002` | 來源頁可讀，但 parser 無法辨識商品。 | 停用來源並回報頁面類型；不要自行提高掃描頻率。 |
+| `BT-SRC-003` | 這個來源剛剛才手動檢查過，仍在冷卻視窗內。 | 稍候片刻再試；排程仍會依原本週期自動檢查。這是預期行為，不是故障。 |
 | `BT-NTF-001` | Telegram 設定或測試失敗。 | 確認已對 Bot 按 Start、Token／Chat ID 與 network switch。 |
 | `BT-NTF-002` | Discord Webhook 被拒絕或已失效。 | 重新建立 Webhook；不要把完整 URL 貼到公開 Issue。 |
 

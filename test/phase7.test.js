@@ -365,18 +365,26 @@ test('every PowerShell script carrying localized text has a UTF-8 BOM', () => {
 // file, into a PowerShell console. The console refuses multi-line input, so step one was unrunnable.
 // The fix is a double-clickable menu; these tests keep the document from growing commands again and
 // keep the menu pointing at scripts that exist.
-test('the update test is launched by double-click, not by typing commands', () => {
+// chcp 65001 was not enough, and believing it was is what this assertion used to encode. cmd.exe
+// seeks in a batch file by byte offset, so multi-byte UTF-8 desynchronises the parser: on the VM,
+// entries [3] [4] and [7] vanished and their fragments ran as commands ("'步驟' is not recognized").
+// The .cmd is now a pure-ASCII stub and every localized string lives in the PowerShell menu.
+test('the launcher stub stays pure ASCII so cmd.exe cannot desynchronise', () => {
   const bytes = readFileSync(new URL('../scripts/acceptance/RUN-UPDATE-TEST.cmd', import.meta.url));
   // A BOM on line 1 of a .cmd is echoed by cmd.exe as a stray character before @echo off.
   assert.notDeepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'a .cmd must not carry a BOM');
-  const cmd = bytes.toString('utf8');
+  assert.ok(bytes.every((b) => b < 0x80), 'a single non-ASCII byte can drop later menu entries');
+  const cmd = bytes.toString('ascii');
   assert.match(cmd, /^@echo off\r\n/, 'cmd files need CRLF and must start with @echo off');
-  // The menu is in Traditional Chinese, so the console has to be told it is reading UTF-8.
-  assert.match(cmd, /chcp 65001/, 'without this the menu renders as mojibake under codepage 950');
+  assert.doesNotMatch(cmd, /chcp/, 'no codepage switch: the .cmd carries no text of its own');
+  assert.match(cmd, /update-test-menu\.ps1/, 'the stub must hand off to the PowerShell menu');
+});
 
+test('every script the menu offers exists', () => {
   const dir = new URL('../scripts/acceptance/', import.meta.url);
-  const referenced = [...cmd.matchAll(/%HERE%(\S+?\.ps1)/g)].map((m) => m[1]);
-  assert.ok(referenced.length >= 3, 'the menu must still dispatch to the update scripts');
+  const menu = readFileSync(new URL('update-test-menu.ps1', dir), 'utf8');
+  const referenced = [...menu.matchAll(/腳本 = '([^']+\.ps1)'/g)].map((m) => m[1]);
+  assert.ok(referenced.length >= 5, 'the menu must still dispatch to the update scripts');
   for (const script of new Set(referenced)) {
     assert.ok(existsSync(new URL(script, dir)), `${script} is on the menu but does not exist`);
   }

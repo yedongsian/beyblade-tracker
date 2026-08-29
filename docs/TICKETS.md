@@ -28,6 +28,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
 | BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
 | BT-REL-001 | P0 | Investigating | 更新後 `current.json` 已是新版，但服務仍執行舊版程式碼 | 需要 VM 診斷輸出 |
+| BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -71,6 +72,30 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
 
+### BT-UX-004 — 更新卡片對一般使用者不可讀
+
+- Priority：P1
+- Status：Proposed
+- Owner：待指定
+- 背景：2026-08-29 VM 實測截圖。`ui.js:133` 這樣組字串：
+
+  ```js
+  message('updateAvailable',{version}) + '
+' + publisher + ' · ' + bytes(size) + ' · ' + publishedAt + '
+' + releaseNotes
+  ```
+
+- 兩個問題，畫面上長這樣：
+  `可更新至 1.0.1。 Beyblade Tracker · 26.2 MB · 2026-08-29T16:05:53.570Z Beyblade Tracker 1.0.1`
+
+  1. **`publishedAt` 直接輸出原始 ISO 時間戳**。這是一個主打「使用者不需要碰技術工具」的產品，
+     卻在主要畫面上給他 `2026-08-29T16:05:53.570Z`。應依介面語言格式化。
+  2. **換行被吃掉**。用 `textContent` 塞 `
+`，但 `#update-details` 沒有 `white-space: pre-line`，
+     於是四段資訊（版本／發行者／大小／時間／發佈說明）擠成一行流水句。
+- 附帶：`releaseNotes` 目前是「Beyblade Tracker 1.0.1」，與 `publisher` 重複，讀起來像壞掉。
+- 這兩項都是純顯示層，與 `BT-REL-001` 無關，可各自獨立修。
+
 ### BT-REL-001 — 更新後服務仍在跑舊版程式碼
 
 - Priority：P0
@@ -92,6 +117,14 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 - 尚待確認：量測時間點距更新完成僅數分鐘，仍有可能只是重啟尚未完成。
   `update-test-diagnose.ps1`（選單 `6`）會指認 8787 由哪一個版本目錄的行程持有，以此區分。
 - 資料面沒有問題：更新前後 13 項筆數完全一致。
+- 2026-08-29 補充證據（設定頁截圖，更新完成後）：綠色狀態列顯示「更新已完成，正在重新啟動服務
+  並執行健康檢查。」，但同一頁的「版本更新」卡片**仍然顯示「可更新至 1.0.1」並保留「安裝更新」按鈕**。
+- **後果不只是版本顯示錯**：使用者會再按一次「安裝更新」，然後再看到同樣的畫面 —— 更新迴圈，
+  而且每一輪都跟他說成功了。
+- 證據強度說明：截圖左側「版本：1.0.0」是**頁面載入時**伺服器渲染的，可能是更新前的殘留，
+  單獨不足以定案。決定性證據是 `update-test-check.ps1` 在 19:09 對 `/health` 的**即時呼叫**
+  回報 `1.0.0` —— 那是更新完成之後發出的新請求。
+
 
 ### BT-UPD-002 — 把更新驗證公鑰內建到產物
 

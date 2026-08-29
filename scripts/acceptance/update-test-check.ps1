@@ -35,15 +35,10 @@ foreach ($name in ($counts.PSObject.Properties.Name | Sort-Object)) {
 }
 
 Log ''
-Log '--- 更新狀態 ---'
-$upd = $health.update
-if ($upd) {
-  Log ("    啟用       : " + $upd.enabled)
-  Log ("    可用版本   : " + $(if ($upd.availableVersion) { $upd.availableVersion } else { '（無）' }))
-  if ($upd.lastError) { Log ("    >>> 最後錯誤 : " + $upd.lastError) }
-} else {
-  Log '    /health 未回報更新狀態'
-}
+Log '--- 發行資訊 ---'
+Log ("    通道       : " + $health.release.channel)
+Log ("    更新來源   : " + $(if ($health.release.updateManifestUrl) { $health.release.updateManifestUrl } else { '>>> 未設定（服務沒讀到環境變數）' }))
+Log ("    整體狀態   : " + $health.status)
 
 Log ''
 Log ("完成，結果已寫入 " + $out)

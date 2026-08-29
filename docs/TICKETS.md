@@ -27,6 +27,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
 | BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
+| BT-REL-001 | P0 | Investigating | 更新後 `current.json` 已是新版，但服務仍執行舊版程式碼 | 需要 VM 診斷輸出 |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -69,6 +70,28 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Update failure 可 rollback，且使用者資料完整。
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
+
+### BT-REL-001 — 更新後服務仍在跑舊版程式碼
+
+- Priority：P0
+- Status：Investigating
+- Owner：待指定
+- 背景：2026-08-29 在 clean VM 實跑更新驗收，1.0.0 → 1.0.1。更新流程回報成功，但同一次量測中：
+
+  | 來源 | 版本 |
+  | --- | --- |
+  | `current.json` | 1.0.1 |
+  | `/health` 的 `release.version` | **1.0.0** |
+
+- `/health` 的版本來自 `src/release/version.js`，讀的是**執行中程式碼樹**的 `package.json`。
+  所以這代表：安裝已經換版，但 **8787 仍由 1.0.0 的行程持有**。
+- **使用者影響**：畫面顯示「更新已完成」，使用者卻仍在跑舊版，而且沒有任何提示。
+  這比更新失敗更糟 —— 失敗至少看得見。
+- 可能成因（未證實）：靜默安裝的 `[Run]` 是 `launcher.vbs restart noninteractive` 且帶 `nowait`
+  （`installer.iss:55`）。若舊行程沒有確實退場，新行程就綁不上 8787，舊的繼續服務。
+- 尚待確認：量測時間點距更新完成僅數分鐘，仍有可能只是重啟尚未完成。
+  `update-test-diagnose.ps1`（選單 `6`）會指認 8787 由哪一個版本目錄的行程持有，以此區分。
+- 資料面沒有問題：更新前後 13 項筆數完全一致。
 
 ### BT-UPD-002 — 把更新驗證公鑰內建到產物
 

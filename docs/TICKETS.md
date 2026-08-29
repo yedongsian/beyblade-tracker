@@ -1,9 +1,9 @@
 # Delivery Tickets／Backlog
 
 > 狀態：Active
-> 最後更新：2026-08-11
+> 最後更新：2026-08-29
 > 規則：本檔是正式 backlog；Roadmap 只保存優先順序與里程碑。
-> 目前驗證基線：`main` 於 2026-08-28 執行 `npm test` 通過 **249/249**（0 fail／0 skip／0 todo），
+> 目前驗證基線：`main` 於 2026-08-29 執行 `npm test` 通過 **260/260**（0 fail／0 skip／0 todo），
 > 四項 release E2E 全綠（normal／stopfail／missing-launcher／launcher-errors 6-6）。
 > 各 Ticket 內文保留當時的歷史測試數字，不回頭改寫。
 
@@ -47,13 +47,18 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
 ## 3. Ticket 詳細內容
 
-### BT-P0-001 — 完成 Windows 公開發佈閘門
+### BT-P0-001 — 完成 Windows 發佈
 
 - Priority：P0
-- Status：Blocked
+- Status：Ready
 - Owner：待指定 Release Owner
 - 背景：1.0.0 installer candidate、manifest verification、rollback 與 isolated E2E 基礎已存在，但尚不具備公開 production release 的完整信任鏈與外部驗收。
-- Blockers：Authenticode certificate、HTTPS hosting、Ed25519 offline key owner、clean Windows VM／test machine、SmartScreen acceptance。
+- **2026-08-29 範圍重新確認**：與產品負責人確認實際意圖為「使用者在自己的 Windows 電腦跑，不架網站」。據此：
+  - **HTTPS hosting 不需自架** —— GitHub Releases 即滿足程式對 manifest／installer 必須為 HTTPS 的要求（`update.js:70,97`），免費且無伺服器要維護。
+  - **Authenticode 憑證降為未來選配** —— 缺它只影響 SmartScreen 首次警告，功能與完整性皆不受影響（後者由 SHA-256 ＋ Ed25519 保證，已驗證）。年費不符現階段規模，日後導入成本僅在簽章步驟。
+  - **clean VM final acceptance** 待 1.0.1 與 Release 網址就緒後一次完成。
+  - 詳見 checklist 第四節。
+- 真正的 blocker：**尚無 1.0.1**。`validateUpdateManifest()` 需 `compareVersions(manifest.version, APP_VERSION) > 0`，同版本永遠只顯示「已是最新」，更新鏈因此無法測試。
 - Scope：簽章、hosting、release channel、manifest、clean install／upgrade／rollback／transfer／uninstall 驗收及 Go／No-Go。
 - Out of scope：新產品功能、繞過 SmartScreen、把 private key 放入 repository／CI log。
 - Acceptance criteria：

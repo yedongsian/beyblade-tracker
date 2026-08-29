@@ -27,7 +27,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
 | BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
-| BT-REL-001 | P0 | Investigating | 更新後 `current.json` 已是新版，但服務仍執行舊版程式碼 | 需要 VM 診斷輸出 |
+| BT-REL-001 | P0 | Confirmed | 更新後服務從未重啟，且 apply 仍回報成功 | 診斷已完成；待決定修法 |
 | BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
@@ -112,10 +112,31 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   所以這代表：安裝已經換版，但 **8787 仍由 1.0.0 的行程持有**。
 - **使用者影響**：畫面顯示「更新已完成」，使用者卻仍在跑舊版，而且沒有任何提示。
   這比更新失敗更糟 —— 失敗至少看得見。
-- 可能成因（未證實）：靜默安裝的 `[Run]` 是 `launcher.vbs restart noninteractive` 且帶 `nowait`
-  （`installer.iss:55`）。若舊行程沒有確實退場，新行程就綁不上 8787，舊的繼續服務。
-- 尚待確認：量測時間點距更新完成僅數分鐘，仍有可能只是重啟尚未完成。
-  `update-test-diagnose.ps1`（選單 `6`）會指認 8787 由哪一個版本目錄的行程持有，以此區分。
+- **2026-08-29 診斷結果（`update-test-diagnose.txt`），根因已確認：**
+
+  | 觀測 | 值 |
+  | --- | --- |
+  | 監聽 8787 的行程 | 只有 PID 4448，指令列是 `versions.0.0in\service.js` |
+  | 該行程啟動時間 | 17:03:30 UTC —— **早於**更新 |
+  | `tracker.pid` | 4448，存活 |
+  | Beyblade node 行程總數 | **1 個** |
+  | 版本目錄 | 1.0.0 與 1.0.1 都在，`package.json` 都正確 |
+  | log：`update / apply` | 17:08:18 **status=success**，durationMs 32638 |
+  | log：apply 之後的 `service shutting down` | **無** |
+  | log：apply 之後的 `web app on http://127.0.0.1:8787` | **無** |
+
+- 先前假設「舊行程沒退場、新行程綁不上 8787」**不成立** —— 根本沒有第二個行程，
+  舊行程也從未收到停止訊號。**重啟從頭到尾沒有發生過。**
+- **安全網失效於同一個單點**：更新後健康檢查（`update.js:182`）確實會比對
+  `targetVersion === currentVersion`，但它**只在服務啟動時評估**。服務沒重啟 → 檢查沒跑 →
+  標記停在 `pending` → `rollbackOffered` 從未為真 → 使用者看到「更新已完成」且沒有回滾入口。
+  用來偵測「更新沒生效」的機制，和它要偵測的對象共用同一個失效點。
+- **成功判準過寬**：`launchPreparedUpdate`（`update.js:621`）在**安裝器離開代碼為 0** 時就
+  `resolve({ launched: true, installed: true })`。全程沒有任何一步確認新版本真的在服務。
+- 待決定：`update-test-restart.ps1`（選單 `7`）手動執行 `launcher.vbs restart noninteractive`
+  —— 即安裝器 `[Run]`（`installer.iss:55`）本該執行的那一行。換版成功代表機制沒問題、
+  是 `[Run]` 沒觸發；仍不換版則代表 restart 路徑本身壞掉。
+- 不論是哪一種，成功判準都必須改成「確認新版本在服務」，否則同類回歸不會再被抓到。
 - 資料面沒有問題：更新前後 13 項筆數完全一致。
 - 2026-08-29 補充證據（設定頁截圖，更新完成後）：綠色狀態列顯示「更新已完成，正在重新啟動服務
   並執行健康檢查。」，但同一頁的「版本更新」卡片**仍然顯示「可更新至 1.0.1」並保留「安裝更新」按鈕**。

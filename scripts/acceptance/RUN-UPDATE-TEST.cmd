@@ -23,6 +23,8 @@ echo   [5] 步驟 8 - 記錄「回滾後」的版本與資料筆數
 echo.
 echo   [6] 診斷：更新後版本對不上（current.json 與 /health 不同）
 echo.
+echo   [7] 診斷：手動重啟（分辨重啟壞掉 vs 安裝器沒觸發）
+echo.
 echo   [9] 開啟 UPDATE-TEST.md
 echo   [0] 離開
 echo.
@@ -35,6 +37,7 @@ if "%choice%"=="3" ( %PS% "%HERE%update-test-check.ps1" -Label 更新後 & goto 
 if "%choice%"=="4" ( %PS% "%HERE%update-test-rollback.ps1" & goto done )
 if "%choice%"=="5" ( %PS% "%HERE%update-test-check.ps1" -Label 回滾後 & goto done )
 if "%choice%"=="6" ( %PS% "%HERE%update-test-diagnose.ps1" & goto done )
+if "%choice%"=="7" ( %PS% "%HERE%update-test-restart.ps1" & goto done )
 if "%choice%"=="9" ( start "" notepad "%HERE%UPDATE-TEST.md" & goto menu )
 if "%choice%"=="0" ( exit /b 0 )
 echo.

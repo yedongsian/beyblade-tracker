@@ -633,6 +633,12 @@ Hlj 的探索**成功找到 7 個候選商品**（卡片顯示「7 個待審核�
 
 另外 runbook 步驟 4（首次啟動導覽，儲存後不應再跳出）亦無紀錄。
 
-**這些在路線 1 都已於 2026-08-11 通過**，但在乾淨 VM 上尚未走過 ——
-而「乾淨 VM 上跑完整 A 段」正是 RUNBOOK 第 13 節 clean VM gate 的內容，
-因此該 gate **仍未滿足**。
+**這些在路線 1 都已於 2026-08-11 通過**（真實標準帳號、真實登出登入、真實解除安裝），
+且第 5～8 版**未動到安裝器、launcher 或服務生命週期**，因此結論不受影響。
+
+**不建議現在單獨補跑。** RUNBOOK 第 13 節的 clean VM gate 除了 install／first run／startup／
+uninstall／data retention，還同時要求 **update、migration、rollback、transfer、SmartScreen** ——
+那五項全部卡在 B 段（憑證、HTTPS 發佈站、1.0.1 版本）。**補跑步驟 4～9 不會讓該 gate 關閉。**
+
+正確做法是等 B 段解鎖後做**一次完整的 clean VM final acceptance**，屆時把它們一併涵蓋。
+本輪真正非 VM 不可的項目是 A-4b，已於 2026-08-17 完成。

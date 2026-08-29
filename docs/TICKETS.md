@@ -139,10 +139,40 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 - **這個失敗天生是無聲的**：`launcher.vbs` 以 `shell.Run command, 0, False` 隱藏執行 PowerShell，
   stdout、stderr 與離開代碼全部被丟棄。launcher.ps1 不論丟出哪一個 `BT-LCH-*`，
   安裝器不看（`nowait`），使用者也看不到。這條路徑上沒有任何一處會留下痕跡。
-- 下一步：`update-test-launcher.ps1`（選單 `8`）由外而內分層執行同一件事並保留每層的離開代碼 ——
-  前置檔案是否齊全（`BT-LCH-001/002`）、`rollback.lock` 是否卡住 `Assert-RollbackStartAllowed`
-  （`launcher.ps1:208` → `BT-LCH-003`）、直接跑 `launcher.ps1 -Action restart` 的實際輸出、
-  以及繞過 launcher 直接跑 `service-control.js restart`。
+- **2026-08-29 根因確認（`update-test-launcher.txt`）。** 分層結果：前置檔案齊全、
+  `rollback.lock` 不存在，`launcher.ps1 -Action restart` 離開代碼 1、stderr 僅有 `BT-LCH-003`。
+- **根因在 `service-process.js:71`**：
+
+  ```js
+  if (actualExecutable && expectedExecutable && actualExecutable !== expectedExecutable) return 'other';
+  ```
+
+  `expectedExecutable` 是**目前執行中那份程式碼**的 node.exe 路徑。更新後 `current.json` 指向
+  1.0.1，於是跑的是 1.0.1 的 service-control，它的 expected 是 `versions.0.1untime
+ode.exe`；
+  但仍在服務的舊行程是 `versions.0.0untime
+ode.exe`。**兩者依定義必不相同。**
+
+- 判定鏈：`ownership='other'` → `resolveStopDecision` 回 `'refuse'` → `stop()` 回 false →
+  離開代碼非 0 → launcher 丟 `BT-LCH-003`。**舊服務永遠停不掉 → 連接埠永遠佔著 →
+  新版永遠起不來。這是永久性死結，不是競態。**
+- **本機可重現，不需要 VM**（以 VM 上的真實路徑與 PID 4448 餵入 `classifyServiceProcess`）：
+
+  ```
+  service-control 版本 1.0.1 -> ownership=other   stop=refuse
+  service-control 版本 1.0.0 -> ownership=owned   stop=graceful
+  ```
+
+- 這個檢查本身是對的：它防止殺掉一個剛好重用了該 PID 的無關行程。問題在它的身分模型是
+  **「同一條路徑」**，而正確的模型應該是**「同一個安裝下的任一已安裝版本」** ——
+  更新時舊服務必然來自另一個版本目錄，那正是它唯一必須處理、卻唯一處理不了的情況。
+- 修法選項：
+  1. 放寬身分比對為 `<installRoot>ersions\*untime
+ode.exe` ＋ 命令列含
+     `<installRoot>ersions\*in\service.js`（**建議**：保留防重用保護，涵蓋一般情況）
+  2. 更新時先停服務再翻 `current.json`（順序修正，但只解更新這一條路徑）
+  3. 把版本／appRoot 寫進 status 檔，比對它而非執行中程式碼的路徑
+- 不論採哪一種，`launchPreparedUpdate` 的成功判準都仍須改為「確認新版本在服務」。
 - 不論是哪一種，成功判準都必須改成「確認新版本在服務」，否則同類回歸不會再被抓到。
 - 資料面沒有問題：更新前後 13 項筆數完全一致。
 - 2026-08-29 補充證據（設定頁截圖，更新完成後）：綠色狀態列顯示「更新已完成，正在重新啟動服務

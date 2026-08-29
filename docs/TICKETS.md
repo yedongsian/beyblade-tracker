@@ -26,6 +26,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | ID | Priority | Status | 標題 | 依賴／阻塞 |
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
+| BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -68,6 +69,22 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Update failure 可 rollback，且使用者資料完整。
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
+
+### BT-UPD-002 — 把更新驗證公鑰內建到產物
+
+- Priority：P0
+- Status：Proposed
+- Owner：待指定
+- 背景：2026-08-29 撰寫更新驗收步驟時發現，`src/config.js:95` 的 `publicKey` 來自 `UPDATE_PUBLIC_KEY` 環境變數，**預設為空字串**。而 `validateUpdateManifest`（`update.js:86`）在沒有公鑰時直接丟 `BT-UPD-003`。
+- **使用者影響**：公鑰是公開資訊，本來就該隨產物出貨。現行設計等於**一般使用者永遠無法驗證更新** —— 除非他自己去設一個多行 PEM 的環境變數，而那與「不需要 PowerShell」的產品主張直接矛盾。
+- 這不是理論問題：更新鏈的驗收因此必須先手動設環境變數才能進行。
+- Scope：把公鑰以建置時內嵌（或隨 payload 出貨的檔案）方式提供，保留環境變數作為覆寫，供測試與金鑰輪替使用。
+- Out of scope：把**私鑰**放進產物或版控。
+- Acceptance criteria：
+  - 全新安裝在未設定任何環境變數的情況下，能完成一次成功的更新檢查與簽章驗證。
+  - 環境變數若有設定則優先，以便測試與輪替。
+  - 私鑰不在產物、不在版控、不在任何 log。
+  - 有測試涵蓋「未設定環境變數時仍能驗簽」。
 
 ### BT-P1-001 — 使 Local Web 測試不受 ambient proxy 影響
 

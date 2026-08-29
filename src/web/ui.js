@@ -42,6 +42,7 @@ input:focus,select:focus,button:focus-visible,a:focus-visible{outline:3px solid 
 .preview{margin-top:1rem;border:1px solid #9eb1ea;background:#f7f9ff;border-radius:14px;padding:1rem}.preview[hidden]{display:none}
 .preview dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem .8rem;margin:.75rem 0}.preview dt{color:var(--muted)}.preview dd{margin:0;overflow-wrap:anywhere}
 .notice{border-left:4px solid var(--brand);background:#eef3ff;padding:.75rem 1rem;border-radius:8px;margin:.75rem 0}.notice.warn{border-color:var(--warn);background:#fff8ed}
+.update-banner{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin:0 0 1rem;font-weight:600}
 .status{min-height:1.5rem;margin:.6rem 0;color:var(--muted)}.status.error{color:var(--bad)}.status.success{color:var(--good)}
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}table{border-collapse:collapse;width:100%;min-width:680px}
 th,td{text-align:left;padding:.7rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}th{background:#f3f6fb;font-size:.84rem}tr:last-child td{border-bottom:0}
@@ -64,13 +65,18 @@ function nav(current, t) {
 
 export function layout({
   title, current = '/', body, csrfToken, nonce, onboarding = false, extraScript = '',
-  language = 'zh-TW', t = createTranslator(language),
+  language = 'zh-TW', t = createTranslator(language), updateAvailable = null,
 }) {
+  // Rendered on every page, not just Settings. Someone who never opens Settings had no way of
+  // learning an update existed - the scheduled check only wrote a line to the log.
+  const updateBanner = updateAvailable
+    ? `<div class="notice update-banner"><span>${esc(t(updateAvailable.deferred ? 'update.bannerDeferred' : 'update.banner', { version: updateAvailable.version }))}</span> <a href="/settings">${esc(t('update.bannerAction'))}</a></div>`
+    : '';
   const htmlLanguage = t.locale === 'zh-TW' ? 'zh-Hant' : t.locale;
   return `<!doctype html><html lang="${esc(htmlLanguage)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="${esc(csrfToken)}"><title>${esc(title)}｜${esc(t('app.name'))}</title><style>${CSS}</style></head><body>
 <a class="skip" href="#main">${esc(t('a11y.skip'))}</a><header class="topbar"><div class="shell"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">B</span><span>${esc(t('app.name'))}</span></a><nav aria-label="${esc(t('a11y.primaryNav'))}">${nav(current, t)}</nav><select id="language-picker" class="language-picker" aria-label="${esc(t('language.label'))}"><option value="zh-TW"${t.locale === 'zh-TW' ? ' selected' : ''}>繁體中文</option><option value="ja"${t.locale === 'ja' ? ' selected' : ''}>日本語</option><option value="en"${t.locale === 'en' ? ' selected' : ''}>English</option></select></div></header>
-<main id="main" class="shell">${body}</main><footer><div class="shell">${esc(t('footer.local'))}</div></footer>
+<main id="main" class="shell">${updateBanner}${body}</main><footer><div class="shell">${esc(t('footer.local'))}</div></footer>
 ${errorDialog()}${onboarding ? onboardingDialog(t) : ''}<script nonce="${esc(nonce)}">${commonJs(t)}${onboarding ? onboardingJs(t) : ''}${extraScript}</script></body></html>`;
 }
 

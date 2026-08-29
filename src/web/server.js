@@ -143,10 +143,24 @@ function updateOperationSummary(operation) {
   return summary;
 }
 
+// Reading this per page keeps the banner honest: it disappears as soon as the update is applied
+// or the state is cleared, without any page needing to know that happened.
+function availableUpdateBanner(db) {
+  try {
+    const state = getUpdateState(db);
+    const latest = state.latestResult?.updateAvailable ? state.latestResult : null;
+    if (!latest?.manifest?.version) return null;
+    return { version: latest.manifest.version, deferred: isDeferredUpdate(state, latest.manifest) };
+  } catch { return null; }
+}
+
 function pageOptions(db, base) {
   const settings = readSettings(db);
   const t = createTranslator(settings.language || 'zh-TW');
-  return { ...base, onboarding: !settings.onboardingCompleted, language: t.locale, t };
+  return {
+    ...base, onboarding: !settings.onboardingCompleted, language: t.locale, t,
+    updateAvailable: availableUpdateBanner(db),
+  };
 }
 
 function overviewPage(db, base) {

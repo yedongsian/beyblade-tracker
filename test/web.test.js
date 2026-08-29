@@ -1029,3 +1029,56 @@ test('a DNS failure on a source that worked before blames the connection, not th
     assert.doesNotMatch(proven, /請確認網址拼寫，以及網域是否仍然存在/);
   });
 });
+
+// The scheduled check ran every 24 hours and wrote "scheduled update available" to the log. Nothing
+// else. A user who never opened Settings had no way of learning an update existed - which defeats
+// the point of checking. The banner renders on every page instead.
+async function withUpdateAvailable(fn) {
+  await withServer(async (ctx) => {
+    ctx.db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateLatestResult',?,?)", [
+      JSON.stringify({ updateAvailable: true, manifest: { version: '1.0.1', publisher: 'Beyblade Tracker', manifestDigest: 'digest' } }),
+      '2026-08-29T00:00:00.000Z',
+    ]);
+    await fn(ctx);
+  }, { appConfig: { update: {} } });
+}
+
+test('an available update is visible from every page, not only Settings', async () => {
+  await withUpdateAvailable(async ({ base }) => {
+    for (const path of ['/', '/products', '/sources', '/events']) {
+      const page = await (await fetch(`${base}${path}`)).text();
+      assert.match(page, /class="notice update-banner"/, `${path} must surface the update`);
+      assert.match(page, /有新版本 1\.0\.1 可用/, `${path} must name the version`);
+      assert.match(page, /href="\/settings"/);
+    }
+  });
+});
+
+test('the banner stays quiet when there is nothing to install', async () => {
+  await withServer(async ({ base }) => {
+    const page = await (await fetch(base)).text();
+    // The class name is always in the inlined stylesheet; only the rendered element matters.
+    assert.doesNotMatch(page, /class="notice update-banner"/, 'no update means no banner');
+  }, { appConfig: { update: {} } });
+});
+
+test('a deferred update is still reachable but stops nagging', async () => {
+  await withUpdateAvailable(async ({ db, base }) => {
+    db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateDeferred',?,?)", [
+      JSON.stringify({ targetVersion: '1.0.1', manifestDigest: 'digest' }), '2026-08-29T00:00:00.000Z',
+    ]);
+    const page = await (await fetch(base)).text();
+    assert.match(page, /已延後安裝/, 'the wording must acknowledge the choice already made');
+    assert.doesNotMatch(page, /有新版本 1\.0\.1 可用/);
+  });
+});
+
+test('the banner speaks the language the rest of the page does', async () => {
+  await withUpdateAvailable(async ({ db, base }) => {
+    saveOnboardingSettings(db, { language: 'en', notification: 'app', scanFrequency: 'balanced', dataRetentionDays: 365 });
+    const en = await (await fetch(base)).text();
+    assert.match(en, /Version 1\.0\.1 is available\./);
+    assert.match(en, /Open Settings/);
+    assert.doesNotMatch(en, /有新版本/);
+  });
+});

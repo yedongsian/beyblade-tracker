@@ -25,7 +25,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
 | ID | Priority | Status | 標題 | 依賴／阻塞 |
 |---|---|---|---|---|
-| BT-P0-001 | P0 | Blocked | 完成 Windows 公開發佈閘門 | 憑證、hosting、key owner、clean VM |
+| BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |

@@ -1,6 +1,13 @@
 ﻿# 第二輪 步驟 1：移除舊版、安裝修正後的新版，並驗證 D-3 與 D-6 的修正。
 #   powershell -NoProfile -ExecutionPolicy Bypass -File <驗收資料夾>\r2-install.ps1
 
+
+# 版本不寫死：先讀已安裝的 current.json，讀不到就取 versions 下的第一個目錄。
+# 2026-08-29 升 1.0.1 前，這些腳本共有 17 處寫死的 1.0.0，升版會全部失效。
+$btInstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+$installedVersion = $(try { (Get-Content -LiteralPath (Join-Path $btInstallRoot 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+if (-not $installedVersion) { $installedVersion = (Get-ChildItem -LiteralPath (Join-Path $btInstallRoot 'versions') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).Name }
+
 $out  = (Join-Path $PSScriptRoot 'r2-install-result.txt')
 $dest = $PSScriptRoot
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
@@ -60,13 +67,13 @@ if (Test-Path -LiteralPath $cj) { Log ("current.json : " + (Get-Content -Literal
 
 Log ''
 Log '--- D-3 驗證：payload 不應含建置者的個人來源設定 ---'
-$cfg = Join-Path $appDir 'versions\1.0.0\config'
+$cfg = Join-Path $appDir "versions\$installedVersion\config"
 if (Test-Path -LiteralPath $cfg) {
   Get-ChildItem -LiteralPath $cfg | ForEach-Object { Log ("    " + $_.Name + "  " + $_.Length + " bytes") }
   Log ("個人 sources.json 已排除 : " + (-not (Test-Path -LiteralPath (Join-Path $cfg 'sources.json'))) + "   （預期 True）")
   Log ("sources.example.json     : " + (Test-Path -LiteralPath (Join-Path $cfg 'sources.example.json')) + "   （預期 True）")
 }
-$fx = Join-Path $appDir 'versions\1.0.0\fixtures\beyblade-x.json'
+$fx = Join-Path $appDir "versions\$installedVersion\fixtures\beyblade-x.json"
 Log ("fixtures 已打包           : " + (Test-Path -LiteralPath $fx) + "   （預期 True）")
 
 Log ''
@@ -94,7 +101,7 @@ Log '      兩者皆可接受；唯獨「pending 仍在且服務起不來」代�
 
 Log ''
 Log '--- 目前資料庫筆數 ---'
-$node = Join-Path $appDir 'versions\1.0.0\runtime\node.exe'
+$node = Join-Path $appDir "versions\$installedVersion\runtime\node.exe"
 $db = Join-Path $userDir 'data\tracker.db'
 if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $db)) {
   $prev = [Console]::OutputEncoding

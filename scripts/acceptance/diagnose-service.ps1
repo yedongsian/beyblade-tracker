@@ -3,8 +3,15 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File <驗收資料夾>\diagnose-service.ps1
 
+
+# 版本不寫死：先讀已安裝的 current.json，讀不到就取 versions 下的第一個目錄。
+# 2026-08-29 升 1.0.1 前，這些腳本共有 17 處寫死的 1.0.0，升版會全部失效。
+$btInstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+$installedVersion = $(try { (Get-Content -LiteralPath (Join-Path $btInstallRoot 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+if (-not $installedVersion) { $installedVersion = (Get-ChildItem -LiteralPath (Join-Path $btInstallRoot 'versions') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).Name }
+
 $out     = (Join-Path $PSScriptRoot 'service-diagnosis.txt')
-$appDir  = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker\versions\1.0.0'
+$appDir  = Join-Path $env:LOCALAPPDATA "Programs\Beyblade Tracker\versions\$installedVersion"
 $userDir = Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
 $node    = Join-Path $appDir 'runtime\node.exe'
 

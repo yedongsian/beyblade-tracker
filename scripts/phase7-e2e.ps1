@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 # One injected condition per run: two at once would make a failure impossible to attribute.
 if ($StopFailureMode -and $MissingLauncherMode) { throw 'Choose either -StopFailureMode or -MissingLauncherMode, not both.' }
 $projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-if (-not $InstallerPath) { $InstallerPath = Join-Path $projectRoot 'dist\windows\installer\BeybladeTracker-1.0.0-Setup.exe' }
+$appVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json).version
+if (-not $InstallerPath) { $InstallerPath = Join-Path $projectRoot ('dist\windows\installer\BeybladeTracker-' + $appVersion + '-Setup.exe') }
 $runId = [Guid]::NewGuid().ToString('N')
 $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
 $installRoot = Join-Path $tempRoot "BeybladeTracker-E2E-$runId-install"

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { APP_VERSION } from '../src/release/version.js';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
@@ -118,7 +119,7 @@ test('post-install health failure offers rollback and a healthy target is record
 
 
 test('no update, offline, paused network, hash mismatch, and installer launch failure stay safe', async () => {
-  assert.deepEqual(await checkForUpdate({ update: {} }), { enabled: false, currentVersion: '1.0.0', updateAvailable: false });
+  assert.deepEqual(await checkForUpdate({ update: {} }), { enabled: false, currentVersion: APP_VERSION, updateAvailable: false });
   await assert.rejects(
     checkForUpdate({ update: { manifestUrl: 'https://updates.example.test/manifest.json', publicKey: 'unused' } }, { fetchImpl: async () => { throw new Error('offline'); } }),
     /BT-UPD-002/

@@ -6,6 +6,13 @@
 #
 # 建議的 Label：安裝後 / 登入後 / 匯出後 / 解除安裝-保留 / 解除安裝-刪除 / 匯入後
 
+
+# 版本不寫死：先讀已安裝的 current.json，讀不到就取 versions 下的第一個目錄。
+# 2026-08-29 升 1.0.1 前，這些腳本共有 17 處寫死的 1.0.0，升版會全部失效。
+$btInstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+$installedVersion = $(try { (Get-Content -LiteralPath (Join-Path $btInstallRoot 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+if (-not $installedVersion) { $installedVersion = (Get-ChildItem -LiteralPath (Join-Path $btInstallRoot 'versions') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).Name }
+
 param([Parameter(Mandatory=$true)][string]$Label)
 
 $report = (Join-Path $PSScriptRoot 'evidence-report.txt')
@@ -31,7 +38,7 @@ if (Test-Path -LiteralPath $appDir) {
   Add ("current.json   : " + $(if (Test-Path -LiteralPath $cj) { (Get-Content -LiteralPath $cj -Raw).Trim() } else { 'MISSING' }))
   $v = Join-Path $appDir 'versions'
   if (Test-Path -LiteralPath $v) { foreach ($d in Get-ChildItem -LiteralPath $v -Directory) { Add ("version dir    : " + $d.Name) } }
-  $n = Join-Path $appDir 'versions\1.0.0\runtime\node.exe'
+  $n = Join-Path $appDir "versions\$installedVersion\runtime\node.exe"
   Add ("bundled node   : " + (Test-Path -LiteralPath $n))
 }
 
@@ -44,7 +51,7 @@ try {
     foreach ($p in $procs) {
       Add ("PID $($p.ProcessId) : $($p.CommandLine)")
       if ($p.CommandLine -match [regex]::Escape('Program Files\nodejs')) { Add '  >>> 警告：使用系統 Node，不是內建 runtime' }
-      elseif ($p.CommandLine -match [regex]::Escape('versions\1.0.0\runtime\node.exe')) { Add '  >>> OK：使用安裝包內建 runtime' }
+      elseif ($p.CommandLine -match [regex]::Escape("versions\$installedVersion\runtime\node.exe")) { Add '  >>> OK：使用安裝包內建 runtime' }
     }
   } else { Add 'no tracker node process' }
 } catch { Add ("query failed: " + $_.Exception.Message) }

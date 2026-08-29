@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { ERROR_CODES, ERROR_REGISTRY, errorCodeFor, errorEnvelope, issueReportUrl, trackerError } from '../src/errors/registry.js';
 import { Database } from '../src/db/database.js';
 import { createWebServer } from '../src/web/server.js';
+import { APP_VERSION } from '../src/release/version.js';
 
 test('every published error code has a stable, deterministic registry entry', () => {
   const catalog = readFileSync(new URL('../docs/ERROR_CODES.md', import.meta.url), 'utf8');
@@ -93,7 +94,8 @@ test('Local Web failures return a safe error envelope and render an accessible c
     assert.equal(rejected.status, 400);
     const body = await rejected.json();
     assert.equal(body.error.code, 'BT-LCH-999');
-    assert.equal(body.error.appVersion, '1.0.0');
+    // The envelope reports the running version; pinning a literal here breaks on every bump.
+    assert.equal(body.error.appVersion, APP_VERSION);
     assert.match(body.error.supportRef, /^[A-Za-z0-9_-]+$/);
     assert.doesNotMatch(JSON.stringify(body), /csrf|token|stack|path/i);
   } finally {

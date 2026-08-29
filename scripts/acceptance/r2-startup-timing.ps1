@@ -1,6 +1,13 @@
 ﻿# 量測本次啟動實際耗時，判斷 BT-LCH-003 是否為逾時誤報。
 #   powershell -NoProfile -ExecutionPolicy Bypass -File <驗收資料夾>\r2-startup-timing.ps1
 
+
+# 版本不寫死：先讀已安裝的 current.json，讀不到就取 versions 下的第一個目錄。
+# 2026-08-29 升 1.0.1 前，這些腳本共有 17 處寫死的 1.0.0，升版會全部失效。
+$btInstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+$installedVersion = $(try { (Get-Content -LiteralPath (Join-Path $btInstallRoot 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+if (-not $installedVersion) { $installedVersion = (Get-ChildItem -LiteralPath (Join-Path $btInstallRoot 'versions') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).Name }
+
 $out = (Join-Path $PSScriptRoot 'r2-timing-result.txt')
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
 function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encoding utf8 }
@@ -19,7 +26,7 @@ if (Test-Path -LiteralPath $tl) {
 
 Log ''
 Log '--- 關鍵時間戳 ---'
-$appVer = Join-Path $appDir 'versions\1.0.0'
+$appVer = Join-Path $appDir "versions\$installedVersion"
 if (Test-Path -LiteralPath $appVer) { Log ("安裝目錄建立 : " + (Get-Item -LiteralPath $appVer).CreationTime.ToString('HH:mm:ss')) }
 $cj = Join-Path $appDir 'current.json'
 if (Test-Path -LiteralPath $cj) { Log ("current.json 寫入（安裝完成、[Run] 啟動服務） : " + (Get-Item -LiteralPath $cj).LastWriteTime.ToString('HH:mm:ss')) }

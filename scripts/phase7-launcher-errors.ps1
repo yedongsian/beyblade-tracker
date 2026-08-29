@@ -6,13 +6,14 @@
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$sourceAppRoot = Join-Path $projectRoot 'dist\windows\BeybladeTracker-1.0.0'
+$appVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json).version
+$sourceAppRoot = Join-Path $projectRoot ('dist\windows\BeybladeTracker-' + $appVersion)
 $sourceLauncherRoot = Join-Path $projectRoot 'release\windows'
 $runId = [Guid]::NewGuid().ToString('N')
 $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
 $installRoot = Join-Path $tempRoot "BeybladeTracker-LCH-$runId-install"
 $userRoot = Join-Path $tempRoot "BeybladeTracker-LCH-$runId-user"
-$appRoot = Join-Path $installRoot 'versions\1.0.0'
+$appRoot = Join-Path $installRoot ('versions\' + $appVersion)
 $launcherPath = Join-Path $installRoot 'launcher.ps1'
 $currentPath = Join-Path $installRoot 'current.json'
 $nodePath = Join-Path $appRoot 'runtime\node.exe'
@@ -301,7 +302,7 @@ try {
   Copy-Item -LiteralPath $sourceAppRoot -Destination $appRoot -Recurse -Force -ErrorAction Stop
   Copy-Item -LiteralPath (Join-Path $sourceLauncherRoot 'launcher.ps1') -Destination $launcherPath -Force -ErrorAction Stop
   Copy-Item -LiteralPath (Join-Path $sourceLauncherRoot 'launcher.vbs') -Destination (Join-Path $installRoot 'launcher.vbs') -Force -ErrorAction Stop
-  Set-Content -LiteralPath $currentPath -Value '{"version":"1.0.0"}' -Encoding utf8 -NoNewline -ErrorAction Stop
+  Set-Content -LiteralPath $currentPath -Value ('{"version":"' + $appVersion + '"}') -Encoding utf8 -NoNewline -ErrorAction Stop
   $env:BEYBLADE_USER_ROOT = $userRoot
 
   Restore-LchInjection

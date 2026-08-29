@@ -1,13 +1,20 @@
 ﻿# A-7 匯入診斷：分辨「暫存失敗」還是「暫存成功但服務未重啟」，並在可行時完成匯入。
 #   powershell -NoProfile -ExecutionPolicy Bypass -File <驗收資料夾>\a7-import-diag.ps1
 
+
+# 版本不寫死：先讀已安裝的 current.json，讀不到就取 versions 下的第一個目錄。
+# 2026-08-29 升 1.0.1 前，這些腳本共有 17 處寫死的 1.0.0，升版會全部失效。
+$btInstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+$installedVersion = $(try { (Get-Content -LiteralPath (Join-Path $btInstallRoot 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+if (-not $installedVersion) { $installedVersion = (Get-ChildItem -LiteralPath (Join-Path $btInstallRoot 'versions') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).Name }
+
 $out  = (Join-Path $PSScriptRoot 'a7-import-diag.txt')
 $dest = $PSScriptRoot
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
 function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encoding utf8 }
 
 $appDir  = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
-$appRoot = Join-Path $appDir 'versions\1.0.0'
+$appRoot = Join-Path $appDir "versions\$installedVersion"
 $userDir = Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
 $db      = Join-Path $userDir 'data\tracker.db'
 $pending = Join-Path $userDir 'runtime\pending-import.beyblade-transfer'

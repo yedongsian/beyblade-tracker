@@ -3,6 +3,13 @@
 #
 # 注意：解除安裝過程中請在資料保留提示選「是」。
 
+
+# 版本不寫死：先讀已安裝的 current.json，讀不到就取 versions 下的第一個目錄。
+# 2026-08-29 升 1.0.1 前，這些腳本共有 17 處寫死的 1.0.0，升版會全部失效。
+$btInstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+$installedVersion = $(try { (Get-Content -LiteralPath (Join-Path $btInstallRoot 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+if (-not $installedVersion) { $installedVersion = (Get-ChildItem -LiteralPath (Join-Path $btInstallRoot 'versions') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).Name }
+
 $out  = (Join-Path $PSScriptRoot 'a10-result.txt')
 $dest = $PSScriptRoot
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
@@ -12,7 +19,7 @@ $appDir   = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
 $userDir  = Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
 $db       = Join-Path $userDir 'data\tracker.db'
 $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Beyblade Tracker'
-$bundledNode = Join-Path $appDir 'versions\1.0.0\runtime\node.exe'
+$bundledNode = Join-Path $appDir "versions\$installedVersion\runtime\node.exe"
 $systemNode  = 'C:\Program Files\nodejs\node.exe'
 $counter = Join-Path $dest 'db-counts.mjs'
 

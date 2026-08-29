@@ -140,15 +140,64 @@ if (CurPageID = wpReady) and (not WizardSilent) and (not ChromeInstalled) then
 
 **若最終決定不做 VM**：必須在發佈說明明確寫出「沒有 Chrome 的機器上，安裝精靈的提示未經實機驗證」，不得默默省略。
 
-### 四、B 段（公開發佈閘門，仍全數受阻）
+### 四、B 段：發佈（2026-08-29 依實際產品意圖重寫）
 
-| 項目 | 阻擋原因 |
-| --- | --- |
-| 線上更新 | 需 HTTPS 發佈站 **並且**需一個 1.0.1 版本作為更新目標 |
-| Rollback／Migration 升級 | 需先有一次成功的更新 |
-| SmartScreen | 需 Authenticode 憑證 |
+先前這一段寫著「需 HTTPS 發佈站」「需 Authenticode 憑證」，讓人以為必須**架網站**並**買憑證**。
+與產品負責人確認後，實際意圖是：
 
-Ed25519 manifest 簽章管線已驗證可用（含負向與竄改控制），金鑰在 `C:\Users\yedon\.beyblade-release\`；詳見 [RELEASE_CANDIDATE_1.0.0.md](RELEASE_CANDIDATE_1.0.0.md) 第 8 節。
+> 使用者在自己的 Windows 電腦上跑，瀏覽器只是操作介面。**不打算架網站。**
+> 需要的是：更新時使用者收得到通知，以及錯過通知後有地方可以自己啟動更新。
+
+依此重寫。
+
+#### 「HTTPS 發佈站」不等於架網站
+
+程式只要求兩個網址是 HTTPS（[update.js:70,97](../src/release/update.js)）：manifest 與安裝器。
+**GitHub Releases 即滿足此條件** —— 免費、HTTPS、無伺服器要維護，且 repo 已存在。
+發佈時上傳兩個檔即可：`BeybladeTracker-<版本>-Setup.exe` 與 `release-manifest.json`
+（build script 已會產生，設定 `RELEASE_BASE_URL` 指向 Release 資產網址即可）。使用者端以
+`UPDATE_MANIFEST_URL` 指向該 manifest。
+
+#### Authenticode 憑證：降為未來選配
+
+沒有憑證的唯一差別是 **SmartScreen 會在首次執行下載的安裝器時顯示「Windows 已保護您的電腦」**，
+使用者需點「更多資訊 → 仍要執行」。功能不受影響。
+
+**完整性不依賴憑證** —— SHA-256 ＋ Ed25519 簽章鏈已實作並驗證（含負向與竄改控制），
+那才是防止安裝到被竄改檔案的機制。憑證買的是 Windows 的信任 UI。
+
+年費約 200～400 美元。**現階段不採購**；若日後使用者增加、SmartScreen 警告造成實際困擾再評估。
+屆時更新與 rollback 鏈都已驗證過，導入成本只在簽章步驟。
+
+#### 真正還缺的
+
+| 項目 | 狀態 | 說明 |
+| --- | --- | --- |
+| **建立 1.0.1 作為更新目標** | 待做 | **硬性**。`validateUpdateManifest()` 需 `compareVersions(manifest.version, APP_VERSION) > 0`；manifest 與已安裝版本同為 1.0.0 時永遠只顯示「已是最新」。**更新鏈非有第二個版本不可測** |
+| **GitHub Releases 發佈流程** | 待做 | 上傳兩個檔、確認資產網址、設定 `RELEASE_BASE_URL` 與 `UPDATE_MANIFEST_URL` |
+| 線上更新／rollback／migration 實機驗收 | 受阻於上兩項 | 有了 1.0.1 與 Release 網址即可進行 |
+| SmartScreen | **不做** | 見上；改為在發佈說明告知使用者會看到該警告與如何繼續 |
+| 更新通知的可見性 | ✅ **已完成** | 見下 |
+
+#### 更新通知的可見性（2026-08-29 已補）
+
+原本每 24 小時的排程檢查發現新版時**只寫進 log**，畫面上只有設定頁看得到。
+使用者若不主動開設定頁，永遠不會知道有更新 —— 那使「排程檢查」失去意義。
+
+已改為：**所有頁面**在主要內容之上顯示橫幅，含版本號與前往設定的連結；已選擇延後者改用
+較安靜的措辭並保留入口；沒有更新時不顯示。三語齊備，並有測試涵蓋四種情形。
+
+#### Ed25519 簽章
+
+管線已驗證可用（含負向與竄改控制），金鑰在 `C:\Users\yedon\.beyblade-release`；
+詳見 [RELEASE_CANDIDATE_1.0.0.md](RELEASE_CANDIDATE_1.0.0.md) 第 8 節。**私鑰不得提交 Git。**
+
+#### 對 RUNBOOK 第 13 節 clean VM gate 的影響
+
+該節要求乾淨 VM 完成 install／first run／startup／**update／migration／rollback／transfer**／
+uninstall／data retention／**SmartScreen**。其中 SmartScreen 既然決定不做，該 gate
+**不會以原文形式被滿足**。建議發佈前將該節改寫為與本節一致的條件，並把「未簽章、使用者會看到
+SmartScreen 警告」列為明示的已知限制，而非未完成項。
 
 ### 五、環境現況（供日後接續）
 

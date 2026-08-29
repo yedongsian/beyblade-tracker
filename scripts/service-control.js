@@ -114,6 +114,8 @@ function lifecycleDependencies() {
     sleep,
     executablePath: process.execPath,
     serviceFile: SERVICE_FILE,
+    // Lets an update stop the previous version's service instead of refusing it as a stranger.
+    installRoot: PATHS.installRoot,
   };
 }
 

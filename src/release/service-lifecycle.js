@@ -23,10 +23,10 @@ async function safeCallAsync(fn, fallback) {
   } catch { return fallback; }
 }
 
-function classify({ inspectProcess, executablePath, serviceFile }, pid, status) {
+function classify({ inspectProcess, executablePath, serviceFile, installRoot }, pid, status) {
   const identity = safeCall(() => inspectProcess(pid), null);
   return classifyServiceProcess(identity, {
-    pid, status, executablePath, serviceFile, startedAt: status?.startedAt,
+    pid, status, executablePath, serviceFile, installRoot, startedAt: status?.startedAt,
   });
 }
 

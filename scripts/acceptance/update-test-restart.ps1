@@ -12,6 +12,20 @@ function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encod
 $appDir = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
 $vbs    = Join-Path $appDir 'launcher.vbs'
 
+# 從命令列取出版本目錄名。刻意不用正規表示式：比對反斜線的樣式只要少一個跳脫，
+# 字元類就沒有收尾，而且在 -match 裡是**靜默**失敗
+# （2026-08-29 的第一份診斷輸出就因此少了兩項而我沒察覺）。字串搜尋沒有這個風險。
+function Get-VersionFromCommandLine([string]$commandLine) {
+  if ([string]::IsNullOrWhiteSpace($commandLine)) { return '?' }
+  $marker = 'versions' + [char]92
+  $i = $commandLine.IndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase)
+  if ($i -lt 0) { return '?' }
+  $rest = $commandLine.Substring($i + $marker.Length)
+  $j = $rest.IndexOf([char]92)
+  if ($j -lt 0) { return '?' }
+  return $rest.Substring(0, $j)
+}
+
 function Report([string]$label) {
   $cur = $(try { (Get-Content -LiteralPath (Join-Path $appDir 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { '讀不到' })
   $srv = $(try { (Invoke-RestMethod 'http://127.0.0.1:8787/health' -TimeoutSec 10 -ErrorAction Stop).release.version } catch { '無回應' })
@@ -19,7 +33,7 @@ function Report([string]$label) {
   $c = Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($c) {
     $p = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $c.OwningProcess) -ErrorAction SilentlyContinue
-    $ver = if ($p -and $p.CommandLine -match 'versions\([^\]+)\') { $Matches[1] } else { '?' }
+    $ver = Get-VersionFromCommandLine ([string]$p.CommandLine)
     Log ("[$label] 8787 由 PID " + $c.OwningProcess + "（版本目錄 $ver，啟動於 " + $p.CreationDate + "）持有")
   } else { Log "[$label] 沒有行程監聽 8787" }
 }

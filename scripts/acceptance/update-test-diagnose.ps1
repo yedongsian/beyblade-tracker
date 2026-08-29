@@ -10,6 +10,21 @@ if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
 function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encoding utf8 }
 
 $appDir  = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+
+# 從命令列取出版本目錄名。刻意不用正規表示式：比對反斜線的樣式只要少一個跳脫，
+# 字元類就沒有收尾，而且在 -match 裡是**靜默**失敗
+# （2026-08-29 的第一份診斷輸出就因此少了兩項而我沒察覺）。字串搜尋沒有這個風險。
+function Get-VersionFromCommandLine([string]$commandLine) {
+  if ([string]::IsNullOrWhiteSpace($commandLine)) { return '?' }
+  $marker = 'versions' + [char]92
+  $i = $commandLine.IndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase)
+  if ($i -lt 0) { return '?' }
+  $rest = $commandLine.Substring($i + $marker.Length)
+  $j = $rest.IndexOf([char]92)
+  if ($j -lt 0) { return '?' }
+  return $rest.Substring(0, $j)
+}
+
 $userDir = Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
 
 Log ("=== 更新後版本落差診斷  " + $env:USERNAME + "  " + (Get-Date).ToString('o') + " ===")
@@ -44,7 +59,8 @@ foreach ($c in $conn) {
   if ($p) {
     Log ("啟動時間  : " + $p.CreationDate)
     Log ("命令列    : " + $p.CommandLine)
-    if ($p.CommandLine -match 'versions\([^\]+)\') { Log (">>> 這個行程跑的是版本目錄 " + $Matches[1]) }
+    $v = Get-VersionFromCommandLine ([string]$p.CommandLine)
+    if ($v -ne '?') { Log (">>> 這個行程跑的是版本目錄 $v") }
   }
 }
 
@@ -54,7 +70,7 @@ $procs = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction Si
   Where-Object { $_.CommandLine -match 'Beyblade' }
 if (-not $procs) { Log '無。' }
 foreach ($p in $procs) {
-  $ver = if ($p.CommandLine -match 'versions\([^\]+)\') { $Matches[1] } else { '?' }
+  $ver = Get-VersionFromCommandLine ([string]$p.CommandLine)
   Log ("PID {0,-8} 版本 {1,-10} 啟動 {2}" -f $p.ProcessId, $ver, $p.CreationDate)
 }
 Log '（若同時看到兩個不同版本的行程，就是舊行程沒退場、佔住 8787。）'

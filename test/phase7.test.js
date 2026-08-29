@@ -380,6 +380,24 @@ test('the launcher stub stays pure ASCII so cmd.exe cannot desynchronise', () =>
   assert.match(cmd, /update-test-menu\.ps1/, 'the stub must hand off to the PowerShell menu');
 });
 
+// A regex matching a Windows path needs its backslashes doubled. Written singly, [^\] escapes the
+// closing bracket instead, the class never terminates, and -match throws at parse time - which the
+// first diagnostic run swallowed, silently dropping two of its findings while still looking like a
+// complete report. JS rejects the same construct, so compiling the literals here catches it.
+test('regex literals in the acceptance scripts actually compile', () => {
+  const dir = new URL('../scripts/acceptance/', import.meta.url);
+  const scripts = readdirSync(dir).filter((name) => name.endsWith('.ps1'));
+  let checked = 0;
+  for (const name of scripts) {
+    const source = readFileSync(new URL(name, dir), 'utf8');
+    for (const [, literal] of source.matchAll(/-match\s+'([^']*)'/g)) {
+      checked += 1;
+      assert.doesNotThrow(() => new RegExp(literal), `${name}: -match '${literal}' is not a valid regex`);
+    }
+  }
+  assert.ok(checked > 0, 'the extraction must still find the -match literals it is guarding');
+});
+
 test('every script the menu offers exists', () => {
   const dir = new URL('../scripts/acceptance/', import.meta.url);
   const menu = readFileSync(new URL('update-test-menu.ps1', dir), 'utf8');

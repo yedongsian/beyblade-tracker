@@ -133,9 +133,16 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   用來偵測「更新沒生效」的機制，和它要偵測的對象共用同一個失效點。
 - **成功判準過寬**：`launchPreparedUpdate`（`update.js:621`）在**安裝器離開代碼為 0** 時就
   `resolve({ launched: true, installed: true })`。全程沒有任何一步確認新版本真的在服務。
-- 待決定：`update-test-restart.ps1`（選單 `7`）手動執行 `launcher.vbs restart noninteractive`
-  —— 即安裝器 `[Run]`（`installer.iss:55`）本該執行的那一行。換版成功代表機制沒問題、
-  是 `[Run]` 沒觸發；仍不換版則代表 restart 路徑本身壞掉。
+- **2026-08-29 分辨結果（`update-test-restart.txt`）：手動執行安裝器該執行的那一行，
+  服務完全沒有反應。** PID 4448 與其啟動時間 19:03:30 在前後兩次量測中一模一樣，
+  150 秒內連停止都沒發生。**所以問題在 restart 路徑本身，不在安裝器的 `[Run]`。**
+- **這個失敗天生是無聲的**：`launcher.vbs` 以 `shell.Run command, 0, False` 隱藏執行 PowerShell，
+  stdout、stderr 與離開代碼全部被丟棄。launcher.ps1 不論丟出哪一個 `BT-LCH-*`，
+  安裝器不看（`nowait`），使用者也看不到。這條路徑上沒有任何一處會留下痕跡。
+- 下一步：`update-test-launcher.ps1`（選單 `8`）由外而內分層執行同一件事並保留每層的離開代碼 ——
+  前置檔案是否齊全（`BT-LCH-001/002`）、`rollback.lock` 是否卡住 `Assert-RollbackStartAllowed`
+  （`launcher.ps1:208` → `BT-LCH-003`）、直接跑 `launcher.ps1 -Action restart` 的實際輸出、
+  以及繞過 launcher 直接跑 `service-control.js restart`。
 - 不論是哪一種，成功判準都必須改成「確認新版本在服務」，否則同類回歸不會再被抓到。
 - 資料面沒有問題：更新前後 13 項筆數完全一致。
 - 2026-08-29 補充證據（設定頁截圖，更新完成後）：綠色狀態列顯示「更新已完成，正在重新啟動服務

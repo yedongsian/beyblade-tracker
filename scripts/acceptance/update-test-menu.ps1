@@ -15,6 +15,7 @@ $items = [ordered]@{
   '5' = @{ 名稱 = '步驟 8 - 記錄「回滾後」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @('-Label', '回滾後') }
   '6' = @{ 名稱 = '診斷：更新後版本對不上（current.json 與 /health 不同）'; 腳本 = 'update-test-diagnose.ps1'; 參數 = @() }
   '7' = @{ 名稱 = '診斷：手動重啟（分辨重啟壞掉 vs 安裝器沒觸發）';    腳本 = 'update-test-restart.ps1';  參數 = @() }
+  '8' = @{ 名稱 = '診斷：launcher restart 卡在哪一層（分層執行並攤開輸出）'; 腳本 = 'update-test-launcher.ps1'; 參數 = @() }
 }
 
 while ($true) {

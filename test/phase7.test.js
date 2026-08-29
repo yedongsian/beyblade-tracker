@@ -361,6 +361,35 @@ test('every PowerShell script carrying localized text has a UTF-8 BOM', () => {
   }
 });
 
+// The update round asked the operator to paste a multi-line PEM public key, read out of a Markdown
+// file, into a PowerShell console. The console refuses multi-line input, so step one was unrunnable.
+// The fix is a double-clickable menu; these tests keep the document from growing commands again and
+// keep the menu pointing at scripts that exist.
+test('the update test is launched by double-click, not by typing commands', () => {
+  const bytes = readFileSync(new URL('../scripts/acceptance/RUN-UPDATE-TEST.cmd', import.meta.url));
+  // A BOM on line 1 of a .cmd is echoed by cmd.exe as a stray character before @echo off.
+  assert.notDeepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'a .cmd must not carry a BOM');
+  const cmd = bytes.toString('utf8');
+  assert.match(cmd, /^@echo off\r\n/, 'cmd files need CRLF and must start with @echo off');
+  // The menu is in Traditional Chinese, so the console has to be told it is reading UTF-8.
+  assert.match(cmd, /chcp 65001/, 'without this the menu renders as mojibake under codepage 950');
+
+  const dir = new URL('../scripts/acceptance/', import.meta.url);
+  const referenced = [...cmd.matchAll(/%HERE%(\S+?\.ps1)/g)].map((m) => m[1]);
+  assert.ok(referenced.length >= 3, 'the menu must still dispatch to the update scripts');
+  for (const script of new Set(referenced)) {
+    assert.ok(existsSync(new URL(script, dir)), `${script} is on the menu but does not exist`);
+  }
+});
+
+test('the update runbook contains no command for the operator to retype', () => {
+  const doc = readFileSync(new URL('../docs/WINDOWS_UPDATE_VERIFICATION.md', import.meta.url), 'utf8');
+  assert.match(doc, /RUN-UPDATE-TEST\.cmd/, 'the document must point at the launcher');
+  // Every step is a numbered menu choice now. A reintroduced command line is the regression.
+  assert.doesNotMatch(doc, /powershell -NoProfile/, 'steps must be menu choices, not pasted commands');
+  assert.doesNotMatch(doc, /SetEnvironmentVariable/, 'the PEM paste is what made step 1 unrunnable');
+});
+
 test('Windows PowerShell 5.1 launcher uses a UTF-8 BOM for localized text', () => {
   const launcher = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url));
   assert.deepEqual([...launcher.subarray(0, 3)], [0xef, 0xbb, 0xbf]);

@@ -17,14 +17,16 @@
 
 ## 前置：先讀這一段
 
-**這份文件不需要你複製貼上任何指令。** 設定與量測都做成腳本了 —— 之前叫人從 Markdown
-複製多行 PEM 公鑰貼進主控台，那本來就是錯的做法。
+**這份文件不需要你輸入或貼上任何指令。**
 
-執行腳本一律用這個格式（`Z:` 是 VM 裡的共用資料夾磁碟機）：
+在 VM 裡到 `Z:\` 資料夾，**雙擊 `RUN-UPDATE-TEST.cmd`**，會跳出一個選單，
+每一步只要按一個數字再按 Enter。本文各步驟會標明要按哪一個。
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File Z:\<檔名>.ps1
-```
+> 如果 Windows 跳出「開啟檔案 - 安全性警告」（因為是網路磁碟機上的檔案），按「執行」。
+> 若選單文字是亂碼，先回報給我，不要硬跑。
+
+先前的做法是叫人從 Markdown 複製一段多行的 PEM 公鑰貼進主控台 ——
+**主控台不接受多行輸入**，所以那一步根本跑不起來。那是文件的錯，不是操作的錯。
 
 本機帳號登入要打 `.\AcceptanceUser`。
 
@@ -43,11 +45,7 @@ VirtualBox → 快照 → 選 **`S1-with-chrome`** → 還原，然後登入 `.\
 
 ## 步驟 2：跑前置設定腳本
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-setup.ps1
-```
-
-這支腳本會：確認目前版本是 1.0.0 → 檢查公鑰檔（並確認不含私鑰）→ 寫入兩個環境變數 →
+在選單按 **`1`**。這支腳本會：確認目前版本是 1.0.0 → 檢查公鑰檔（並確認不含私鑰）→ 寫入兩個環境變數 →
 **讀回來驗證**（特別是公鑰的換行有沒有掉）。
 
 畫面出現 `=== 前置設定完成 ===` 才往下走。若有 `>>>` 開頭的行，先解決它 ——
@@ -107,9 +105,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-setup.ps1
 
 **先記錄更新前的狀態**：
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 更新前
-```
+在選單按 **`2`**（記錄「更新前」）。
 
 然後回設定頁按「**改為現在更新**」→「**安裝更新**」，確認提示後觀察：
 
@@ -128,9 +124,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -La
 
 等服務重新就緒後：
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 更新後
-```
+在選單按 **`3`**（記錄「更新後」）。
 
 兩段會寫在同一個 `update-test-counts.txt` 裡，直接上下對照。
 
@@ -148,17 +142,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -La
 
 ## 步驟 8：測 rollback
 
-設定頁如有「**回滾更新**」按鈕就按它。沒有的話跑：
+設定頁如有「**回滾更新**」按鈕就按它。沒有的話在選單按 **`4`**。
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-rollback.ps1
-```
-
-跑完再記錄一次：
-
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 回滾後
-```
+跑完再在選單按 **`5`**（記錄「回滾後」）。
 
 | 檢查 | 預期 |
 | --- | --- |
@@ -188,11 +174,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -La
 
 | 症狀 | 可能原因 |
 | --- | --- |
-| `BT-UPD-003` 更新無法驗證 | 公鑰沒設定或換行遺失 —— 重跑步驟 2 的腳本，看它的驗證段 |
+| `BT-UPD-003` 更新無法驗證 | 公鑰沒設定或換行遺失 —— 重按選單的 `1`，看它的驗證段 |
 | `BT-UPD-002` 無法取得更新資訊 | VM 沒有網路，或 manifest 網址打錯 |
 | `BT-UPD-004` 更新檔案不符 | SHA-256 對不上；把畫面截圖給我，這代表產物或 manifest 有問題 |
 | 設定頁顯示「正式更新來源尚未設定」 | **服務沒重啟**（步驟 3），或變數設在錯的範圍 |
-| 腳本說 `/health 無回應` | 服務還在啟動；等 30 秒重跑 |
+| 腳本說 `/health 無回應` | 服務還在啟動；等 30 秒再按一次 |
 
 有任何代碼或看起來不對的地方就截圖，不要硬推下去。
 

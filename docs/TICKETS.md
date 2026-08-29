@@ -27,7 +27,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
 | BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
-| BT-REL-001 | P0 | Confirmed | 更新後服務從未重啟，且 apply 仍回報成功 | 診斷已完成；待決定修法 |
+| BT-REL-001 | P0 | Fixed（待 VM 複驗） | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 成功判準仍待改 |
 | BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
@@ -116,7 +116,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
   | 觀測 | 值 |
   | --- | --- |
-  | 監聽 8787 的行程 | 只有 PID 4448，指令列是 `versions.0.0in\service.js` |
+  | 監聽 8787 的行程 | 只有 PID 4448，指令列是 `versions\1.0.0\bin\service.js` |
   | 該行程啟動時間 | 17:03:30 UTC —— **早於**更新 |
   | `tracker.pid` | 4448，存活 |
   | Beyblade node 行程總數 | **1 個** |
@@ -148,10 +148,8 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   ```
 
   `expectedExecutable` 是**目前執行中那份程式碼**的 node.exe 路徑。更新後 `current.json` 指向
-  1.0.1，於是跑的是 1.0.1 的 service-control，它的 expected 是 `versions.0.1untime
-ode.exe`；
-  但仍在服務的舊行程是 `versions.0.0untime
-ode.exe`。**兩者依定義必不相同。**
+  1.0.1，於是跑的是 1.0.1 的 service-control，它的 expected 是 `versions\1.0.1\runtime\node.exe`；
+  但仍在服務的舊行程是 `versions\1.0.0\runtime\node.exe`。**兩者依定義必不相同。**
 
 - 判定鏈：`ownership='other'` → `resolveStopDecision` 回 `'refuse'` → `stop()` 回 false →
   離開代碼非 0 → launcher 丟 `BT-LCH-003`。**舊服務永遠停不掉 → 連接埠永遠佔著 →
@@ -166,13 +164,15 @@ ode.exe`。**兩者依定義必不相同。**
 - 這個檢查本身是對的：它防止殺掉一個剛好重用了該 PID 的無關行程。問題在它的身分模型是
   **「同一條路徑」**，而正確的模型應該是**「同一個安裝下的任一已安裝版本」** ——
   更新時舊服務必然來自另一個版本目錄，那正是它唯一必須處理、卻唯一處理不了的情況。
-- 修法選項：
-  1. 放寬身分比對為 `<installRoot>ersions\*untime
-ode.exe` ＋ 命令列含
-     `<installRoot>ersions\*in\service.js`（**建議**：保留防重用保護，涵蓋一般情況）
-  2. 更新時先停服務再翻 `current.json`（順序修正，但只解更新這一條路徑）
-  3. 把版本／appRoot 寫進 status 檔，比對它而非執行中程式碼的路徑
-- 不論採哪一種，`launchPreparedUpdate` 的成功判準都仍須改為「確認新版本在服務」。
+- **2026-08-30 已修（放寬身分比對）。** `classifyServiceProcess` 新增選用的 `installRoot`；
+  有帶的時候，身分條件改為「執行檔位於 `<installRoot>\versions\<版本>\runtime\node.exe`，
+  且命令列含**同一個**版本的 `bin\service.js`」。防重用保護原封不動 —— 安裝根目錄與路徑尾端
+  仍要精確相符，只是不再要求版本相同。沒帶 `installRoot` 的呼叫端維持原本的嚴格比對。
+- 兩項測試，都做過反向檢查：VM 上的真實情境（1.0.1 的 service-control 必須能停 1.0.0 的服務），
+  以及五個「只差一點」的案例必須全部維持不可觸碰 —— 別的安裝根目錄、同目錄下的別的執行檔、
+  用我們的 node 跑別的腳本、執行檔與 service.js 版本不一致、比版本目錄更深的巢狀路徑。
+- **仍未做**：`launchPreparedUpdate` 的成功判準依然只看安裝器離開代碼，沒有確認新版本在服務。
+  這次是身分比對讓失敗現形；判準不改，下一個成因不同的回歸一樣會被回報成「更新已完成」。
 - 不論是哪一種，成功判準都必須改成「確認新版本在服務」，否則同類回歸不會再被抓到。
 - 資料面沒有問題：更新前後 13 項筆數完全一致。
 - 2026-08-29 補充證據（設定頁截圖，更新完成後）：綠色狀態列顯示「更新已完成，正在重新啟動服務

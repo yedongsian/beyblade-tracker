@@ -18,7 +18,7 @@ Log ''
 
 if (-not (Test-Path -LiteralPath $appDir)) {
   Log '>>> 尚未安裝。請先執行安裝器重新安裝，再跑本腳本：'
-  Log ("    " + (Join-Path $dest 'BeybladeTracker-1.0.0-Setup.exe'))
+  Log ("    " + (Join-Path $dest ((Get-ChildItem -LiteralPath $dest -Filter 'BeybladeTracker-*-Setup.exe' | Select-Object -First 1).Name)))
   Log ''
   Log ("完成，結果已寫入 " + $out)
   exit 1

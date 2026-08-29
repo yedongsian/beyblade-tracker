@@ -4,7 +4,7 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File <驗收資料夾>\install-with-log.ps1
 
 $base      = $PSScriptRoot
-$installer = Join-Path $base 'BeybladeTracker-1.0.0-Setup.exe'
+$installer = Join-Path $base ((Get-ChildItem -LiteralPath $base -Filter 'BeybladeTracker-*-Setup.exe' | Select-Object -First 1).Name)
 $log       = Join-Path $base 'install-testdarren.log'
 
 Write-Host '=== 前置診斷 ===' -ForegroundColor Cyan

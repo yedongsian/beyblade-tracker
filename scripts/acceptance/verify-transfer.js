@@ -33,7 +33,12 @@ console.log('appVersion   : ' + payload.appVersion);
 console.log('schemaVersion: ' + payload.schemaVersion);
 console.log('exclusions   : ' + JSON.stringify(payload.exclusions));
 
-if (payload.appVersion !== '1.0.0') problems.push('appVersion 不是 1.0.0，實得 ' + payload.appVersion);
+// The point of this check is that the bundle records a version at all and that it matches the
+// install it came from - not that it is any particular number. Pass the expected version as the
+// second argument when checking a bundle from a specific build.
+const expectedVersion = process.argv[3] || null;
+if (!/^d+.d+.d+$/.test(String(payload.appVersion || ''))) problems.push('appVersion 不是版本號格式，實得 ' + payload.appVersion);
+else if (expectedVersion && payload.appVersion !== expectedVersion) problems.push('appVersion 不是 ' + expectedVersion + '，實得 ' + payload.appVersion);
 if (!Array.isArray(payload.exclusions) || !payload.exclusions.length) problems.push('缺少 exclusions 宣告');
 
 console.log('');

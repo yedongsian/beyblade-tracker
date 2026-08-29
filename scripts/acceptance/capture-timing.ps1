@@ -1,6 +1,13 @@
 ﻿# 在「測試帳號」執行：抓首次啟動的實際耗時證據。
 #   powershell -NoProfile -ExecutionPolicy Bypass -File <驗收資料夾>\capture-timing.ps1
 
+
+# 版本不寫死：先讀已安裝的 current.json，讀不到就取 versions 下的第一個目錄。
+# 2026-08-29 升 1.0.1 前，這些腳本共有 17 處寫死的 1.0.0，升版會全部失效。
+$btInstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
+$installedVersion = $(try { (Get-Content -LiteralPath (Join-Path $btInstallRoot 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+if (-not $installedVersion) { $installedVersion = (Get-ChildItem -LiteralPath (Join-Path $btInstallRoot 'versions') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).Name }
+
 $out     = (Join-Path $PSScriptRoot 'startup-timing.txt')
 $userDir = Join-Path $env:LOCALAPPDATA 'BeybladeTracker'
 $appDir  = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
@@ -12,7 +19,7 @@ Log ("=== 首次啟動耗時證據  " + (Get-Date).ToString('o') + " ===")
 Log ''
 
 Log '--- 關鍵時間戳 ---'
-$appVer = Join-Path $appDir 'versions\1.0.0'
+$appVer = Join-Path $appDir "versions\$installedVersion"
 if (Test-Path -LiteralPath $appVer) {
   Log ("安裝目錄建立   : " + (Get-Item -LiteralPath $appVer).CreationTime.ToString('o'))
 }

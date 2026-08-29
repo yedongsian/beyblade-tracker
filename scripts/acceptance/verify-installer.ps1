@@ -10,7 +10,7 @@
 # MISMATCH. Keeping the expectation beside the artifact removes that whole class of mistake.
 $ErrorActionPreference = 'Stop'
 
-$installer = Join-Path $PSScriptRoot 'BeybladeTracker-1.0.0-Setup.exe'
+$installer = Join-Path $PSScriptRoot ((Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'BeybladeTracker-*-Setup.exe' | Select-Object -First 1).Name)
 $manifest  = Join-Path $PSScriptRoot 'SHA256.txt'
 
 if (-not (Test-Path -LiteralPath $installer)) {

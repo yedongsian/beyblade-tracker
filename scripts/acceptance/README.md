@@ -42,6 +42,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 | `a10-uninstall-keep.ps1` | A-10 解除安裝並保留資料 |
 | `a11-uninstall-delete.ps1` | A-11 解除安裝並刪除資料 ⚠ 破壞性 |
 | `capture-timing.ps1` / `diagnose-service.ps1` | 啟動耗時與服務故障診斷 |
+| `update-test-setup.ps1` | 更新驗收前置：檢查版本與公鑰、寫入兩個環境變數並**讀回驗證** |
+| `update-test-check.ps1` | 更新前／後的版本與資料筆數快照（`-Label`），附加到 `update-test-counts.txt` |
+| `update-test-rollback.ps1` | 更新回滾（設定頁沒有回滾按鈕時才需要） |
 | `db-counts.mjs` / `bundle-counts.mjs` / `verify-transfer.js` | 以唯讀方式讀取 DB 與移機檔的筆數與完整性 |
 
 ## 設計上要知道的事
@@ -62,6 +65,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 
 **破壞性腳本會先備份。** `a11-uninstall-delete.ps1` 在刪除前把使用者資料複製到
 `a11-safety-copy`。該備份僅供意外時還原，驗收判定本身不依賴它。
+
+**不要叫人從 Markdown 複製指令貼進主控台。** `UPDATE-TEST.md` 原本要人手動貼上一段
+多行的 PEM 公鑰；使用者在 VM 裡用純文字編輯器開啟，第一段就卡住。設定與量測改成
+`update-test-setup.ps1` 之後，文件裡不再有任何需要複製的指令 —— 只剩下一行固定格式的
+`powershell -File`。凡是「要精確輸入」的東西都應該是腳本。
 
 ## 與自動化測試的關係
 

@@ -17,53 +17,41 @@
 
 ## 前置：先讀這一段
 
-**公鑰必須設定，否則一定失敗。** 程式的簽章公鑰來自 `UPDATE_PUBLIC_KEY` 環境變數，
-預設是空的；沒有公鑰時 `validateUpdateManifest` 會直接丟 `BT-UPD-003`（更新無法驗證）。
+**這份文件不需要你複製貼上任何指令。** 設定與量測都做成腳本了 —— 之前叫人從 Markdown
+複製多行 PEM 公鑰貼進主控台，那本來就是錯的做法。
 
-> ⚠ 這本身是一個**產品問題**，不是測試步驟的麻煩：公鑰是公開資訊，本來就該內建在產品裡。
-> 現在的設計等於一般使用者永遠無法驗證更新。已記入待辦，發佈前要處理。
-> 本次測試先用環境變數繞過。
+執行腳本一律用這個格式（`Z:` 是 VM 裡的共用資料夾磁碟機）：
 
-其餘與前幾輪相同：`Z:` 是網路磁碟機，`.ps1` 一律用
-`powershell -NoProfile -ExecutionPolicy Bypass -File Z:\<script>.ps1`；
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\<檔名>.ps1
+```
+
 本機帳號登入要打 `.\AcceptanceUser`。
+
+> ⚠ **已知產品問題**：程式的簽章公鑰來自 `UPDATE_PUBLIC_KEY` 環境變數，預設是空的；
+> 沒有公鑰時會直接丟 `BT-UPD-003`。公鑰是公開資訊，本來就該內建在產品裡 ——
+> 現在的設計等於一般使用者永遠無法驗證更新。已記為 `BT-UPD-002`（P0），發佈前要處理。
+> **本次測試用環境變數繞過，所以這一輪的通過不等於「出貨產品能驗簽」。**
 
 ---
 
 ## 步驟 1：還原 S1，回到 1.0.0 狀態
 
-VirtualBox → 快照 → 選 **`S1-with-chrome`** → 還原。
-
-登入 `.\AcceptanceUser`，確認目前是 1.0.0：
-
-```powershell
-Get-Content "$env:LOCALAPPDATA\Programs\Beyblade Tracker\current.json"
-```
-
-應顯示 `{"version":"1.0.0"}`。**如果顯示 1.0.1，代表還原到錯誤的快照。**
+VirtualBox → 快照 → 選 **`S1-with-chrome`** → 還原，然後登入 `.\AcceptanceUser`。
 
 ---
 
-## 步驟 2：設定兩個環境變數
+## 步驟 2：跑前置設定腳本
 
-`setx` 對多行的 PEM 會出問題，所以公鑰用 PowerShell 設定：
-
-```powershell
-[Environment]::SetEnvironmentVariable('UPDATE_MANIFEST_URL', 'https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.1/release-manifest.json', 'User')
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-setup.ps1
 ```
 
-```powershell
-[Environment]::SetEnvironmentVariable('UPDATE_PUBLIC_KEY', (Get-Content 'Z:\manifest-public-key.pem' -Raw), 'User')
-```
+這支腳本會：確認目前版本是 1.0.0 → 檢查公鑰檔（並確認不含私鑰）→ 寫入兩個環境變數 →
+**讀回來驗證**（特別是公鑰的換行有沒有掉）。
 
-確認寫進去了：
-
-```powershell
-[Environment]::GetEnvironmentVariable('UPDATE_MANIFEST_URL','User')
-([Environment]::GetEnvironmentVariable('UPDATE_PUBLIC_KEY','User') -split "`n").Count
-```
-
-第二行應為 **3 以上**（BEGIN／內容／END）。若為 1，表示換行遺失，請重設。
+畫面出現 `=== 前置設定完成 ===` 才往下走。若有 `>>>` 開頭的行，先解決它 ——
+帶著錯誤往下走只會得到 `BT-UPD-003`。
 
 ---
 
@@ -75,6 +63,8 @@ Get-Content "$env:LOCALAPPDATA\Programs\Beyblade Tracker\current.json"
 2. 開始功能表 →「**Beyblade Tracker**」（會重新啟動服務並開管理頁）
 
 等服務就緒（VM 上約 30～60 秒）。
+
+> 這一步漏掉，整輪都白做，而且症狀是設定頁顯示「正式更新來源尚未設定」。
 
 ---
 
@@ -115,13 +105,11 @@ Get-Content "$env:LOCALAPPDATA\Programs\Beyblade Tracker\current.json"
 
 ## 步驟 6 ⭐ 執行更新
 
-**先記下目前的資料筆數**，等一下要比對：
+**先記錄更新前的狀態**：
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8787/health | Select-Object -ExpandProperty counts
 ```
-
-把 `products` / `offers` / `events` / `sources` 抄下來。
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 更新前
+```
 
 然後回設定頁按「**改為現在更新**」→「**安裝更新**」，確認提示後觀察：
 
@@ -140,16 +128,17 @@ Invoke-RestMethod http://127.0.0.1:8787/health | Select-Object -ExpandProperty c
 
 等服務重新就緒後：
 
-```powershell
-Get-Content "$env:LOCALAPPDATA\Programs\Beyblade Tracker\current.json"
-Invoke-RestMethod http://127.0.0.1:8787/health | Select-Object -ExpandProperty counts
 ```
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 更新後
+```
+
+兩段會寫在同一個 `update-test-counts.txt` 裡，直接上下對照。
 
 | 檢查 | 預期 |
 | --- | --- |
-| `current.json` | `{"version":"1.0.1"}` |
-| `/health` 的 `release.version` | `1.0.1` |
-| **資料筆數** | **與步驟 6 記下的相同**（更新不得動到使用者資料） |
+| `current.json` 版本 | `1.0.1` |
+| `/health` 回報版本 | `1.0.1` |
+| **資料筆數** | **與「更新前」那段完全相同**（更新不得動到使用者資料） |
 | 更新橫幅 | **消失**（已經是最新） |
 | 設定頁 | 顯示「目前已是最新版本。」 |
 
@@ -159,17 +148,23 @@ Invoke-RestMethod http://127.0.0.1:8787/health | Select-Object -ExpandProperty c
 
 ## 步驟 8：測 rollback
 
-設定頁如有「**回滾更新**」按鈕就按它；沒有的話用命令列：
+設定頁如有「**回滾更新**」按鈕就按它。沒有的話跑：
 
-```powershell
-& "$env:LOCALAPPDATA\Programs\Beyblade Tracker\versions\1.0.1\runtime\node.exe" "$env:LOCALAPPDATA\Programs\Beyblade Tracker\versions\1.0.1\bin\rollback.js"
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-rollback.ps1
+```
+
+跑完再記錄一次：
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 回滾後
 ```
 
 | 檢查 | 預期 |
 | --- | --- |
-| `current.json` | 回到 `{"version":"1.0.0"}` |
+| 版本 | 回到 `1.0.0` |
 | 服務 | 能正常啟動 |
-| **資料** | **仍然完整** |
+| **資料筆數** | **仍與「更新前」相同** |
 
 > rollback 會用更新前自動建立的備份還原資料庫，所以筆數應與更新前一致。
 
@@ -177,16 +172,15 @@ Invoke-RestMethod http://127.0.0.1:8787/health | Select-Object -ExpandProperty c
 
 ## 步驟 9：回報
 
-請告訴我：
+把 `Z:\update-test-counts.txt` 整份給我，另外回報：
 
 | # | 回報 |
 | --- | --- |
 | 1 | 步驟 4 的橫幅**有沒有在非設定頁出現**、看到的實際文字 |
 | 2 | 步驟 5 延後後橫幅是否改變措辭 |
 | 3 | 步驟 6 各階段的畫面文字，特別是**有沒有出現任何 `BT-UPD-*` 代碼** |
-| 4 | 步驟 7 的版本與**資料筆數前後對照** |
-| 5 | 步驟 8 rollback 是否成功、資料是否完整 |
-| 6 | 任何非預期的視窗或錯誤 |
+| 4 | 步驟 8 rollback 是否成功 |
+| 5 | 任何非預期的視窗或錯誤 |
 
 ---
 
@@ -194,10 +188,11 @@ Invoke-RestMethod http://127.0.0.1:8787/health | Select-Object -ExpandProperty c
 
 | 症狀 | 可能原因 |
 | --- | --- |
-| `BT-UPD-003` 更新無法驗證 | **公鑰沒設定或換行遺失** —— 回步驟 2 檢查行數 |
+| `BT-UPD-003` 更新無法驗證 | 公鑰沒設定或換行遺失 —— 重跑步驟 2 的腳本，看它的驗證段 |
 | `BT-UPD-002` 無法取得更新資訊 | VM 沒有網路，或 manifest 網址打錯 |
 | `BT-UPD-004` 更新檔案不符 | SHA-256 對不上；把畫面截圖給我，這代表產物或 manifest 有問題 |
-| 設定頁顯示「正式更新來源尚未設定」 | `UPDATE_MANIFEST_URL` 沒生效 —— 服務沒重啟，或變數設在錯的範圍 |
+| 設定頁顯示「正式更新來源尚未設定」 | **服務沒重啟**（步驟 3），或變數設在錯的範圍 |
+| 腳本說 `/health 無回應` | 服務還在啟動；等 30 秒重跑 |
 
 有任何代碼或看起來不對的地方就截圖，不要硬推下去。
 

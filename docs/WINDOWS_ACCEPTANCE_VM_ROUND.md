@@ -577,3 +577,62 @@ https://www.hlj.com/product/TKT09613
 
 完成後 `BT-UX-002`／`BT-UX-003` 可結案，**RUNBOOK 第 13 節的 clean VM gate 也才真正滿足** ——
 那是路線 1 從頭到尾沒達成過的。
+
+---
+
+## 階段 3 結果（2026-08-29）
+
+安裝與六項檢查中的五項已完成。**A 段主流程步驟 4～9 尚未執行**，見文末「尚未完成」。
+
+### 安裝與啟動
+
+| 檢查 | 結果 | 證據 |
+| --- | --- | --- |
+| 安裝 | **PASS** | `Installation process succeeded.` 17:00:55；帳號 `AcceptanceUser`（標準使用者） |
+| **首次啟動耗時** | **PASS** | 安裝完成 17:00:56 → 服務 `startedAt` 17:01:29，**33.7 秒**，在 60 秒預算內，**未出現任何對話框** |
+| D-3 三項 | **PASS** | 個人 `sources.json` 已排除／`sources.example.json` 在／fixtures 已打包，皆為 True |
+| `/health` | **PASS** | `ok`，來源僅 `demo-fixture`（啟用）與 `example-jsonld`（停用） |
+| 資料庫 | **PASS** | `integrity ok`、`schemaVersion 13` |
+
+> `sources.example.json` 顯示 1117 bytes（先前紀錄為 1080）。已查核：**內容未變**，
+> 37 行剛好對應 LF→CRLF 的 37 bytes 差異，屬換行符轉換，非內容變動。
+
+### 六項修正的實機複驗
+
+| # | 項目 | 結果 | 實際看到的文字 |
+| --- | --- | --- | --- |
+| ① | **D-9 排版** | **PASS** | English 介面下文字欄回到約三分之二寬，按鈕在自己的欄位內換行；日文同樣正常 |
+| ② | **卡片內回饋** | **PASS** | 「這間商店已有一個探索工作正在進行。」以紅字出現在 **Hlj 那張卡片內**，非頁面頂端狀態列 |
+| ③ | **冷卻不再誤報** | **PASS** | `BT-SRC-003`「**仍在冷卻中**」／「這個來源剛剛才手動檢查過。」＋兩條復原指引。**不是** `BT-LCH-999` |
+| ④ | **探索守門** | **PASS** | `BT-SRC-005`「**探索已在執行中**」／「這間商店已有一個探索工作正在進行。」。**不是** `BT-LCH-999` |
+| ⑤ | **dns 建議語** | **PASS（三語）** | 繁中「找不到這個網域，**但這個來源先前抓取成功過**…通常代表這台電腦目前沒有網路連線。」／English "…but this source has fetched successfully before…the machine has no network connection right now."／日本語「…この取得元は以前に取得成功しているため…」。三語皆展開「技術細節」可見 `getaddrinfo ENOTFOUND www.hlj.com` |
+| ⑥ | **Recipe 三語** | **未觀察到** | 見下 |
+
+**③④ 是 D-8 的兩條路徑，②是它們的觸發源。** 三者同時通過，代表 D-8 在使用者實際會走的兩條路徑上都已解除，
+而且造成連按的原因也一併移除。
+
+#### ⑥ 為什麼沒看到
+
+Hlj 的探索**成功找到 7 個候選商品**（卡片顯示「7 個待審核」），因此 `updateRecipe(db, siteId, true)`
+清除了 recipe 錯誤 —— **卡片上根本沒有 Recipe 訊息可看**。這不是修正失效，是條件不成立。
+
+該路徑目前由自動化涵蓋（`test/web.test.js` 的三語 Recipe 測試，反向確認過）。
+若要實機補驗，需要一個**探索後找不到任何候選商品**的來源。
+
+### 尚未完成
+
+`Z:` 於 2026-08-29 只產出 `install-testdarren.log`、`r2-install-result.txt`、`r2-timing-result.txt` 三個檔。
+以下腳本未產生新結果檔，因此**不列為已驗**：
+
+| 缺 | 對應 |
+| --- | --- |
+| `a2-result.txt` | 步驟 6 五個開始功能表捷徑 |
+| 新的 `a6-dialog-result.txt` | 步驟 7 錯誤對話框（現存為 08-17 的） |
+| `a3-result.txt` | 步驟 8 登入自動啟動 |
+| `a10-result.txt`／`a11-result.txt` | 步驟 9 兩個解除安裝分支 |
+
+另外 runbook 步驟 4（首次啟動導覽，儲存後不應再跳出）亦無紀錄。
+
+**這些在路線 1 都已於 2026-08-11 通過**，但在乾淨 VM 上尚未走過 ——
+而「乾淨 VM 上跑完整 A 段」正是 RUNBOOK 第 13 節 clean VM gate 的內容，
+因此該 gate **仍未滿足**。

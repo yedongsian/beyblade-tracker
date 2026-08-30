@@ -36,7 +36,7 @@ import { TelegramNotifier } from '../notify/telegram.js';
 import { createTransferBundle, stageTransferImport } from '../maintenance/transfer.js';
 import {
   acquireRollbackLock, checkForUpdate, clearDeferredUpdate, deferUpdate, getPostUpdateHealth, getRollbackLeaseStatus, getRollbackLifecycle, getRollbackStatus, getUpdateState, isDeferredUpdate, launchPreparedUpdate,
-  finishRollbackFailure, prepareConfirmedUpdate, recordUpdateCheck, releaseRollbackLock, UpdateError, validateUpdateConfirmation, writeRollbackStatus,
+  finishRollbackFailure, prepareConfirmedUpdate, recordUpdateCheck, releaseRollbackLock, UpdateError, validateUpdateConfirmation, writeRollbackStatus, confirmUpdateHandover,
 } from '../release/update.js';
 import { releaseInfo } from '../release/version.js';
 import { createDiagnosticsBundle } from '../maintenance/diagnostics.js';
@@ -102,7 +102,7 @@ export function healthData(db, config = {}) {
   };
 }
 
-export const ACTIVE_UPDATE_PHASES = new Set(['checking', 'downloading', 'installing']);
+export const ACTIVE_UPDATE_PHASES = new Set(['checking', 'downloading', 'installing', 'verifying']);
 export const UPDATE_OPERATION_TTL_MS = 10 * 60 * 1000;
 export const UPDATE_OPERATION_MAX_TERMINAL = 20;
 
@@ -752,6 +752,13 @@ export function createWebServer(db, options = {}) {
             });
             operation.phase = 'installing';
             await launchPreparedUpdate(prepared);
+            // The installer exiting 0 only means files were written. Nothing is 'completed' until the
+            // new build is the one serving - see confirmUpdateHandover.
+            operation.phase = 'verifying';
+            await confirmUpdateHandover({
+              targetVersion: update.manifest.version,
+              probeVersion: options.probeServedVersion || null,
+            });
             operation.phase = 'completed';
           } catch (error) {
             operation.phase = 'failed';

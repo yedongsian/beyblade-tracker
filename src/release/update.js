@@ -643,6 +643,38 @@ export async function launchPreparedUpdate(prepared, { spawnImpl = spawn } = {})
   });
 }
 
+export const UPDATE_HANDOVER_TIMEOUT_MS = 120_000;
+
+/**
+ * The success criterion used to be the installer's exit code, which says the files were written and
+ * nothing at all about whether the new build is the one now serving. BT-REL-001 lived in exactly
+ * that gap: the installer exited 0, the restart never happened, and the user was told the update had
+ * completed while 1.0.0 kept answering on 8787 and kept offering the same update.
+ *
+ * The check that closes it is inverted, because the process running it is the one being replaced: a
+ * handover that works stops this service, so reaching the deadline is itself the failure. The health
+ * probe is only there so a handover we somehow survive is still read as success rather than a false
+ * alarm.
+ */
+export async function confirmUpdateHandover({
+  targetVersion, currentVersion = APP_VERSION, probeVersion = null,
+  timeoutMs = UPDATE_HANDOVER_TIMEOUT_MS, pollMs = 2_000,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now,
+} = {}) {
+  if (!targetVersion) throw updateError('BT-UPD-008', '缺少目標版本，無法確認更新是否生效。');
+  if (currentVersion === targetVersion) return { ok: true, servedVersion: currentVersion };
+  const deadline = now() + timeoutMs;
+  let served = null;
+  while (now() < deadline) {
+    if (probeVersion) {
+      try { served = await probeVersion(); } catch { served = null; }
+      if (served && served === targetVersion) return { ok: true, servedVersion: served };
+    }
+    await sleep(pollMs);
+  }
+  throw updateError('BT-UPD-008', `更新已安裝，但服務仍在執行 ${currentVersion}。`);
+}
+
 export function rollbackUpdate(config, { pidFile } = {}) {
   if (!existsSync(config.update.rollbackFile)) throw updateError('BT-UPD-007', '找不到可回滾的版本紀錄。');
   const record = JSON.parse(readFileSync(config.update.rollbackFile, 'utf8'));

@@ -54,8 +54,25 @@ export function parseProcessCreatedAt(value) {
   return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second), Number(fraction.padEnd(3, '0').slice(0, 3)));
 }
 
+// An update installs the new version beside the old one and flips current.json, so from that
+// moment the running service and the code asking about it sit in different version directories.
+// Comparing exact paths therefore returns 'other' for our own service on every update, and refusing
+// to stop it means the port is never released and the new version never binds - a permanent
+// deadlock, not a race. Identity has to mean "a Tracker service under this install root", not
+// "the same path". The install root and the required tail still have to match exactly, so a
+// process that merely reused the PID is still rejected.
+function trackerVersionSegment(path, installRoot, tail) {
+  const prefix = `${normalizeWindowsPath(installRoot)}\\versions\\`;
+  if (!path || !path.startsWith(prefix)) return null;
+  const rest = path.slice(prefix.length);
+  const separator = rest.indexOf('\\');
+  if (separator <= 0 || rest.slice(separator) !== tail) return null;
+  return rest.slice(0, separator);
+}
+
 export function classifyServiceProcess(identity, {
-  pid, status, executablePath, serviceFile, startedAt, maxStartupMs = 120_000, maxClockSkewMs = 2_000,
+  pid, status, executablePath, serviceFile, startedAt, installRoot = null,
+  maxStartupMs = 120_000, maxClockSkewMs = 2_000,
 } = {}) {
   if (!identity || !status || !Number.isInteger(pid) || pid <= 0 || status.service !== 'beyblade-tracker' ||
       status.pid !== pid || !STATUS_PHASES.has(status.status)) return 'unknown';
@@ -68,8 +85,15 @@ export function classifyServiceProcess(identity, {
   const recordedStartedAt = parseProcessCreatedAt(startedAt || status.startedAt);
   if (!Number.isInteger(processId)) return 'unknown';
   if (processId !== pid) return 'other';
-  if (actualExecutable && expectedExecutable && actualExecutable !== expectedExecutable) return 'other';
-  if (commandLine && expectedService && !commandLine.includes(expectedService)) return 'other';
+  if (installRoot) {
+    const version = trackerVersionSegment(actualExecutable, installRoot, '\\runtime\\node.exe');
+    if (!version) return 'other';
+    const siblingService = `${normalizeWindowsPath(installRoot)}\\versions\\${version}\\bin\\service.js`;
+    if (!commandLine.includes(siblingService)) return 'other';
+  } else {
+    if (actualExecutable && expectedExecutable && actualExecutable !== expectedExecutable) return 'other';
+    if (commandLine && expectedService && !commandLine.includes(expectedService)) return 'other';
+  }
   if (!actualExecutable || !expectedExecutable || !commandLine || !expectedService ||
       !Number.isFinite(processStartedAt) || !Number.isFinite(recordedStartedAt)) return 'unknown';
   // The service records startedAt after its own module load, so the OS creation time must come first: a PID

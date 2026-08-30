@@ -58,7 +58,7 @@ UI 不顯示 stack trace、Token、完整 URL、DB row、private path 或 signin
 
 ## 4. 更新與 rollback
 
-`BT-UPD-001` 至 `BT-UPD-007` 已由 BT-UPD-001 的 update flow 映射。顯示內容只包含代碼與安全 recovery；不包含 manifest URL、檔案 path、stack、憑證或備份位置。Windows clean VM 安裝／rollback 仍是 release gate 驗收。
+`BT-UPD-001` 至 `BT-UPD-008` 已由 BT-UPD-001 的 update flow 映射。顯示內容只包含代碼與安全 recovery；不包含 manifest URL、檔案 path、stack、憑證或備份位置。Windows clean VM 安裝／rollback 仍是 release gate 驗收。
 
 | Code | 意義 | 使用者處理 |
 |---|---|---|
@@ -69,6 +69,7 @@ UI 不顯示 stack trace、Token、完整 URL、DB row、private path 或 signin
 | `BT-UPD-005` | 已驗證 installer 無法啟動或安裝失敗。 | 保留錯誤代碼，重新啟動 Windows 後再試一次；仍失敗則回報。 |
 | `BT-UPD-006` | 更新後 health check 失敗，系統建議 rollback。 | 選擇 rollback；不要刪除更新前 backup。 |
 | `BT-UPD-007` | Rollback 失敗。 | 停止 Tracker，不要修改資料庫；立即回報並附 diagnostics。 |
+| `BT-UPD-008` | 更新已安裝，但服務仍在執行舊版。 | 從開始功能表重新啟動 Tracker；若版本仍未改變請回報。 |
 
 ## 5. 資料與移機
 

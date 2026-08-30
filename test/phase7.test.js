@@ -361,6 +361,61 @@ test('every PowerShell script carrying localized text has a UTF-8 BOM', () => {
   }
 });
 
+// The update round asked the operator to paste a multi-line PEM public key, read out of a Markdown
+// file, into a PowerShell console. The console refuses multi-line input, so step one was unrunnable.
+// The fix is a double-clickable menu; these tests keep the document from growing commands again and
+// keep the menu pointing at scripts that exist.
+// chcp 65001 was not enough, and believing it was is what this assertion used to encode. cmd.exe
+// seeks in a batch file by byte offset, so multi-byte UTF-8 desynchronises the parser: on the VM,
+// entries [3] [4] and [7] vanished and their fragments ran as commands ("'步驟' is not recognized").
+// The .cmd is now a pure-ASCII stub and every localized string lives in the PowerShell menu.
+test('the launcher stub stays pure ASCII so cmd.exe cannot desynchronise', () => {
+  const bytes = readFileSync(new URL('../scripts/acceptance/RUN-UPDATE-TEST.cmd', import.meta.url));
+  // A BOM on line 1 of a .cmd is echoed by cmd.exe as a stray character before @echo off.
+  assert.notDeepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'a .cmd must not carry a BOM');
+  assert.ok(bytes.every((b) => b < 0x80), 'a single non-ASCII byte can drop later menu entries');
+  const cmd = bytes.toString('ascii');
+  assert.match(cmd, /^@echo off\r\n/, 'cmd files need CRLF and must start with @echo off');
+  assert.doesNotMatch(cmd, /chcp/, 'no codepage switch: the .cmd carries no text of its own');
+  assert.match(cmd, /update-test-menu\.ps1/, 'the stub must hand off to the PowerShell menu');
+});
+
+// A regex matching a Windows path needs its backslashes doubled. Written singly, [^\] escapes the
+// closing bracket instead, the class never terminates, and -match throws at parse time - which the
+// first diagnostic run swallowed, silently dropping two of its findings while still looking like a
+// complete report. JS rejects the same construct, so compiling the literals here catches it.
+test('regex literals in the acceptance scripts actually compile', () => {
+  const dir = new URL('../scripts/acceptance/', import.meta.url);
+  const scripts = readdirSync(dir).filter((name) => name.endsWith('.ps1'));
+  let checked = 0;
+  for (const name of scripts) {
+    const source = readFileSync(new URL(name, dir), 'utf8');
+    for (const [, literal] of source.matchAll(/-match\s+'([^']*)'/g)) {
+      checked += 1;
+      assert.doesNotThrow(() => new RegExp(literal), `${name}: -match '${literal}' is not a valid regex`);
+    }
+  }
+  assert.ok(checked > 0, 'the extraction must still find the -match literals it is guarding');
+});
+
+test('every script the menu offers exists', () => {
+  const dir = new URL('../scripts/acceptance/', import.meta.url);
+  const menu = readFileSync(new URL('update-test-menu.ps1', dir), 'utf8');
+  const referenced = [...menu.matchAll(/腳本 = '([^']+\.ps1)'/g)].map((m) => m[1]);
+  assert.ok(referenced.length >= 5, 'the menu must still dispatch to the update scripts');
+  for (const script of new Set(referenced)) {
+    assert.ok(existsSync(new URL(script, dir)), `${script} is on the menu but does not exist`);
+  }
+});
+
+test('the update runbook contains no command for the operator to retype', () => {
+  const doc = readFileSync(new URL('../docs/WINDOWS_UPDATE_VERIFICATION.md', import.meta.url), 'utf8');
+  assert.match(doc, /RUN-UPDATE-TEST\.cmd/, 'the document must point at the launcher');
+  // Every step is a numbered menu choice now. A reintroduced command line is the regression.
+  assert.doesNotMatch(doc, /powershell -NoProfile/, 'steps must be menu choices, not pasted commands');
+  assert.doesNotMatch(doc, /SetEnvironmentVariable/, 'the PEM paste is what made step 1 unrunnable');
+});
+
 test('Windows PowerShell 5.1 launcher uses a UTF-8 BOM for localized text', () => {
   const launcher = readFileSync(new URL('../release/windows/launcher.ps1', import.meta.url));
   assert.deepEqual([...launcher.subarray(0, 3)], [0xef, 0xbb, 0xbf]);

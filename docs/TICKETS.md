@@ -26,6 +26,9 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | ID | Priority | Status | 標題 | 依賴／阻塞 |
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
+| BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
+| BT-REL-001 | P0 | Fixed（待 VM 複驗） | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 成功判準仍待改 |
+| BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -68,6 +71,134 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Update failure 可 rollback，且使用者資料完整。
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
+
+### BT-UX-004 — 更新卡片對一般使用者不可讀
+
+- Priority：P1
+- Status：Proposed
+- Owner：待指定
+- 背景：2026-08-29 VM 實測截圖。`ui.js:133` 這樣組字串：
+
+  ```js
+  message('updateAvailable',{version}) + '
+' + publisher + ' · ' + bytes(size) + ' · ' + publishedAt + '
+' + releaseNotes
+  ```
+
+- 兩個問題，畫面上長這樣：
+  `可更新至 1.0.1。 Beyblade Tracker · 26.2 MB · 2026-08-29T16:05:53.570Z Beyblade Tracker 1.0.1`
+
+  1. **`publishedAt` 直接輸出原始 ISO 時間戳**。這是一個主打「使用者不需要碰技術工具」的產品，
+     卻在主要畫面上給他 `2026-08-29T16:05:53.570Z`。應依介面語言格式化。
+  2. **換行被吃掉**。用 `textContent` 塞 `
+`，但 `#update-details` 沒有 `white-space: pre-line`，
+     於是四段資訊（版本／發行者／大小／時間／發佈說明）擠成一行流水句。
+- 附帶：`releaseNotes` 目前是「Beyblade Tracker 1.0.1」，與 `publisher` 重複，讀起來像壞掉。
+- 這兩項都是純顯示層，與 `BT-REL-001` 無關，可各自獨立修。
+
+### BT-REL-001 — 更新後服務仍在跑舊版程式碼
+
+- Priority：P0
+- Status：Investigating
+- Owner：待指定
+- 背景：2026-08-29 在 clean VM 實跑更新驗收，1.0.0 → 1.0.1。更新流程回報成功，但同一次量測中：
+
+  | 來源 | 版本 |
+  | --- | --- |
+  | `current.json` | 1.0.1 |
+  | `/health` 的 `release.version` | **1.0.0** |
+
+- `/health` 的版本來自 `src/release/version.js`，讀的是**執行中程式碼樹**的 `package.json`。
+  所以這代表：安裝已經換版，但 **8787 仍由 1.0.0 的行程持有**。
+- **使用者影響**：畫面顯示「更新已完成」，使用者卻仍在跑舊版，而且沒有任何提示。
+  這比更新失敗更糟 —— 失敗至少看得見。
+- **2026-08-29 診斷結果（`update-test-diagnose.txt`），根因已確認：**
+
+  | 觀測 | 值 |
+  | --- | --- |
+  | 監聽 8787 的行程 | 只有 PID 4448，指令列是 `versions\1.0.0\bin\service.js` |
+  | 該行程啟動時間 | 17:03:30 UTC —— **早於**更新 |
+  | `tracker.pid` | 4448，存活 |
+  | Beyblade node 行程總數 | **1 個** |
+  | 版本目錄 | 1.0.0 與 1.0.1 都在，`package.json` 都正確 |
+  | log：`update / apply` | 17:08:18 **status=success**，durationMs 32638 |
+  | log：apply 之後的 `service shutting down` | **無** |
+  | log：apply 之後的 `web app on http://127.0.0.1:8787` | **無** |
+
+- 先前假設「舊行程沒退場、新行程綁不上 8787」**不成立** —— 根本沒有第二個行程，
+  舊行程也從未收到停止訊號。**重啟從頭到尾沒有發生過。**
+- **安全網失效於同一個單點**：更新後健康檢查（`update.js:182`）確實會比對
+  `targetVersion === currentVersion`，但它**只在服務啟動時評估**。服務沒重啟 → 檢查沒跑 →
+  標記停在 `pending` → `rollbackOffered` 從未為真 → 使用者看到「更新已完成」且沒有回滾入口。
+  用來偵測「更新沒生效」的機制，和它要偵測的對象共用同一個失效點。
+- **成功判準過寬**：`launchPreparedUpdate`（`update.js:621`）在**安裝器離開代碼為 0** 時就
+  `resolve({ launched: true, installed: true })`。全程沒有任何一步確認新版本真的在服務。
+- **2026-08-29 分辨結果（`update-test-restart.txt`）：手動執行安裝器該執行的那一行，
+  服務完全沒有反應。** PID 4448 與其啟動時間 19:03:30 在前後兩次量測中一模一樣，
+  150 秒內連停止都沒發生。**所以問題在 restart 路徑本身，不在安裝器的 `[Run]`。**
+- **這個失敗天生是無聲的**：`launcher.vbs` 以 `shell.Run command, 0, False` 隱藏執行 PowerShell，
+  stdout、stderr 與離開代碼全部被丟棄。launcher.ps1 不論丟出哪一個 `BT-LCH-*`，
+  安裝器不看（`nowait`），使用者也看不到。這條路徑上沒有任何一處會留下痕跡。
+- **2026-08-29 根因確認（`update-test-launcher.txt`）。** 分層結果：前置檔案齊全、
+  `rollback.lock` 不存在，`launcher.ps1 -Action restart` 離開代碼 1、stderr 僅有 `BT-LCH-003`。
+- **根因在 `service-process.js:71`**：
+
+  ```js
+  if (actualExecutable && expectedExecutable && actualExecutable !== expectedExecutable) return 'other';
+  ```
+
+  `expectedExecutable` 是**目前執行中那份程式碼**的 node.exe 路徑。更新後 `current.json` 指向
+  1.0.1，於是跑的是 1.0.1 的 service-control，它的 expected 是 `versions\1.0.1\runtime\node.exe`；
+  但仍在服務的舊行程是 `versions\1.0.0\runtime\node.exe`。**兩者依定義必不相同。**
+
+- 判定鏈：`ownership='other'` → `resolveStopDecision` 回 `'refuse'` → `stop()` 回 false →
+  離開代碼非 0 → launcher 丟 `BT-LCH-003`。**舊服務永遠停不掉 → 連接埠永遠佔著 →
+  新版永遠起不來。這是永久性死結，不是競態。**
+- **本機可重現，不需要 VM**（以 VM 上的真實路徑與 PID 4448 餵入 `classifyServiceProcess`）：
+
+  ```
+  service-control 版本 1.0.1 -> ownership=other   stop=refuse
+  service-control 版本 1.0.0 -> ownership=owned   stop=graceful
+  ```
+
+- 這個檢查本身是對的：它防止殺掉一個剛好重用了該 PID 的無關行程。問題在它的身分模型是
+  **「同一條路徑」**，而正確的模型應該是**「同一個安裝下的任一已安裝版本」** ——
+  更新時舊服務必然來自另一個版本目錄，那正是它唯一必須處理、卻唯一處理不了的情況。
+- **2026-08-30 已修（放寬身分比對）。** `classifyServiceProcess` 新增選用的 `installRoot`；
+  有帶的時候，身分條件改為「執行檔位於 `<installRoot>\versions\<版本>\runtime\node.exe`，
+  且命令列含**同一個**版本的 `bin\service.js`」。防重用保護原封不動 —— 安裝根目錄與路徑尾端
+  仍要精確相符，只是不再要求版本相同。沒帶 `installRoot` 的呼叫端維持原本的嚴格比對。
+- 兩項測試，都做過反向檢查：VM 上的真實情境（1.0.1 的 service-control 必須能停 1.0.0 的服務），
+  以及五個「只差一點」的案例必須全部維持不可觸碰 —— 別的安裝根目錄、同目錄下的別的執行檔、
+  用我們的 node 跑別的腳本、執行檔與 service.js 版本不一致、比版本目錄更深的巢狀路徑。
+- **仍未做**：`launchPreparedUpdate` 的成功判準依然只看安裝器離開代碼，沒有確認新版本在服務。
+  這次是身分比對讓失敗現形；判準不改，下一個成因不同的回歸一樣會被回報成「更新已完成」。
+- 不論是哪一種，成功判準都必須改成「確認新版本在服務」，否則同類回歸不會再被抓到。
+- 資料面沒有問題：更新前後 13 項筆數完全一致。
+- 2026-08-29 補充證據（設定頁截圖，更新完成後）：綠色狀態列顯示「更新已完成，正在重新啟動服務
+  並執行健康檢查。」，但同一頁的「版本更新」卡片**仍然顯示「可更新至 1.0.1」並保留「安裝更新」按鈕**。
+- **後果不只是版本顯示錯**：使用者會再按一次「安裝更新」，然後再看到同樣的畫面 —— 更新迴圈，
+  而且每一輪都跟他說成功了。
+- 證據強度說明：截圖左側「版本：1.0.0」是**頁面載入時**伺服器渲染的，可能是更新前的殘留，
+  單獨不足以定案。決定性證據是 `update-test-check.ps1` 在 19:09 對 `/health` 的**即時呼叫**
+  回報 `1.0.0` —— 那是更新完成之後發出的新請求。
+
+
+### BT-UPD-002 — 把更新驗證公鑰內建到產物
+
+- Priority：P0
+- Status：Proposed
+- Owner：待指定
+- 背景：2026-08-29 撰寫更新驗收步驟時發現，`src/config.js:95` 的 `publicKey` 來自 `UPDATE_PUBLIC_KEY` 環境變數，**預設為空字串**。而 `validateUpdateManifest`（`update.js:86`）在沒有公鑰時直接丟 `BT-UPD-003`。
+- **使用者影響**：公鑰是公開資訊，本來就該隨產物出貨。現行設計等於**一般使用者永遠無法驗證更新** —— 除非他自己去設一個多行 PEM 的環境變數，而那與「不需要 PowerShell」的產品主張直接矛盾。
+- 這不是理論問題：更新鏈的驗收因此必須先手動設環境變數才能進行。
+- Scope：把公鑰以建置時內嵌（或隨 payload 出貨的檔案）方式提供，保留環境變數作為覆寫，供測試與金鑰輪替使用。
+- Out of scope：把**私鑰**放進產物或版控。
+- Acceptance criteria：
+  - 全新安裝在未設定任何環境變數的情況下，能完成一次成功的更新檢查與簽章驗證。
+  - 環境變數若有設定則優先，以便測試與輪替。
+  - 私鑰不在產物、不在版控、不在任何 log。
+  - 有測試涵蓋「未設定環境變數時仍能驗簽」。
 
 ### BT-P1-001 — 使 Local Web 測試不受 ambient proxy 影響
 

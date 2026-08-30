@@ -11,7 +11,7 @@ $items = [ordered]@{
   '1' = @{ 名稱 = '步驟 2 - 前置設定（檢查版本與公鑰、設定環境變數）'; 腳本 = 'update-test-setup.ps1';    參數 = @() }
   '2' = @{ 名稱 = '步驟 6 - 記錄「更新前」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @('-Label', '更新前') }
   '3' = @{ 名稱 = '步驟 7 - 記錄「更新後」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @('-Label', '更新後') }
-  '4' = @{ 名稱 = '步驟 8 - 回滾到 1.0.0';                              腳本 = 'update-test-rollback.ps1'; 參數 = @() }
+  '4' = @{ 名稱 = '步驟 8 - 回滾到 1.0.1';                              腳本 = 'update-test-rollback.ps1'; 參數 = @() }
   '5' = @{ 名稱 = '步驟 8 - 記錄「回滾後」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @('-Label', '回滾後') }
   '6' = @{ 名稱 = '診斷：更新後版本對不上（current.json 與 /health 不同）'; 腳本 = 'update-test-diagnose.ps1'; 參數 = @() }
   '7' = @{ 名稱 = '診斷：手動重啟（分辨重啟壞掉 vs 安裝器沒觸發）';    腳本 = 'update-test-restart.ps1';  參數 = @() }

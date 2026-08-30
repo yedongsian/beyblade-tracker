@@ -8,14 +8,18 @@ $out = (Join-Path $PSScriptRoot 'update-test-setup.txt')
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
 function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encoding utf8 }
 
-$manifestUrl = 'https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.1/release-manifest.json'
+# 這一輪測 1.0.1 -> 1.0.2。1.0.0 -> 1.0.1 在 2026-08-29 實測失敗（BT-REL-001），
+# 修正在新版的 service-control 裡，所以 1.0.1 -> 1.0.2 才是第一條可能走通的路徑。
+$fromVersion = '1.0.1'
+$targetVersion = '1.0.2'
+$manifestUrl = "https://github.com/yedongsian/beyblade-tracker/releases/download/v$targetVersion/release-manifest.json"
 $keyFile     = Join-Path $PSScriptRoot 'manifest-public-key.pem'
 $appDir      = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
 
 Log ("=== 更新流程驗收 前置設定  " + $env:USERNAME + "  " + (Get-Date).ToString('o') + " ===")
 Log ''
 
-# --- 1. 目前安裝的版本必須是 1.0.0，否則測不出「發現新版」---
+# --- 1. 目前安裝的版本必須是 $fromVersion，否則測不出「發現新版」---
 Log '--- 1. 目前安裝的版本 ---'
 $currentPath = Join-Path $appDir 'current.json'
 if (-not (Test-Path -LiteralPath $currentPath)) {
@@ -27,13 +31,13 @@ if (-not (Test-Path -LiteralPath $currentPath)) {
 }
 $installed = (Get-Content -LiteralPath $currentPath -Raw | ConvertFrom-Json).version
 Log ("current.json : $installed")
-if ($installed -eq '1.0.1') {
-  Log '>>> 已經是 1.0.1，無法測試「從舊版發現新版」。請還原 S1-with-chrome 快照後重跑。'
+if ($installed -eq $targetVersion) {
+  Log ">>> 已經是 $targetVersion，無法測試「從舊版發現新版」。請重做步驟 1。"
   Log ''
   Log ("完成，結果已寫入 " + $out)
   exit 1
 }
-if ($installed -ne '1.0.0') { Log ">>> 預期為 1.0.0，實得 $installed。請確認還原的是哪個快照。" }
+if ($installed -ne $fromVersion) { Log ">>> 預期為 $fromVersion，實得 $installed。請先依步驟 1 裝上 $fromVersion。" }
 
 # --- 2. 公鑰檔 ---
 Log ''

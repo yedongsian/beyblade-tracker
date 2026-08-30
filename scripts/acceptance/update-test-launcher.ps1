@@ -75,10 +75,16 @@ if (Test-Path -LiteralPath $launcher) {
 Log ''
 Log '--- 4. 直接執行 service-control.js restart（繞過 launcher）---'
 if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $control)) {
+  # launcher 會設的環境變數必須自己補上，否則 projectPaths() 把 userRoot 退回 cwd，
+  # 讀到不存在的 pid 檔後誤報「服務沒在跑」（2026-08-29 因此誤導了一輪診斷）。
+  $env:BEYBLADE_INSTALL_ROOT = $appDir
+  $env:BEYBLADE_APP_ROOT     = $appRoot
+  $env:BEYBLADE_USER_ROOT    = $userDir
+  Push-Location -LiteralPath $appRoot
   $prev = [Console]::OutputEncoding
   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
   try { & $node '--no-warnings' $control 'restart' 2>&1 | ForEach-Object { Log ("    " + $_) } }
-  finally { [Console]::OutputEncoding = $prev }
+  finally { [Console]::OutputEncoding = $prev; Pop-Location }
   Log ("離開代碼 : " + $LASTEXITCODE)
   Start-Sleep -Seconds 10
   Log ("執行後 /health : " + (ServedVersion))

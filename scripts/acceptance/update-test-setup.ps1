@@ -8,10 +8,16 @@ $out = (Join-Path $PSScriptRoot 'update-test-setup.txt')
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
 function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encoding utf8 }
 
-# 這一輪測 1.0.1 -> 1.0.2。1.0.0 -> 1.0.1 在 2026-08-29 實測失敗（BT-REL-001），
-# 修正在新版的 service-control 裡，所以 1.0.1 -> 1.0.2 才是第一條可能走通的路徑。
-$fromVersion = '1.0.1'
-$targetVersion = '1.0.2'
+# 這一輪的版本從 update-test-round.json 讀，不寫死在腳本裡。
+# README 早就寫過這條規則，這裡卻連續三輪手動同步版本號。
+$roundFile = Join-Path $PSScriptRoot 'update-test-round.json'
+if (-not (Test-Path -LiteralPath $roundFile)) { Write-Host ">>> 找不到 $roundFile"; exit 1 }
+# -Encoding UTF8 不可省略：PowerShell 5.1 預設以 ANSI 讀檔，JSON 裡的中文會變亂碼
+# 而讓 ConvertFrom-Json 以「Unterminated string」失敗（BT-P1-003 的同一個坑，這次在資料檔上）。
+$round = Get-Content -LiteralPath $roundFile -Raw -Encoding UTF8 | ConvertFrom-Json
+$fromVersion   = $round.from
+$targetVersion = $round.target
+
 $manifestUrl = "https://github.com/yedongsian/beyblade-tracker/releases/download/v$targetVersion/release-manifest.json"
 $keyFile     = Join-Path $PSScriptRoot 'manifest-public-key.pem'
 $appDir      = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'

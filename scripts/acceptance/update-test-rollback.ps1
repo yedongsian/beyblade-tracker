@@ -9,13 +9,24 @@ function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encod
 
 $appDir = Join-Path $env:LOCALAPPDATA 'Programs\Beyblade Tracker'
 
+# 這一輪的版本從 update-test-round.json 讀，不寫死在腳本裡。
+# README 早就寫過這條規則，這裡卻連續三輪手動同步版本號。
+$roundFile = Join-Path $PSScriptRoot 'update-test-round.json'
+if (-not (Test-Path -LiteralPath $roundFile)) { Write-Host ">>> 找不到 $roundFile"; exit 1 }
+# -Encoding UTF8 不可省略：PowerShell 5.1 預設以 ANSI 讀檔，JSON 裡的中文會變亂碼
+# 而讓 ConvertFrom-Json 以「Unterminated string」失敗（BT-P1-003 的同一個坑，這次在資料檔上）。
+$round = Get-Content -LiteralPath $roundFile -Raw -Encoding UTF8 | ConvertFrom-Json
+$fromVersion   = $round.from
+$targetVersion = $round.target
+
+
 Log ("=== 更新回滾  " + $env:USERNAME + "  " + (Get-Date).ToString('o') + " ===")
 Log ''
 
 $current = $(try { (Get-Content -LiteralPath (Join-Path $appDir 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
 if (-not $current) { Log '>>> 讀不到 current.json，停止。'; exit 1 }
 Log ("目前版本 : $current")
-if ($current -ne '1.0.2') { Log '>>> 目前不是 1.0.2，沒有東西可以回滾。請先完成步驟 6 的更新。'; exit 1 }
+if ($current -ne $targetVersion) { Log ">>> 目前不是 $targetVersion，沒有東西可以回滾。請先完成步驟 6 的更新。"; exit 1 }
 
 $appRoot = Join-Path (Join-Path $appDir 'versions') $current
 $node   = Join-Path $appRoot 'runtime\node.exe'
@@ -66,7 +77,7 @@ Start-Sleep -Seconds 3
 $after = $(try { (Get-Content -LiteralPath (Join-Path $appDir 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { '>>> 讀不到' })
 Log ''
 Log ("回滾後版本 : $after")
-if ($after -eq '1.0.1') { Log '回滾成功。' } else { Log '>>> 版本沒有回到 1.0.1，請截圖回報。' }
+if ($after -eq $fromVersion) { Log '回滾成功。' } else { Log ">>> 版本沒有回到 $fromVersion，請截圖回報。" }
 
 Log ''
 Log '下一步：等服務就緒後跑'

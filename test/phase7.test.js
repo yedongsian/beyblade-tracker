@@ -398,6 +398,27 @@ test('regex literals in the acceptance scripts actually compile', () => {
   assert.ok(checked > 0, 'the extraction must still find the -match literals it is guarding');
 });
 
+// The round's versions moved into update-test-round.json after being hand-synced across three
+// scripts for three rounds running - the acceptance README already forbids hardcoding them. The file
+// is read by PowerShell 5.1, which defaults to ANSI: without an explicit -Encoding UTF8 the Chinese
+// note came back as mojibake and ConvertFrom-Json failed with "Unterminated string".
+test('the acceptance round file is valid and read as UTF-8', () => {
+  const dir = new URL('../scripts/acceptance/', import.meta.url);
+  const bytes = readFileSync(new URL('update-test-round.json', dir));
+  const round = JSON.parse(bytes.toString('utf8').replace(/^﻿/, ''));
+  for (const field of ['from', 'target']) {
+    assert.match(round[field], /^\d+\.\d+\.\d+$/, `${field} must be a version`);
+  }
+  assert.notEqual(round.from, round.target, 'an update round needs two different versions');
+
+  for (const name of ['update-test-setup.ps1', 'update-test-rollback.ps1']) {
+    const script = readFileSync(new URL(name, dir), 'utf8');
+    assert.match(script, /update-test-round\.json/, `${name} must read the round file, not a literal`);
+    assert.match(script, /-Raw -Encoding UTF8 \| ConvertFrom-Json/, `${name} must not let PS 5.1 read it as ANSI`);
+    assert.doesNotMatch(script, /\$targetVersion = '/, `${name} must not pin the version again`);
+  }
+});
+
 test('every script the menu offers exists', () => {
   const dir = new URL('../scripts/acceptance/', import.meta.url);
   const menu = readFileSync(new URL('update-test-menu.ps1', dir), 'utf8');

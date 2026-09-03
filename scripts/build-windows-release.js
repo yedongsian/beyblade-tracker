@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, sign } from 'node:crypto';
+import { createHash, createPublicKey, sign } from 'node:crypto';
 import {
   copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
@@ -74,10 +74,30 @@ for (const source of JSON.parse(readFileSync(join(PAYLOAD, 'config', 'sources.ex
 }
 
 copyTree(process.execPath, join(PAYLOAD, 'runtime', 'node.exe'));
+
+// The verification key ships with the product; it is public by definition, and without it no
+// ordinary user can verify an update at all (BT-UPD-002). It is DERIVED from the signing key rather
+// than read from a second file on purpose: a mismatched pair fails as BT-UPD-003, which is
+// indistinguishable from "no key configured" and painful to diagnose. Derivation cannot mismatch.
+const signingKeyPath = process.env.RELEASE_SIGNING_KEY_FILE;
+const shippedPublicKey = signingKeyPath
+  ? createPublicKey(readFileSync(signingKeyPath, 'utf8')).export({ type: 'spki', format: 'pem' }).toString()
+  : '';
+
+// A version-pinned manifest URL would make every build check only its own release and never find a
+// successor. GitHub's /releases/latest/download/ always resolves to the newest non-prerelease, so
+// promoting a release is what ships it.
+const shippedManifestUrl = process.env.UPDATE_MANIFEST_URL_TEMPLATE ||
+  (process.env.RELEASE_REPO ? `https://github.com/${process.env.RELEASE_REPO}/releases/latest/download/release-manifest.json` : '');
+
 writeFileSync(join(PAYLOAD, 'release.json'), JSON.stringify({
   version: APP_VERSION, schemaVersion: CURRENT_SCHEMA_VERSION, builtAt: new Date().toISOString(),
   nodeVersion: process.version, architecture: process.arch, browserStrategy: 'system-chrome',
+  updateManifestUrl: shippedManifestUrl, updatePublicKey: shippedPublicKey,
 }, null, 2));
+
+if (!shippedPublicKey) console.warn('警告：未設定 RELEASE_SIGNING_KEY_FILE，產物不含驗證公鑰，使用者將無法驗證更新。');
+if (!shippedManifestUrl) console.warn('警告：未設定 RELEASE_REPO，產物不含更新來源，使用者將收不到更新。');
 
 const iscc = process.env.ISCC_PATH || [
   process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Programs', 'Inno Setup 7', 'ISCC.exe'),

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { confirmUpdateHandover, pendingUpdate, UpdateError } from '../src/release/update.js';
 import { errorCodeFor, errorEnvelope } from '../src/errors/registry.js';
 import { ACTIVE_UPDATE_PHASES } from '../src/web/server.js';
@@ -108,4 +109,40 @@ test('the restore failure actually carries its cause through rollbackUpdate', ()
   const source = readFileSync(new URL('../src/release/update.js', import.meta.url), 'utf8');
   assert.match(source, /catch \(cause\) \{ throw updateError\('BT-UPD-007', `無法還原更新前的備份：\$\{cause\?\.message \|\| cause\}`\); \}/,
     'a bare catch here is what discarded the reason');
+});
+
+// BT-UPD-002. Both update settings were environment variables defaulting to empty, so a shipped
+// build had no update source and no verification key: an ordinary user could never receive an
+// update, and every acceptance round only worked because the variables were set by hand. These pin
+// the two properties that make a build actually updatable, and the one that makes it diagnosable.
+test('a shipped build carries an update source and a verification key', () => {
+  const config = readFileSync(new URL('../src/config.js', import.meta.url), 'utf8');
+  assert.match(config, /process\.env\.UPDATE_MANIFEST_URL \|\| shippedUpdate\.manifestUrl/,
+    'the manifest URL must fall back to the payload, not to empty');
+  assert.match(config, /process\.env\.UPDATE_PUBLIC_KEY \|\| shippedUpdate\.publicKey/,
+    'the public key must fall back to the payload, not to empty');
+
+  const build = readFileSync(new URL('../scripts/build-windows-release.js', import.meta.url), 'utf8');
+  // Deriving is what makes a mismatched pair impossible; reading a second key file would not.
+  assert.match(build, /createPublicKey\(readFileSync\(signingKeyPath, 'utf8'\)\)/,
+    'the shipped key must be derived from the signing key');
+  assert.doesNotMatch(build, /RELEASE_PUBLIC_KEY_FILE/, 'a second key file reintroduces the mismatch');
+  // A version-pinned URL makes a build check only its own release, forever.
+  assert.match(build, /releases\/latest\/download\/release-manifest\.json/,
+    'the baked URL must track the latest release, not one version');
+});
+
+test('a derived public key verifies what the signing key signed', () => {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  // Exactly what the build does with RELEASE_SIGNING_KEY_FILE.
+  const derived = createPublicKey(privatePem).export({ type: 'spki', format: 'pem' }).toString();
+  assert.equal(derived, publicKey.export({ type: 'spki', format: 'pem' }).toString());
+
+  const payload = Buffer.from('release-manifest');
+  const signature = sign(null, payload, privatePem);
+  assert.ok(verify(null, payload, derived, signature), 'the shipped key must verify the shipped manifest');
+
+  const other = generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  assert.ok(!verify(null, payload, other, signature), 'and a key from another pair must not');
 });

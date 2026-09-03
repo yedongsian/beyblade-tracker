@@ -12,6 +12,30 @@ function resolvePath(p, fallback) {
   return isAbsolute(chosen) ? chosen : join(ROOT, chosen);
 }
 
+/**
+ * Where the update settings come from in a shipped build. Both used to be environment variables
+ * defaulting to empty, which meant an ordinary user got no update source at all and, if they somehow
+ * set one, BT-UPD-003 for the missing key. Every update round so far only worked because acceptance
+ * set those variables by hand - a test procedure standing in for a product feature (BT-UPD-002).
+ *
+ * The public key is public by definition and belongs in the payload. The environment still wins so
+ * acceptance can point a build at a specific manifest.
+ */
+function releaseUpdateDefaults(appRoot) {
+  try {
+    const file = join(appRoot, 'release.json');
+    if (!existsSync(file)) return {};
+    const release = JSON.parse(readFileSync(file, 'utf8'));
+    return {
+      manifestUrl: typeof release.updateManifestUrl === 'string' ? release.updateManifestUrl : '',
+      publicKey: typeof release.updatePublicKey === 'string' ? release.updatePublicKey : '',
+    };
+  } catch {
+    // A malformed release.json must not stop the app from starting; it only costs update checks.
+    return {};
+  }
+}
+
 export class ConfigValidationError extends Error {
   constructor(issues) {
     super(`設定有誤：\n- ${issues.join('\n- ')}`);
@@ -33,6 +57,7 @@ function numberSetting(name, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER,
 export function getConfig() {
   const issues = [];
   const paths = projectPaths(ROOT);
+  const shippedUpdate = releaseUpdateDefaults(paths.appRoot);
   const sourcesPath = resolvePath(
     process.env.SOURCES_FILE,
     existsSync(paths.sourcesFile)
@@ -91,8 +116,8 @@ export function getConfig() {
     network: { enabled: networkEnabled },
     browser: detectSupportedBrowser(),
     update: {
-      manifestUrl: process.env.UPDATE_MANIFEST_URL || '',
-      publicKey: process.env.UPDATE_PUBLIC_KEY || '',
+      manifestUrl: process.env.UPDATE_MANIFEST_URL || shippedUpdate.manifestUrl || '',
+      publicKey: process.env.UPDATE_PUBLIC_KEY || shippedUpdate.publicKey || '',
       currentFile: join(paths.installRoot, 'current.json'),
       rollbackFile: paths.rollbackFile,
       rollbackStatusFile: paths.rollbackStatusFile,

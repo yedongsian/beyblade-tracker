@@ -44,6 +44,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\BeybladeTrac
 | `capture-timing.ps1` / `diagnose-service.ps1` | 啟動耗時與服務故障診斷 |
 | `RUN-UPDATE-TEST.cmd` | **更新驗收的入口：雙擊即可**。純 ASCII 轉呼叫殼，不含任何文字 |
 | `update-test-menu.ps1` | 選單本體與分派；所有在地化文字都在這裡 |
+| `update-test-shipped-config.ps1` | `BT-UPD-002`：清除環境變數 → 安裝 1.0.4 → 確認更新設定來自產物 |
+| `BeybladeTracker-1.0.4-Setup.exe` / `SHA256-1.0.4.txt` | 該輪的安裝器與其雜湊（僅共用資料夾，未納入版控） |
 | `update-test-round.json` | **本輪的 `from` / `target` 版本**。所有更新驗收腳本都從這裡讀，不得寫死 |
 | `update-test-setup.ps1` | 更新驗收前置：檢查版本與公鑰、寫入兩個環境變數並**讀回驗證** |
 | `update-test-check.ps1` | 更新前／後的版本與資料筆數快照（`-Label`），附加到 `update-test-counts.txt` |

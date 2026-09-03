@@ -16,6 +16,8 @@ $items = [ordered]@{
   '6' = @{ 名稱 = '診斷：更新後版本對不上（current.json 與 /health 不同）'; 腳本 = 'update-test-diagnose.ps1'; 參數 = @{} }
   '7' = @{ 名稱 = '診斷：手動重啟（分辨重啟壞掉 vs 安裝器沒觸發）';    腳本 = 'update-test-restart.ps1';  參數 = @{} }
   '8' = @{ 名稱 = '診斷：launcher restart 卡在哪一層（分層執行並攤開輸出）'; 腳本 = 'update-test-launcher.ps1'; 參數 = @{} }
+  '9' = @{ 名稱 = 'BT-UPD-002 ① 清除環境變數，記錄修正前的行為'; 腳本 = 'update-test-shipped-config.ps1'; 參數 = @{ Phase = 'Before' } }
+  'A' = @{ 名稱 = 'BT-UPD-002 ② 安裝 1.0.4，記錄修正後的行為';   腳本 = 'update-test-shipped-config.ps1'; 參數 = @{ Phase = 'After' } }
 }
 
 while ($true) {
@@ -32,13 +34,13 @@ while ($true) {
     if ($missing) { Write-Host '   >>> 腳本不存在' -ForegroundColor Red } else { Write-Host '' }
   }
   Write-Host ''
-  Write-Host '  [9] 開啟 UPDATE-TEST.md'
+  Write-Host '  [M] 開啟 UPDATE-TEST.md'
   Write-Host '  [0] 離開'
   Write-Host ''
-  $choice = (Read-Host '輸入數字後按 Enter').Trim()
+  $choice = (Read-Host '輸入代號後按 Enter').Trim().ToUpper()
 
   if ($choice -eq '0') { return }
-  if ($choice -eq '9') { Start-Process notepad (Join-Path $here 'UPDATE-TEST.md'); continue }
+  if ($choice -eq 'M') { Start-Process notepad (Join-Path $here 'UPDATE-TEST.md'); continue }
 
   if (-not $items.Contains($choice)) {
     Write-Host ''

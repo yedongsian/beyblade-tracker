@@ -29,6 +29,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
 | BT-REL-001 | P0 | Fixed（待 VM 複驗） | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 成功判準仍待改 |
 | BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
+| BT-UX-005 | P2 | Proposed | 開啟 App 的第一眼看不到更新橫幅（檢查比頁面載入晚 5 秒） | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -71,6 +72,25 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Update failure 可 rollback，且使用者資料完整。
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
+
+### BT-UX-005 — 開啟 App 的第一眼看不到更新橫幅
+
+- Priority：P2
+- Status：Proposed
+- Owner：待指定
+- 2026-09-03 VM 實測：服務重啟後開啟管理頁，總覽頁**沒有**更新橫幅；到設定頁按「檢查更新」，
+  再回到總覽頁就有了。
+- 成因不是橫幅失效，兩件事湊在一起：
+  1. 橫幅由 `pageOptions` **伺服器端渲染**進版面（`ui.js:79`），而 `settingsScript` 只掛在
+     `/settings`，所以其他頁面**沒有任何用戶端更新機制** —— 頁面載入時沒有就永遠沒有。
+  2. 啟動後的排程檢查延遲 `UPDATE_STARTUP_DELAY_MS`（5 秒）才跑。
+- 開始功能表的捷徑會在服務就緒的**當下**開啟管理頁，剛好落在檢查完成之前。
+  也就是說，**「使用者開啟 App」這個最主要的時機，正是最容易錯過通知的時機**。
+- 影響有限：之後任何一次導覽或重新整理都會看到。但這個功能的目的就是
+  「使用者不主動去點也知道有新版」，第一眼漏掉削弱了它。
+- 修法選項：非設定頁加一個極輕量的橫幅輪詢；或啟動檢查改在服務宣告 ready 之前完成；
+  或 launcher 等檢查跑完再開頁面。
+- **不阻擋本輪驗收**：橫幅確實出現在非設定頁（2026-09-03 截圖），步驟 4 的判準已滿足。
 
 ### BT-UX-004 — 更新卡片對一般使用者不可讀
 

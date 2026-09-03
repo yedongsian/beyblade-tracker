@@ -8,14 +8,14 @@ $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 
 $items = [ordered]@{
-  '1' = @{ 名稱 = '步驟 2 - 前置設定（檢查版本與公鑰、設定環境變數）'; 腳本 = 'update-test-setup.ps1';    參數 = @() }
-  '2' = @{ 名稱 = '步驟 6 - 記錄「更新前」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @('-Label', '更新前') }
-  '3' = @{ 名稱 = '步驟 7 - 記錄「更新後」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @('-Label', '更新後') }
-  '4' = @{ 名稱 = '步驟 8 - 回滾到 1.0.1';                              腳本 = 'update-test-rollback.ps1'; 參數 = @() }
-  '5' = @{ 名稱 = '步驟 8 - 記錄「回滾後」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @('-Label', '回滾後') }
-  '6' = @{ 名稱 = '診斷：更新後版本對不上（current.json 與 /health 不同）'; 腳本 = 'update-test-diagnose.ps1'; 參數 = @() }
-  '7' = @{ 名稱 = '診斷：手動重啟（分辨重啟壞掉 vs 安裝器沒觸發）';    腳本 = 'update-test-restart.ps1';  參數 = @() }
-  '8' = @{ 名稱 = '診斷：launcher restart 卡在哪一層（分層執行並攤開輸出）'; 腳本 = 'update-test-launcher.ps1'; 參數 = @() }
+  '1' = @{ 名稱 = '步驟 2 - 前置設定（檢查版本與公鑰、設定環境變數）'; 腳本 = 'update-test-setup.ps1';    參數 = @{} }
+  '2' = @{ 名稱 = '步驟 6 - 記錄「更新前」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @{ Label = '更新前' } }
+  '3' = @{ 名稱 = '步驟 7 - 記錄「更新後」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @{ Label = '更新後' } }
+  '4' = @{ 名稱 = '步驟 8 - 回滾到 1.0.1';                              腳本 = 'update-test-rollback.ps1'; 參數 = @{} }
+  '5' = @{ 名稱 = '步驟 8 - 記錄「回滾後」的版本與資料筆數';           腳本 = 'update-test-check.ps1';    參數 = @{ Label = '回滾後' } }
+  '6' = @{ 名稱 = '診斷：更新後版本對不上（current.json 與 /health 不同）'; 腳本 = 'update-test-diagnose.ps1'; 參數 = @{} }
+  '7' = @{ 名稱 = '診斷：手動重啟（分辨重啟壞掉 vs 安裝器沒觸發）';    腳本 = 'update-test-restart.ps1';  參數 = @{} }
+  '8' = @{ 名稱 = '診斷：launcher restart 卡在哪一層（分層執行並攤開輸出）'; 腳本 = 'update-test-launcher.ps1'; 參數 = @{} }
 }
 
 while ($true) {
@@ -59,7 +59,10 @@ while ($true) {
   Write-Host ('--- 執行 ' + $items[$choice].腳本 + ' ---') -ForegroundColor Cyan
   Write-Host ''
   # 各腳本自行處理錯誤並寫入結果檔；這裡不讓例外把選單一起帶走。
-  try { & $script @($items[$choice].參數) } catch { Write-Host (">>> 執行中斷：" + $_.Exception.Message) -ForegroundColor Red }
+  # 具名參數必須用「雜湊表展開」。陣列展開只會產生位置引數：@('-Label','更新前')
+  # 會讓 '-Label' 本身被當成第一個位置引數，'更新前' 則無處可去。
+  $scriptArgs = $items[$choice].參數
+  try { & $script @scriptArgs } catch { Write-Host (">>> 執行中斷：" + $_.Exception.Message) -ForegroundColor Red }
 
   Write-Host ''
   Write-Host '----------------------------------------------------------'

@@ -39,6 +39,22 @@ if ($installed -eq $targetVersion) {
 }
 if ($installed -ne $fromVersion) { Log ">>> 預期為 $fromVersion，實得 $installed。請先依步驟 1 裝上 $fromVersion。" }
 
+# 「檔案是新版、服務仍是舊版」正是 BT-REL-001 的樣子。若帶著這個狀態往下走，
+# 更新後的判定會完全無法區分「這一輪失敗」與「上一輪的殘留」（2026-08-29 就這樣浪費一輪）。
+$servedNow = $(try { (Invoke-RestMethod 'http://127.0.0.1:8787/health' -TimeoutSec 8 -ErrorAction Stop).release.version } catch { $null })
+if (-not $servedNow) {
+  Log '服務目前無回應（尚未啟動）—— 這在剛安裝完是正常的。'
+} elseif ($servedNow -ne $installed) {
+  Log ">>> 服務實際在跑 $servedNow，但 current.json 是 $installed。"
+  Log '>>> 這是上一輪失敗更新留下的髒狀態，不是乾淨的起點。'
+  Log '>>> 請還原 S1-with-chrome 快照，重新安裝 1.0.1 後再跑一次本腳本。'
+  Log ''
+  Log ("完成，結果已寫入 " + $out)
+  exit 1
+} else {
+  Log "服務實際在跑 : $servedNow（與 current.json 一致）"
+}
+
 # --- 2. 公鑰檔 ---
 Log ''
 Log '--- 2. 簽章公鑰 ---'

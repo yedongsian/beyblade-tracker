@@ -36,7 +36,7 @@ import { TelegramNotifier } from '../notify/telegram.js';
 import { createTransferBundle, stageTransferImport } from '../maintenance/transfer.js';
 import {
   acquireRollbackLock, checkForUpdate, clearDeferredUpdate, deferUpdate, getPostUpdateHealth, getRollbackLeaseStatus, getRollbackLifecycle, getRollbackStatus, getUpdateState, isDeferredUpdate, launchPreparedUpdate,
-  finishRollbackFailure, prepareConfirmedUpdate, recordUpdateCheck, releaseRollbackLock, UpdateError, validateUpdateConfirmation, writeRollbackStatus, confirmUpdateHandover,
+  finishRollbackFailure, prepareConfirmedUpdate, recordUpdateCheck, releaseRollbackLock, UpdateError, validateUpdateConfirmation, writeRollbackStatus, confirmUpdateHandover, pendingUpdate,
 } from '../release/update.js';
 import { releaseInfo } from '../release/version.js';
 import { createDiagnosticsBundle } from '../maintenance/diagnostics.js';
@@ -148,7 +148,7 @@ function updateOperationSummary(operation) {
 function availableUpdateBanner(db) {
   try {
     const state = getUpdateState(db);
-    const latest = state.latestResult?.updateAvailable ? state.latestResult : null;
+    const latest = pendingUpdate(state);
     if (!latest?.manifest?.version) return null;
     return { version: latest.manifest.version, deferred: isDeferredUpdate(state, latest.manifest) };
   } catch { return null; }
@@ -299,7 +299,7 @@ function settingsPage(db, base) {
   const release = releaseInfo(base.appConfig);
   const browser = base.appConfig.browser || { available: false, downloadUrl: 'https://www.google.com/chrome/' };
   const updateState = getUpdateState(db);
-  const scheduledUpdate = updateState.latestResult?.updateAvailable ? updateState.latestResult : null;
+  const scheduledUpdate = pendingUpdate(updateState);
   const updateDeferred = isDeferredUpdate(updateState, scheduledUpdate?.manifest);
   const updateHealth = getPostUpdateHealth(base.appConfig);
   const rollbackStatus = getRollbackStatus(base.appConfig);
@@ -674,12 +674,14 @@ export function createWebServer(db, options = {}) {
           throw error;
         }
         const state = getUpdateState(db);
-        out = json({ ...state.latestResult, state, deferred: isDeferredUpdate(state, state.latestResult?.manifest),
+        out = json({ ...state.latestResult, updateAvailable: Boolean(pendingUpdate(state)), state,
+          deferred: isDeferredUpdate(state, state.latestResult?.manifest),
           health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
       } else if (req.method === 'GET' && url.pathname === '/api/update/status') {
         pruneUpdateOperations(updateOperations, now());
         const state = getUpdateState(db);
-        out = json({ ...(state.latestResult || { enabled: Boolean(appConfig.update?.manifestUrl), updateAvailable: false }), state,
+        out = json({ ...(state.latestResult || { enabled: Boolean(appConfig.update?.manifestUrl), updateAvailable: false }),
+          updateAvailable: Boolean(pendingUpdate(state)), state,
           deferred: isDeferredUpdate(state, state.latestResult?.manifest), health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig),
           operation: updateOperationSummary(findActiveUpdateOperation(updateOperations)) });
       } else if (req.method === 'POST' && url.pathname === '/api/update/defer') {

@@ -30,6 +30,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-REL-001 | P0 | Fixed（待 VM 複驗） | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 成功判準仍待改 |
 | BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
 | BT-UX-005 | P2 | Proposed | 開啟 App 的第一眼看不到更新橫幅（檢查比頁面載入晚 5 秒） | — |
+| BT-UX-006 | P1 | Fixed（待發佈） | 更新完成後仍兜售剛裝好的那一版，安裝按鈕還在 | 需要 1.0.3 才會到使用者手上 |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -72,6 +73,26 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Update failure 可 rollback，且使用者資料完整。
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
+
+### BT-UX-006 — 更新完成後仍兜售剛裝好的那一版
+
+- Priority：P1
+- Status：Fixed（程式已修，需 1.0.3 才會到使用者手上）
+- 2026-09-03 VM 實測：1.0.1 → 1.0.2 更新**成功**，設定頁顯示「版本：1.0.2」，
+  但下方版本更新卡片**仍寫著「可更新至 1.0.2」，且「安裝更新」按鈕仍可按**。
+- 成因：儲存下來的檢查結果裡那個 `updateAvailable` 布林值，是**檢查當下**（還在 1.0.1）
+  算出來的事實。設定頁、橫幅、以及兩支 status API 全都直接讀它，
+  沒有任何一處拿**現在執行中的版本**重新比對。
+- 因此更新成功後，App 會持續兜售它剛剛裝好的版本，直到下一次排程檢查 —— 最長 24 小時。
+- **這個缺陷在 `BT-REL-001` 修好之前不可能被看見**，因為在此之前從來沒有一次更新真正完成過。
+  一個 bug 擋住了另一個 bug。
+- 危害有限：真的按下去只會重裝同一版，`confirmUpdateHandover` 在
+  `currentVersion === targetVersion` 時直接回傳成功。但它讓「更新完成」這件事看起來沒完成。
+- 修法：新增 `pendingUpdate(state, currentVersion)`，把儲存結果對現行版本重新比對，
+  設定頁、橫幅、`/api/update`、`/api/update/status` 四處統一改用它。
+- 測試：單元層（含版本無法解析等畸形輸入）、頁面層（橫幅收起、安裝按鈕 hidden、API 回報 false）。
+  另有連帶修正 —— `web.test.js` 的 fixture 把版本寫死成 `1.0.1`，在 1.0.2 之後就不再高於
+  現行版本，三項測試因此正確地失敗；fixture 改為從 `APP_VERSION` 推導。
 
 ### BT-UX-005 — 開啟 App 的第一眼看不到更新橫幅
 

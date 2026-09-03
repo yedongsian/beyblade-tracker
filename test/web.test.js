@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { APP_VERSION } from '../src/release/version.js';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1033,10 +1034,15 @@ test('a DNS failure on a source that worked before blames the connection, not th
 // The scheduled check ran every 24 hours and wrote "scheduled update available" to the log. Nothing
 // else. A user who never opened Settings had no way of learning an update existed - which defeats
 // the point of checking. The banner renders on every page instead.
+// The offered version must sit above whatever is running, or the app is advertising something the
+// user already has. Pinning a literal here made these break on the 1.0.2 bump; derive it instead.
+const NEXT_VERSION = APP_VERSION.replace(/(\d+)$/, (patch) => String(Number(patch) + 1));
+const NEXT_VERSION_RE = NEXT_VERSION.replaceAll('.', '\\.');
+
 async function withUpdateAvailable(fn) {
   await withServer(async (ctx) => {
     ctx.db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateLatestResult',?,?)", [
-      JSON.stringify({ updateAvailable: true, manifest: { version: '1.0.1', publisher: 'Beyblade Tracker', manifestDigest: 'digest' } }),
+      JSON.stringify({ updateAvailable: true, manifest: { version: NEXT_VERSION, publisher: 'Beyblade Tracker', manifestDigest: 'digest' } }),
       '2026-08-29T00:00:00.000Z',
     ]);
     await fn(ctx);
@@ -1048,7 +1054,7 @@ test('an available update is visible from every page, not only Settings', async 
     for (const path of ['/', '/products', '/sources', '/events']) {
       const page = await (await fetch(`${base}${path}`)).text();
       assert.match(page, /class="notice update-banner"/, `${path} must surface the update`);
-      assert.match(page, /有新版本 1\.0\.1 可用/, `${path} must name the version`);
+      assert.match(page, new RegExp(`有新版本 ${NEXT_VERSION_RE} 可用`), `${path} must name the version`);
       assert.match(page, /href="\/settings"/);
     }
   });
@@ -1062,14 +1068,36 @@ test('the banner stays quiet when there is nothing to install', async () => {
   }, { appConfig: { update: {} } });
 });
 
+// The VM caught this the first time an update ever completed: after moving to 1.0.2 the settings
+// page still showed "update to 1.0.2" with a live install button, because the stored result's
+// updateAvailable flag was written while 1.0.1 was running and nothing re-read it against the
+// version now serving. A notice that never retracts is as broken as one that never appears.
+test('a completed update stops being offered on every surface', async () => {
+  await withServer(async ({ db, base }) => {
+    db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateLatestResult',?,?)", [
+      JSON.stringify({ updateAvailable: true, manifest: { version: APP_VERSION, publisher: 'Beyblade Tracker', manifestDigest: 'digest' } }),
+      '2026-09-03T00:00:00.000Z',
+    ]);
+    const overview = await (await fetch(base)).text();
+    assert.doesNotMatch(overview, /class="notice update-banner"/, 'the banner must retract once installed');
+
+    const settings = await (await fetch(`${base}/settings`)).text();
+    assert.doesNotMatch(settings, new RegExp(`可更新至 ${APP_VERSION.replaceAll('.', '\.')}`), 'settings must not offer the running version');
+    assert.match(settings, /id="update-apply"[^>]*hidden/, 'the install button must be hidden, not merely unlabelled');
+
+    const status = await (await fetch(`${base}/api/update/status`)).json();
+    assert.equal(status.updateAvailable, false, 'the API must agree, or the page JS will put it back');
+  }, { appConfig: { update: {} } });
+});
+
 test('a deferred update is still reachable but stops nagging', async () => {
   await withUpdateAvailable(async ({ db, base }) => {
     db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateDeferred',?,?)", [
-      JSON.stringify({ targetVersion: '1.0.1', manifestDigest: 'digest' }), '2026-08-29T00:00:00.000Z',
+      JSON.stringify({ targetVersion: NEXT_VERSION, manifestDigest: 'digest' }), '2026-08-29T00:00:00.000Z',
     ]);
     const page = await (await fetch(base)).text();
     assert.match(page, /已延後安裝/, 'the wording must acknowledge the choice already made');
-    assert.doesNotMatch(page, /有新版本 1\.0\.1 可用/);
+    assert.doesNotMatch(page, new RegExp(`有新版本 ${NEXT_VERSION_RE} 可用`));
   });
 });
 
@@ -1077,7 +1105,7 @@ test('the banner speaks the language the rest of the page does', async () => {
   await withUpdateAvailable(async ({ db, base }) => {
     saveOnboardingSettings(db, { language: 'en', notification: 'app', scanFrequency: 'balanced', dataRetentionDays: 365 });
     const en = await (await fetch(base)).text();
-    assert.match(en, /Version 1\.0\.1 is available\./);
+    assert.match(en, new RegExp(`Version ${NEXT_VERSION_RE} is available\\.`));
     assert.match(en, /Open Settings/);
     assert.doesNotMatch(en, /有新版本/);
   });

@@ -643,6 +643,22 @@ export async function launchPreparedUpdate(prepared, { spawnImpl = spawn } = {})
   });
 }
 
+/**
+ * `updateAvailable` inside a stored check result is a fact about the version that was running when
+ * the check ran, not about the version running now. Reading it back verbatim means that the moment
+ * an update succeeds the app carries on advertising the release it just installed - offering to
+ * install 1.0.2 while running 1.0.2 - until the next scheduled check up to a day later.
+ *
+ * Nobody could see this until BT-REL-001 was fixed, because no update had ever completed.
+ */
+export function pendingUpdate(state, currentVersion = APP_VERSION) {
+  const latest = state?.latestResult;
+  if (!latest?.updateAvailable || !latest.manifest?.version) return null;
+  try {
+    return compareVersions(latest.manifest.version, currentVersion) > 0 ? latest : null;
+  } catch { return null; }
+}
+
 export const UPDATE_HANDOVER_TIMEOUT_MS = 120_000;
 
 /**

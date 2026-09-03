@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmUpdateHandover } from '../src/release/update.js';
+import { confirmUpdateHandover, pendingUpdate } from '../src/release/update.js';
 import { errorCodeFor } from '../src/errors/registry.js';
 import { ACTIVE_UPDATE_PHASES } from '../src/web/server.js';
 
@@ -60,4 +60,27 @@ test('the verifying phase keeps the operation active rather than terminal', () =
   assert.ok(ACTIVE_UPDATE_PHASES.has('verifying'), 'a verifying update must not be reported as finished');
   for (const phase of ['checking', 'downloading', 'installing']) assert.ok(ACTIVE_UPDATE_PHASES.has(phase));
   for (const phase of ['completed', 'failed']) assert.ok(!ACTIVE_UPDATE_PHASES.has(phase));
+});
+
+// Found in the VM the moment an update first succeeded. updateAvailable inside a stored check result
+// describes the version that was running when the check ran. After updating to 1.0.2 the settings
+// page still offered "install 1.0.2" with the button live, and would have kept offering it until the
+// next scheduled check up to 24h later. Nobody could see this before BT-REL-001 was fixed, because
+// no update had ever completed.
+test('a stored check result stops advertising a version already installed', () => {
+  const state = {
+    latestResult: { updateAvailable: true, manifest: { version: '1.0.2' } },
+  };
+  assert.equal(pendingUpdate(state, '1.0.1')?.manifest.version, '1.0.2', 'an older install must still be offered the update');
+  assert.equal(pendingUpdate(state, '1.0.2'), null, 'the version just installed must not be offered again');
+  assert.equal(pendingUpdate(state, '1.0.3'), null, 'nor may a newer install be told to go backwards');
+});
+
+test('pendingUpdate stays quiet on absent or malformed state', () => {
+  assert.equal(pendingUpdate(null, '1.0.1'), null);
+  assert.equal(pendingUpdate({}, '1.0.1'), null);
+  assert.equal(pendingUpdate({ latestResult: { updateAvailable: false, manifest: { version: '9.9.9' } } }, '1.0.1'), null);
+  assert.equal(pendingUpdate({ latestResult: { updateAvailable: true } }, '1.0.1'), null, 'no manifest, no offer');
+  // A version string that cannot be parsed must not throw its way onto the page.
+  assert.equal(pendingUpdate({ latestResult: { updateAvailable: true, manifest: { version: 'not-a-version' } } }, '1.0.1'), null);
 });

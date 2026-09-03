@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmUpdateHandover, pendingUpdate } from '../src/release/update.js';
-import { errorCodeFor } from '../src/errors/registry.js';
+import { readFileSync } from 'node:fs';
+import { confirmUpdateHandover, pendingUpdate, UpdateError } from '../src/release/update.js';
+import { errorCodeFor, errorEnvelope } from '../src/errors/registry.js';
 import { ACTIVE_UPDATE_PHASES } from '../src/web/server.js';
 
 // BT-REL-001's second half. The installer exiting 0 says the files were written and nothing about
@@ -83,4 +84,28 @@ test('pendingUpdate stays quiet on absent or malformed state', () => {
   assert.equal(pendingUpdate({ latestResult: { updateAvailable: true } }, '1.0.1'), null, 'no manifest, no offer');
   // A version string that cannot be parsed must not throw its way onto the page.
   assert.equal(pendingUpdate({ latestResult: { updateAvailable: true, manifest: { version: 'not-a-version' } } }, '1.0.1'), null);
+});
+
+// 2026-09-03: rollback failed with "cannot restore the pre-update backup" and nothing else. The real
+// cause was that the service was still running and holding the database, which restoreBackup says
+// plainly - the catch threw it away. A missing backup, a corrupt backup and a live service each need
+// a different response from whoever reads the log.
+test('a failed restore keeps its cause for the log while the user still gets the code', () => {
+  const cause = new Error('Tracker 仍在執行中 (PID=4448)，請先停止服務再還原。');
+  const error = new UpdateError('BT-UPD-007', `無法還原更新前的備份：${cause.message}`);
+  assert.equal(errorCodeFor(error), 'BT-UPD-007');
+  assert.match(error.message, /仍在執行中/, 'diagnostics need to know which of the three it was');
+  assert.match(error.message, /PID=4448/);
+
+  const envelope = errorEnvelope(error, { appVersion: '1.0.2', supportRef: 'ref', timestamp: '2026-09-03T00:00:00.000Z' });
+  assert.equal(envelope.code, 'BT-UPD-007');
+  // The internal sentence must not become the public contract.
+  assert.doesNotMatch(JSON.stringify(envelope), /PID=4448|仍在執行中/);
+  assert.ok(envelope.recovery.length > 0);
+});
+
+test('the restore failure actually carries its cause through rollbackUpdate', () => {
+  const source = readFileSync(new URL('../src/release/update.js', import.meta.url), 'utf8');
+  assert.match(source, /catch \(cause\) \{ throw updateError\('BT-UPD-007', `無法還原更新前的備份：\$\{cause\?\.message \|\| cause\}`\); \}/,
+    'a bare catch here is what discarded the reason');
 });

@@ -34,6 +34,26 @@ foreach ($p in @($node, $script)) {
 }
 
 Log ''
+Log '--- 先停止服務（restoreBackup 拒絕覆寫執行中的資料庫）---'
+# 正規路徑是設定頁的「回滾更新」按鈕：服務會先讓自己停下來，再由 sidecar 執行回滾。
+# 那個按鈕只在更新後健康檢查失敗時出現，所以這裡手動走同樣的順序：先停，再回滾。
+Start-Process -FilePath "$env:SystemRoot\System32\wscript.exe" `
+  -ArgumentList @("`"$(Join-Path $appDir 'launcher.vbs')`"", 'stop', 'noninteractive') -WindowStyle Hidden -Wait
+$deadline = (Get-Date).AddSeconds(60)
+while ((Get-Date) -lt $deadline) {
+  $alive = $null -ne (Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue)
+  if (-not $alive) { break }
+  Start-Sleep -Seconds 3
+}
+if (Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue) {
+  Log '>>> 服務仍在監聽 8787，回滾必定失敗。請從開始功能表「停止背景追蹤」後重試。'
+  Log ''
+  Log ("完成，結果已寫入 " + $out)
+  exit 1
+}
+Log '服務已停止。'
+
+Log ''
 Log '--- 執行 rollback ---'
 $prev = [Console]::OutputEncoding
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

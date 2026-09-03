@@ -31,6 +31,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
 | BT-UX-005 | P2 | Proposed | 開啟 App 的第一眼看不到更新橫幅（檢查比頁面載入晚 5 秒） | — |
 | BT-UX-006 | P1 | Fixed（待發佈） | 更新完成後仍兜售剛裝好的那一版，安裝按鈕還在 | 需要 1.0.3 才會到使用者手上 |
+| BT-UX-007 | P2 | Proposed | 更新成功後沒有任何使用者可及的回滾入口 | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -73,6 +74,20 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Update failure 可 rollback，且使用者資料完整。
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
+
+### BT-UX-007 — 更新成功後沒有任何使用者可及的回滾入口
+
+- Priority：P2
+- Status：Proposed
+- 2026-09-03 VM 實測時發現。設定頁的「回滾更新」按鈕只在
+  `updateHealth.rollbackOffered` 為真時顯示，而它只在**更新後健康檢查失敗**時才為真。
+- 也就是說：更新**成功**之後，使用者若不喜歡新版或遇到新版才有的問題，
+  **在介面上沒有任何退回舊版的方法**。唯一的路徑是命令列執行 `bin/rollback.js`，
+  這與「使用者不需要碰技術工具」的產品主張直接矛盾。
+- 舊版程式與更新前的資料庫備份都還在（`versions/<舊版>/` 與 `pre-update-*` 備份），
+  所以能力是有的，只是沒有入口。
+- 設計上這是刻意的（回滾定位為「壞更新的救援」而非「一般可逆操作」），
+  所以列為 P2 待決定，而不是缺陷。要不要開放，是產品決定。
 
 ### BT-UX-006 — 更新完成後仍兜售剛裝好的那一版
 

@@ -697,8 +697,12 @@ export function rollbackUpdate(config, { pidFile } = {}) {
   const versionDir = join(config.installRoot, 'versions', record.previousVersion);
   if (!existsSync(versionDir)) throw updateError('BT-UPD-007', '找不到可回滾的舊版程式。');
   let restored;
+  // Three very different failures reach here - the backup file is gone, the backup does not verify,
+  // or the service is still holding the database - and each needs a different response. Discarding
+  // the cause collapsed them into one opaque sentence, which cost a diagnostic round on 2026-09-03.
+  // The public envelope still exposes only the code and the registry's recovery steps.
   try { restored = restoreBackup(record.databaseBackup, config.dbPath, { pidFile }); }
-  catch { throw updateError('BT-UPD-007', '無法還原更新前的備份。'); }
+  catch (cause) { throw updateError('BT-UPD-007', `無法還原更新前的備份：${cause?.message || cause}`); }
   mkdirSync(dirname(config.update.currentFile), { recursive: true });
   const temp = `${config.update.currentFile}.${process.pid}.tmp`;
   writeFileSync(temp, JSON.stringify({ version: record.previousVersion }, null, 2));

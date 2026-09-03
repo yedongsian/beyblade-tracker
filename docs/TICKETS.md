@@ -27,10 +27,10 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 |---|---|---|---|---|
 | BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
 | BT-UPD-002 | P0 | Proposed | 把更新驗證公鑰內建到產物，不再依賴環境變數 | — |
-| BT-REL-001 | P0 | Fixed（待 VM 複驗） | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 成功判準仍待改 |
+| BT-REL-001 | P0 | **Verified** | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 2026-09-03 VM 實測通過 |
 | BT-UX-004 | P1 | Proposed | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
 | BT-UX-005 | P2 | Proposed | 開啟 App 的第一眼看不到更新橫幅（檢查比頁面載入晚 5 秒） | — |
-| BT-UX-006 | P1 | Fixed（待發佈） | 更新完成後仍兜售剛裝好的那一版，安裝按鈕還在 | 需要 1.0.3 才會到使用者手上 |
+| BT-UX-006 | P1 | Fixed（1.0.3） | 更新完成後仍兜售剛裝好的那一版，安裝按鈕還在 | 已納入 1.0.3 |
 | BT-UX-007 | P2 | Proposed | 更新成功後沒有任何使用者可及的回滾入口 | — |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
@@ -74,6 +74,17 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   - Update failure 可 rollback，且使用者資料完整。
   - Release／rollback owner 簽核；Runbook、CHANGELOG、下載頁一致。
 - Evidence：PR、release artifact checksums、signature verification、VM checklist、DB integrity／FK result。
+
+- **2026-09-03 VM 複驗通過（1.0.1 → 1.0.2）。** 以程式比對四次量測：
+
+  | 量測點 | `current.json` | `/health` | 一致 |
+  | --- | --- | --- | --- |
+  | 更新前 | 1.0.1 | 1.0.1 | ✔ |
+  | 更新後 | 1.0.2 | 1.0.2 | ✔ |
+  | 回滾後 | 1.0.1 | 1.0.1 | ✔ |
+
+  資料筆數 13 項在三次比對中全部相同；回滾回報資料庫完整性 `ok`。
+  上一輪「`current.json` 是新版、`/health` 是舊版」的死結不再出現。
 
 ### BT-UX-007 — 更新成功後沒有任何使用者可及的回滾入口
 

@@ -1090,6 +1090,39 @@ test('a completed update stops being offered on every surface', async () => {
   }, { appConfig: { update: {} } });
 });
 
+// Found on the VM while proving BT-UPD-002. With no update source configured the server renders
+// "no update source is configured", and one second later the page script overwrites it with
+// "you are on the latest version" - renderUpdate treated "nothing to install" as "nothing newer
+// exists", without asking whether checking was even possible. Telling someone who cannot receive
+// updates that they are up to date is worse than saying nothing.
+test('an app that cannot check for updates does not claim to be up to date', async () => {
+  await withServer(async ({ db, base }) => {
+    // A stored result from a time when checking *was* configured is the case that hid this.
+    db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateLatestResult',?,?)", [
+      JSON.stringify({ enabled: true, updateAvailable: true, manifest: { version: APP_VERSION, manifestDigest: 'digest' } }),
+      '2026-09-04T00:00:00.000Z',
+    ]);
+    const status = await (await fetch(`${base}/api/update/status`)).json();
+    assert.equal(status.enabled, false, 'enabled must describe now, not when the check ran');
+    assert.equal(status.updateAvailable, false);
+
+    const settings = await (await fetch(`${base}/settings`)).text();
+    assert.match(settings, /正式更新來源尚未設定/, 'the server must say so');
+    // The page script must be able to tell the two states apart, or it will overwrite the truth.
+    assert.match(settings, /updateUnavailable:/, 'the script needs the wording available to it');
+    assert.match(settings, /data\.enabled===false\?settingsMessages\.updateUnavailable/,
+      'renderUpdate must branch on enabled before falling back to noUpdate');
+  }, { appConfig: { update: {} } });
+});
+
+test('an app that can check and finds nothing still says it is up to date', async () => {
+  await withServer(async ({ base }) => {
+    const status = await (await fetch(`${base}/api/update/status`)).json();
+    assert.equal(status.enabled, true, 'a configured source must report enabled');
+    assert.equal(status.updateAvailable, false);
+  }, { appConfig: { update: { manifestUrl: 'https://example.test/release-manifest.json' } } });
+});
+
 test('a deferred update is still reachable but stops nagging', async () => {
   await withUpdateAvailable(async ({ db, base }) => {
     db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateDeferred',?,?)", [

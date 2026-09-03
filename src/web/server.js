@@ -674,14 +674,17 @@ export function createWebServer(db, options = {}) {
           throw error;
         }
         const state = getUpdateState(db);
-        out = json({ ...state.latestResult, updateAvailable: Boolean(pendingUpdate(state)), state,
+        out = json({ ...state.latestResult, updateAvailable: Boolean(pendingUpdate(state)),
+          enabled: Boolean(appConfig.update?.manifestUrl), state,
           deferred: isDeferredUpdate(state, state.latestResult?.manifest),
           health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig) });
       } else if (req.method === 'GET' && url.pathname === '/api/update/status') {
         pruneUpdateOperations(updateOperations, now());
         const state = getUpdateState(db);
-        out = json({ ...(state.latestResult || { enabled: Boolean(appConfig.update?.manifestUrl), updateAvailable: false }),
-          updateAvailable: Boolean(pendingUpdate(state)), state,
+        out = json({ ...(state.latestResult || { updateAvailable: false }),
+          updateAvailable: Boolean(pendingUpdate(state)),
+          // Whether checking is possible *now* - a stored result carries the answer from when it ran.
+          enabled: Boolean(appConfig.update?.manifestUrl), state,
           deferred: isDeferredUpdate(state, state.latestResult?.manifest), health: getPostUpdateHealth(appConfig), rollback: getRollbackStatus(appConfig),
           operation: updateOperationSummary(findActiveUpdateOperation(updateOperations)) });
       } else if (req.method === 'POST' && url.pathname === '/api/update/defer') {

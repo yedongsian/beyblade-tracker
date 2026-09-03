@@ -32,6 +32,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-005 | P2 | Proposed | 已載入的頁面不會反映後來的變化（更新橫幅、版本號） | 使用者同意延後 |
 | BT-UX-006 | P1 | **Verified** | 更新完成後仍兜售剛裝好的那一版，安裝按鈕還在 | 2026-09-04 VM 實測通過 |
 | BT-UX-007 | P2 | Proposed | 更新成功後沒有任何使用者可及的回滾入口 | — |
+| BT-UX-008 | P1 | Fixed（待發佈） | 無法檢查更新時，畫面仍宣稱「目前已是最新版本」 | 1.0.4 之後才會到使用者手上 |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |
@@ -89,6 +90,29 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 - **2026-09-04 VM 複驗通過（1.0.1 → 1.0.3）。** 更新完成後設定頁顯示
   「**目前已是最新版本。**」，「安裝更新」與「稍後」按鈕都消失，只剩「檢查更新」。
   1.0.2 那次「更新到 1.0.2 卻仍兜售 1.0.2」的情況不再出現。
+
+### BT-UX-008 — 無法檢查更新時，畫面仍宣稱「目前已是最新版本」
+
+- Priority：P1
+- Status：Fixed（程式已修，需 1.0.4 之後的版本才會到使用者手上）
+- 2026-09-04 在驗證 `BT-UPD-002` 時發現。清掉環境變數、重啟 1.0.3 之後，
+  設定頁**不是**顯示預期的「正式更新來源尚未設定。」，而是「**目前已是最新版本。**」
+- 成因：伺服器端確實渲染了正確的「正式更新來源尚未設定。」，但頁面載入 1 秒後
+  `refreshUpdateStatus` 就把它蓋掉了。`renderUpdate`（`ui.js:133`）在沒有可用更新時
+  **一律**寫 `noUpdate`：
+
+  ```js
+  if(!data.updateAvailable||!availableUpdate){updateDetails.textContent=settingsMessages.noUpdate; …}
+  ```
+
+  它把「沒有東西可裝」當成「沒有更新版存在」，從不過問「究竟有沒有能力檢查」。
+- **這比沒有訊息更糟**：對一個根本收不到更新的使用者，斬釘截鐵地說「你已經是最新版」。
+  使用者不會有任何理由去懷疑，也就永遠不會發現自己收不到更新 ——
+  這正是 `BT-UPD-002` 之所以能一路潛伏到現在的原因之一。
+- 修法：兩支 status API 一律回報**當下**的 `enabled: Boolean(appConfig.update?.manifestUrl)`
+  （不能沿用存下來的 `latestResult.enabled`，那是檢查當時的事實）；
+  `renderUpdate` 在 `enabled === false` 時改用 `settings.updateUnavailable`。
+- 兩項測試，都反向檢查過：JS 退回一律說「已是最新」→ 失敗；API 沿用舊 `enabled` → 失敗。
 
 ### BT-UX-007 — 更新成功後沒有任何使用者可及的回滾入口
 

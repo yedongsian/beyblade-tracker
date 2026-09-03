@@ -1123,6 +1123,64 @@ test('an app that can check and finds nothing still says it is up to date', asyn
   }, { appConfig: { update: { manifestUrl: 'https://example.test/release-manifest.json' } } });
 });
 
+// BT-UX-004. The card read: "可更新至 1.0.1。 Beyblade Tracker · 26.2 MB ·
+// 2026-08-29T16:05:53.570Z Beyblade Tracker 1.0.1" - a raw ISO timestamp shown to users of a
+// product whose whole premise is that they never touch technical tooling, with the line breaks
+// swallowed because #update-details had no white-space rule, and the notes repeating the publisher.
+// This runs the emitted client function rather than matching source text, so it tests the output.
+function updateSummaryFor(language) {
+  const emitted = settingsScript(createTranslator(language));
+  const body = emitted.match(/function updateWhen[\s\S]*?return lines\.join\([^)]*\)\}/);
+  assert.ok(body, 'the summary builder must still be emitted to the page');
+  const build = new Function('document', 'message', 'bytes', `${body[0]}; return updateSummary;`);
+  return build({ documentElement: { lang: language } },
+    (key, values) => `<${key}:${values.version}>`,
+    (size) => `${size} B`);
+}
+
+test('the update card is readable rather than a raw manifest dump', () => {
+  const summary = updateSummaryFor('zh-TW');
+  const lines = summary({
+    version: '1.0.5', publisher: 'Beyblade Tracker', size: 1024,
+    publishedAt: '2026-09-04T02:15:00.000Z', releaseNotes: '修正更新卡片的可讀性。',
+  }, false).split('\n');
+
+  assert.equal(lines.length, 3, 'version, facts and notes are three lines, not one sentence');
+  assert.doesNotMatch(lines[1], /T\d\d:\d\d:\d\d/, 'no ISO timestamp may reach the user');
+  assert.match(lines[1], /2026/, 'the date must still be there, just readable');
+  assert.equal(lines[2], '修正更新卡片的可讀性。');
+});
+
+test('the rendered page keeps the update card line breaks', async () => {
+  await withServer(async ({ base }) => {
+    const page = await (await fetch(`${base}/settings`)).text();
+    // textContent carries the newlines; without this rule the browser collapses them to spaces and
+    // the three lines become the run-on sentence BT-UX-004 was filed for.
+    assert.match(page, /#update-details\{white-space:pre-line\}/);
+  }, { appConfig: { update: {} } });
+});
+
+test('the update card degrades instead of breaking on bad manifest fields', () => {
+  const summary = updateSummaryFor('zh-TW');
+  // Release notes that merely repeat the publisher and version add nothing; this is what shipped.
+  const duplicated = summary({
+    version: '1.0.1', publisher: 'Beyblade Tracker', size: 1,
+    publishedAt: '2026-08-29T16:05:53.570Z', releaseNotes: 'Beyblade Tracker 1.0.1',
+  }, false);
+  assert.equal(duplicated.split('\n').length, 2, 'a notes line that repeats the facts is dropped');
+
+  const undated = summary({ version: '1.0.5', publisher: 'Beyblade Tracker', size: 1, publishedAt: 'not-a-date', releaseNotes: '' }, false);
+  assert.match(undated, /Beyblade Tracker/, 'an unparseable date must not take the whole card down');
+  assert.doesNotMatch(undated, /Invalid Date|NaN/);
+});
+
+test('the update card speaks the language the page does', () => {
+  const zh = updateSummaryFor('zh-TW')({ version: '1.0.5', publisher: 'P', size: 1, publishedAt: '2026-09-04T02:15:00.000Z', releaseNotes: '' }, false);
+  const en = updateSummaryFor('en')({ version: '1.0.5', publisher: 'P', size: 1, publishedAt: '2026-09-04T02:15:00.000Z', releaseNotes: '' }, false);
+  assert.notEqual(zh, en, 'the date must follow the interface language');
+  assert.match(en, /September/);
+});
+
 test('a deferred update is still reachable but stops nagging', async () => {
   await withUpdateAvailable(async ({ db, base }) => {
     db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateDeferred',?,?)", [

@@ -6,7 +6,7 @@
 # UPDATE_MANIFEST_URL 與 UPDATE_PUBLIC_KEY，而環境變數的優先權高於產物內建值。
 # 不清掉的話，就算修正完全失效，畫面看起來也會一模一樣 —— 這一輪就會證明不了任何事。
 
-param([Parameter(Mandatory = $true)][ValidateSet('Before', 'After')][string]$Phase)
+param([Parameter(Mandatory = $true)][ValidateSet('Before', 'After', 'Recheck')][string]$Phase)
 
 $out = (Join-Path $PSScriptRoot 'update-test-shipped-config.txt')
 function Log($t) { Write-Host $t; Add-Content -LiteralPath $out -Value $t -Encoding utf8 }
@@ -35,13 +35,19 @@ Log ("########## BT-UPD-002 $Phase   " + (Get-Date).ToString('o') + " ##########
 if ($Phase -eq 'Before') {
   Log ''
   Log '--- 1. 清除前幾輪手動設定的環境變數 ---'
+  # 登錄檔與「本行程」兩邊都要清。SetEnvironmentVariable('User') 只改登錄檔，
+  # 已經在跑的行程保有自己的副本 —— 而本腳本啟動的安裝器、以及安裝器啟動的服務，
+  # 都會繼承本行程的環境。2026-09-04 就是這樣讓舊的 v1.0.3 網址活到了 1.0.4 的服務裡。
   foreach ($name in @('UPDATE_MANIFEST_URL', 'UPDATE_PUBLIC_KEY')) {
-    $had = [Environment]::GetEnvironmentVariable($name, 'User')
+    $hadUser = [Environment]::GetEnvironmentVariable($name, 'User')
+    $hadProc = [Environment]::GetEnvironmentVariable($name, 'Process')
     [Environment]::SetEnvironmentVariable($name, $null, 'User')
-    $now = [Environment]::GetEnvironmentVariable($name, 'User')
-    Log ("{0,-20} 原本{1}  清除後{2}" -f $name,
-      $(if ($had) { '有值' } else { '無值' }),
-      $(if ($now) { '>>> 仍有值，未清乾淨' } else { '已清空 ✔' }))
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+    $nowUser = [Environment]::GetEnvironmentVariable($name, 'User')
+    $nowProc = [Environment]::GetEnvironmentVariable($name, 'Process')
+    Log ("{0,-20} 登錄檔 原本{1} → {2}    本行程 原本{3} → {4}" -f $name,
+      $(if ($hadUser) { '有值' } else { '無值' }), $(if ($nowUser) { '>>> 仍有值' } else { '已清空 ✔' }),
+      $(if ($hadProc) { '有值' } else { '無值' }), $(if ($nowProc) { '>>> 仍有值' } else { '已清空 ✔' }))
   }
 
   Log ''
@@ -55,6 +61,38 @@ if ($Phase -eq 'Before') {
   Log '  2. 到設定頁看「版本更新」區塊，應顯示「正式更新來源尚未設定」——'
   Log '     那正是修正前一般使用者的處境，也證明先前幾輪是靠環境變數才過的。'
   Log '  3. 回到選單按 A，安裝 1.0.4 並記錄修正後的行為。'
+} elseif ($Phase -eq 'Recheck') {
+  Log ''
+  Log '--- 更新設定究竟從哪裡來 ---'
+  foreach ($name in @('UPDATE_MANIFEST_URL', 'UPDATE_PUBLIC_KEY')) {
+    foreach ($scope in @('Process', 'User', 'Machine')) {
+      $v = [Environment]::GetEnvironmentVariable($name, $scope)
+      if ($v) { Log ("{0,-20} {1,-8} >>> 有值" -f $name, $scope) }
+    }
+  }
+  # loadEnv 會讀使用者目錄下的 .env，那是另一個可能的來源
+  $envFile = Join-Path (Join-Path $env:LOCALAPPDATA 'BeybladeTracker') '.env'
+  Log (".env 檔案 : " + $(if (Test-Path -LiteralPath $envFile) { ">>> 存在：$envFile" } else { '不存在' }))
+  if (Test-Path -LiteralPath $envFile) {
+    Get-Content -LiteralPath $envFile -Encoding UTF8 | Where-Object { $_ -match 'UPDATE_' } | ForEach-Object { Log ("    " + $_) }
+  }
+  # 產物自帶的值
+  $current = $(try { (Get-Content -LiteralPath (Join-Path $appDir 'current.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { $null })
+  $releaseJson = if ($current) { Join-Path (Join-Path (Join-Path $appDir 'versions') $current) 'release.json' } else { $null }
+  if ($releaseJson -and (Test-Path -LiteralPath $releaseJson)) {
+    $r = Get-Content -LiteralPath $releaseJson -Raw -Encoding UTF8 | ConvertFrom-Json
+    Log ("產物 release.json updateManifestUrl : " + $(if ($r.updateManifestUrl) { $r.updateManifestUrl } else { '>>> 空' }))
+    Log ("產物 release.json updatePublicKey   : " + $(if ($r.updatePublicKey) { '有' } else { '>>> 空' }))
+  } else { Log '>>> 找不到產物的 release.json' }
+
+  Log ''
+  $h = Report-State '目前'
+  Log ''
+  if ($h -and $h.release.updateManifestUrl -match 'releases/latest/download') {
+    Log '=== 更新來源來自產物內建值 ✔ BT-UPD-002 通過 ==='
+  } elseif ($h) {
+    Log '=== >>> 更新來源仍不是內建值。對照上面各來源，就知道是誰蓋掉的。 ==='
+  }
 } else {
   $installer = Join-Path $PSScriptRoot 'BeybladeTracker-1.0.4-Setup.exe'
   $expected = $(try { ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'SHA256-1.0.4.txt') -Raw) -split '\s+')[0] } catch { $null })
@@ -72,11 +110,17 @@ if ($Phase -eq 'Before') {
   Log '--- 2. 再次確認環境變數是空的（否則這一輪證明不了任何事）---'
   $dirty = $false
   foreach ($name in @('UPDATE_MANIFEST_URL', 'UPDATE_PUBLIC_KEY')) {
-    $v = [Environment]::GetEnvironmentVariable($name, 'User')
-    Log ("{0,-20} {1}" -f $name, $(if ($v) { '>>> 仍有值' } else { '空 ✔' }))
-    if ($v) { $dirty = $true }
+    foreach ($scope in @('User', 'Process')) {
+      $v = [Environment]::GetEnvironmentVariable($name, $scope)
+      Log ("{0,-20} {1,-8} {2}" -f $name, $scope, $(if ($v) { '>>> 仍有值' } else { '空 ✔' }))
+      if ($v) { $dirty = $true }
+    }
   }
-  if ($dirty) { Log '>>> 請先執行 Phase Before（選單 9）清除環境變數。'; exit 1 }
+  if ($dirty) {
+    Log '>>> 本行程仍帶著舊值。安裝器與它啟動的服務會整條繼承下去，這一輪就白做了。'
+    Log '>>> 請關掉這個視窗，重新雙擊 RUN-UPDATE-TEST.cmd，再按 9 然後按 A。'
+    exit 1
+  }
 
   Log ''
   Log '--- 3. 安裝 1.0.4 ---'

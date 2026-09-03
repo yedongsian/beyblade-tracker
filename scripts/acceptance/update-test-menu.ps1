@@ -18,6 +18,7 @@ $items = [ordered]@{
   '8' = @{ 名稱 = '診斷：launcher restart 卡在哪一層（分層執行並攤開輸出）'; 腳本 = 'update-test-launcher.ps1'; 參數 = @{} }
   '9' = @{ 名稱 = 'BT-UPD-002 ① 清除環境變數，記錄修正前的行為'; 腳本 = 'update-test-shipped-config.ps1'; 參數 = @{ Phase = 'Before' } }
   'A' = @{ 名稱 = 'BT-UPD-002 ② 安裝 1.0.4，記錄修正後的行為';   腳本 = 'update-test-shipped-config.ps1'; 參數 = @{ Phase = 'After' } }
+  'B' = @{ 名稱 = 'BT-UPD-002 ③ 只檢查：更新設定究竟來自哪裡';        腳本 = 'update-test-shipped-config.ps1'; 參數 = @{ Phase = 'Recheck' } }
 }
 
 while ($true) {

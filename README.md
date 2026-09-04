@@ -2,7 +2,17 @@
 
 Beyblade Tracker 是一個 Windows 優先的本機商品追蹤工具，定期讀取使用者核准的公開商店頁面，合併同一 Beyblade 商品的不同刊登，保存價格／庫存歷史，並在新品、預購、現貨、補貨或價格變動時通知使用者。
 
-目前版本：`1.0.0`；SQLite schema：`10`。
+目前版本：`1.0.6`；SQLite schema：`13`。
+
+## 下載
+
+**[前往最新版下載頁](https://github.com/yedongsian/beyblade-tracker/releases/latest)** —— 下載 `BeybladeTracker-<版本>-Setup.exe` 後雙擊安裝，不需要另外安裝 Node.js 或任何開發工具。
+
+> **安裝時會出現「Windows 已保護您的電腦」。** 這是因為安裝檔尚未購買程式碼簽章憑證，不代表檔案有問題。請點「更多資訊」→「仍要執行」。
+>
+> 想自行核對檔案，發布頁的 `release-manifest.json` 內含 SHA-256。
+
+安裝後會從開始功能表開啟管理頁（`http://127.0.0.1:8787`）。之後有新版時，管理頁會出現更新提示，確認後才會下載安裝。
 
 > **非官方專案聲明：** 本專案是獨立開發的非官方工具，與 Takara Tomy、Hasbro 或其他 Beyblade 品牌權利人沒有隸屬、授權或代言關係。Beyblade 及相關商標屬各自權利人所有。
 
@@ -34,7 +44,9 @@ Beyblade Tracker 是一個 Windows 優先的本機商品追蹤工具，定期讀
 
 <http://127.0.0.1:8787>
 
-安裝與移機參閱 [INSTALL.md](INSTALL.md)，常見問題參閱 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。目前 installer 是 release candidate；公開簽章、HTTPS release channel 與 clean Windows SmartScreen 驗收尚未完成。
+使用教學參閱 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)，安裝與移機參閱 [INSTALL.md](INSTALL.md)，常見問題參閱 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
+
+更新流程已於 2026-09-04 在 clean Windows VM 上完整驗證（原始輸出見 [docs/acceptance-evidence](docs/acceptance-evidence/)）。**尚未完成的是程式碼簽章憑證**，因此安裝時仍會觸發 SmartScreen 警告。
 
 ### 原始碼開發
 
@@ -116,7 +128,7 @@ Repository 的產品、工程與執行團隊文件入口是 [docs/README.md](doc
 - [PR Description](docs/PR_DESCRIPTION.md)
 - [CHANGELOG](docs/CHANGELOG.md)
 
-Windows release package 另保留 `INSTALL.md`、`PRIVACY.md`、`SOURCE_POLICY.md`、`SOURCE_DEVELOPMENT.md`、`TROUBLESHOOTING.md`、`RELEASE_GUIDE.md` 作為隨產品交付的使用者文件。
+Windows release package 另保留 `USER_GUIDE.md`、`INSTALL.md`、`PRIVACY.md`、`SOURCE_POLICY.md`、`SOURCE_DEVELOPMENT.md`、`TROUBLESHOOTING.md`、`RELEASE_GUIDE.md` 作為隨產品交付的使用者文件。
 
 問題回報請使用 [GitHub Issues 繁中表單](https://github.com/yedongsian/beyblade-tracker/issues/new/choose)。Issue 內容會公開，請勿上傳 Token、Webhook、`.env`、資料庫、移機檔、完整 log、private URL 或個人資料。
 

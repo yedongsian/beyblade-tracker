@@ -56,6 +56,10 @@ for (const entry of ['package.json', 'package-lock.json', 'README.md', 'INSTALL.
   const source = join(ROOT, entry);
   if (existsSync(source)) copyTree(source, join(PAYLOAD, entry));
 }
+// USER_GUIDE 是給一般使用者的教學，卻是唯一沒被打包的一份 —— 裝完之後在機器上找不到它。
+// 它在 repo 裡位於 docs/，但出貨時與其他說明文件一起放在產物根目錄。
+copyTree(join(ROOT, 'docs', 'USER_GUIDE.md'), join(PAYLOAD, 'USER_GUIDE.md'));
+
 // Fail the build rather than ship a payload carrying the builder's own source list.
 for (const forbidden of EXCLUDED_FROM_PAYLOAD) {
   const shipped = join(PAYLOAD, forbidden.slice(resolve(ROOT).length + 1));

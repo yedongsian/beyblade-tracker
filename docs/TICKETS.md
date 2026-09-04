@@ -25,7 +25,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
 | ID | Priority | Status | 標題 | 依賴／阻塞 |
 |---|---|---|---|---|
-| BT-P0-001 | P0 | Ready | 完成 Windows 發佈 | 建一個 1.0.1 ＋ GitHub Releases 發佈流程。**憑證與 hosting 已確認非必要** |
+| BT-P0-001 | P0 | **Done** | 完成 Windows 發佈 | v1.0.1～v1.0.5 已發佈；1.0.5 為正式版；更新鏈實機驗證通過 |
 | BT-UPD-002 | P0 | **Verified** | 更新來源與驗證公鑰內建到產物，不再依賴環境變數 | 2026-09-04 VM 實測通過 |
 | BT-REL-001 | P0 | **Verified** | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 2026-09-03 VM 實測通過 |
 | BT-UX-004 | P1 | Fixed（1.0.5） | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
@@ -40,7 +40,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-001 | P0 | In Review | 完成一般使用者雙擊安裝與單一入口驗收 | A 段已全數 PASS；剩 verified publisher（`BT-P0-001` 的簽章） |
 | BT-UX-002 | P0 | In Review | 建立可見且穩定的使用者錯誤代碼 | 五條 criteria 皆已實機驗證，但 **D-8 顯示可預期錯誤仍會被報成 `BT-LCH-999`**，僅修了冷卻一條路徑 |
 | BT-UX-003 | P1 | In Review | 抓取失敗的來源錯誤訊息改為繁中且可操作 | Recipe 行三語化尚未實機複驗；另有「dns 建議語在單純斷網時誤導」待處理 |
-| BT-UPD-001 | P0 | In Review | 實作使用者確認後的自動更新 UX | BT-P0-001 release channel／clean VM |
+| BT-UPD-001 | P0 | **Verified** | 實作使用者確認後的自動更新 UX | 2026-09-04 clean VM 全鏈通過 |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
 | BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | 發布前確認文件進入 release payload |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
@@ -310,6 +310,25 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
   單獨不足以定案。決定性證據是 `update-test-check.ps1` 在 19:09 對 `/health` 的**即時呼叫**
   回報 `1.0.0` —— 那是更新完成之後發出的新請求。
 
+
+### 更新鏈驗收總結（2026-09-04）
+
+在 clean VM 上完成的最後一輪：**1.0.4 → 1.0.5，全程未設任何環境變數**。
+
+| 量測點 | `current.json` | `/health` | 更新來源 |
+| --- | --- | --- | --- |
+| 更新前 | 1.0.4 | 1.0.4 | 產物內建 `/releases/latest/download/` |
+| 更新後 | 1.0.5 | 1.0.5 | 產物內建 `/releases/latest/download/` |
+
+資料筆數 13 項完全相同。這是第一次**完全由產物自身設定驅動**的更新 ——
+先前每一輪都靠手動設環境變數，那些通過對真實使用者從不成立。
+
+已驗證的項目：發現新版（`BT-UPD-001`）、使用者確認後才安裝、更新後服務真的換版
+（`BT-REL-001`）、資料完整保留、回滾可用、更新後正確收起提示（`BT-UX-006`）、
+更新設定內建於產物（`BT-UPD-002`）。
+
+過程中發現且已修、但需下一版才會到使用者手上的：`BT-UX-009`。
+仍未修：`BT-UX-005`、`BT-UX-007`（皆 P2）。
 
 ### BT-UPD-002 — 把更新驗證公鑰內建到產物
 - **2026-09-04 已修（1.0.4）。** 實際範圍比原本記的大：`manifestUrl` 與 `publicKey` **兩者**

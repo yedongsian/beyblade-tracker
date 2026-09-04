@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { APP_VERSION } from '../src/release/version.js';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import {
   copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
@@ -417,6 +418,28 @@ test('the acceptance round file is valid and read as UTF-8', () => {
     assert.match(script, /-Raw -Encoding UTF8 \| ConvertFrom-Json/, `${name} must not let PS 5.1 read it as ANSI`);
     assert.doesNotMatch(script, /\$targetVersion = '/, `${name} must not pin the version again`);
   }
+});
+
+// The README claimed 1.0.0 through six releases, and said the installer's release channel was
+// unverified long after it had been verified on a clean VM. Nothing was watching it, so it drifted
+// for a month and would have been the first thing a new user read.
+test('the README states the version that is actually being shipped', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const stated = readme.match(/目前版本：`([^`]+)`/);
+  assert.ok(stated, 'the README must state a version at all');
+  assert.equal(stated[1], APP_VERSION, 'the README version drifted from package.json');
+  assert.match(readme, /releases\/latest/, 'a new user needs somewhere to download from');
+  // Unsigned installer: SmartScreen fires before the user sees anything the app does.
+  assert.match(readme, /Windows 已保護您的電腦/, 'the SmartScreen prompt must be warned about up front');
+});
+
+test('the user guide ships with the product', () => {
+  const build = readFileSync(new URL('../scripts/build-windows-release.js', import.meta.url), 'utf8');
+  assert.match(build, /copyTree\(join\(ROOT, 'docs', 'USER_GUIDE\.md'\), join\(PAYLOAD, 'USER_GUIDE\.md'\)\)/,
+    'the one document written for end users must reach the machines they install on');
+  const guide = readFileSync(new URL('../docs/USER_GUIDE.md', import.meta.url), 'utf8');
+  assert.match(guide, new RegExp(`適用基線：${APP_VERSION.replaceAll('.', '\.')}`), 'the guide names the version it describes');
+  assert.doesNotMatch(guide, /尚待 GitHub Release 發布/, 'the installer has been published since 1.0.1');
 });
 
 test('every script the menu offers exists', () => {

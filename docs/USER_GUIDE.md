@@ -1,7 +1,7 @@
 # Beyblade Tracker 使用教學
 
 > 對象：不具開發經驗的一般 Windows 使用者
-> 適用基線：1.0.6
+> 適用基線：1.0.7
 > 最後更新：2026-09-04
 >
 > **下載**：[最新版下載頁](https://github.com/yedongsian/beyblade-tracker/releases/latest)。

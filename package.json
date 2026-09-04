@@ -1,6 +1,6 @@
 {
   "name": "beyblade-tracker",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Reliable multi-store Beyblade product tracker with offline fixtures, SQLite storage, product/offer merging, event detection and pluggable notifications.",
   "type": "module",
   "private": true,

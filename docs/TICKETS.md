@@ -25,7 +25,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 
 | ID | Priority | Status | 標題 | 依賴／阻塞 |
 |---|---|---|---|---|
-| BT-P0-001 | P0 | **Done** | 完成 Windows 發佈 | v1.0.1～v1.0.5 已發佈；1.0.5 為正式版；更新鏈實機驗證通過 |
+| BT-P0-001 | P0 | **Done** | 完成 Windows 發佈 | v1.0.1～v1.0.7 已發佈；1.0.7 為正式版；更新鏈實機驗證通過 |
 | BT-UPD-002 | P0 | **Verified** | 更新來源與驗證公鑰內建到產物，不再依賴環境變數 | 2026-09-04 VM 實測通過 |
 | BT-REL-001 | P0 | **Verified** | 更新後服務從未重啟：身分比對把舊版服務判為陌生行程 | 2026-09-03 VM 實測通過 |
 | BT-UX-004 | P1 | Fixed（1.0.5） | 更新卡片對一般使用者不可讀：原始 ISO 時間戳、四段資訊擠成一行 | — |
@@ -42,7 +42,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-003 | P1 | In Review | 抓取失敗的來源錯誤訊息改為繁中且可操作 | Recipe 行三語化尚未實機複驗；另有「dns 建議語在單純斷網時誤導」待處理 |
 | BT-UPD-001 | P0 | **Verified** | 實作使用者確認後的自動更新 UX | 2026-09-04 clean VM 全鏈通過 |
 | BT-SUP-001 | P1 | In Review | 建立公開 GitHub Issues 與繁中問題回報表單 | 雙帳號收信驗收 |
-| BT-DOC-002 | P1 | In Review | 建立一般使用者教學與錯誤代碼目錄 | 發布前確認文件進入 release payload |
+| BT-DOC-002 | P1 | **Done** | 建立一般使用者教學與錯誤代碼目錄 | 1.0.7 起 USER_GUIDE 隨產物出貨；已加測試防止再度漏掉 |
 | BT-P2-001 | P2 | Proposed | HTTP conditional request 與 bounded cache | BT-P1-002 metrics |
 | BT-P2-002 | P2 | Proposed | Chrome browser pool 與 concurrency control | 效能基準 |
 | BT-P2-003 | P2 | Proposed | Queue backpressure、priority 與效能基準 | BT-P1-002 |

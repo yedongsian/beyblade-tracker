@@ -61,6 +61,22 @@ if (-not $servedNow) {
   Log "服務實際在跑 : $servedNow（與 current.json 一致）"
 }
 
+# 1.0.4 起，更新來源與公鑰已內建於產物（BT-UPD-002）。此時再設環境變數，
+# 會把產物自己的設定蓋掉 —— 驗收就變成在測環境變數，而不是在測產品。
+$currentRelease = Join-Path (Join-Path (Join-Path $appDir 'versions') $installed) 'release.json'
+if (Test-Path -LiteralPath $currentRelease) {
+  $r = Get-Content -LiteralPath $currentRelease -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($r.updateManifestUrl) {
+    Log ''
+    Log '>>> 這個版本已經內建更新來源與公鑰，不需要（也不應該）設定環境變數。'
+    Log (">>> 產物內建來源：" + $r.updateManifestUrl)
+    Log '>>> 直接到設定頁按「檢查更新」即可；本腳本到此為止。'
+    Log ''
+    Log ("完成，結果已寫入 " + $out)
+    exit 0
+  }
+}
+
 # --- 2. 公鑰檔 ---
 Log ''
 Log '--- 2. 簽章公鑰 ---'

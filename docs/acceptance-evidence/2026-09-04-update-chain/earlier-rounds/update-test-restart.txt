@@ -1,0 +1,20 @@
+﻿=== BT-REL-001 手動重啟測試  2026-08-29T19:34:29.4900314+02:00 ===
+
+[重啟前] current.json=1.0.1   /health=1.0.0
+[重啟前] 8787 由 PID 4448（版本目錄 1.0.0，啟動於 08/29/2026 19:03:30）持有
+
+--- 執行安裝器本來該執行的那一行 ---
+  wscript.exe "C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker\launcher.vbs" restart noninteractive
+已送出。等待最多 150 秒讓服務換版…
+
+[重啟後] current.json=1.0.1   /health=1.0.0
+[重啟後] 8787 由 PID 4448（版本目錄 1.0.0，啟動於 08/29/2026 19:03:30）持有
+
+=== 結論：重啟這條路徑本身就壞了 ===
+   手動執行也換不了版 —> 問題在 launcher restart／service-control，與安裝器無關。
+
+不論哪一種，共通的缺陷都是：apply 只憑「安裝器離開代碼 0」就回報成功，
+從來沒有確認新版本真的在服務。
+
+完成，結果已寫入 Z:\update-test-restart.txt
+請把這個檔案整份給我。

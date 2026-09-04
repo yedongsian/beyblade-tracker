@@ -1,0 +1,15 @@
+﻿=== 更新回滾  AcceptanceUser  2026-08-29T19:19:16.8424663+02:00 ===
+
+目前版本 : 1.0.1
+
+--- 執行 rollback ---
+    回滾失敗：BT-UPD-007：找不到可回滾的版本紀錄。
+離開代碼 : 1
+
+回滾後版本 : 1.0.1
+>>> 版本沒有回到 1.0.0，請截圖回報。
+
+下一步：等服務就緒後跑
+  powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 回滾後
+
+完成，結果已寫入 Z:\update-test-rollback.txt

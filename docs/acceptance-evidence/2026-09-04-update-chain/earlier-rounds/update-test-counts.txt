@@ -1,0 +1,50 @@
+﻿
+########## 更新前   2026-08-29T18:59:24.3004699+02:00 ##########
+current.json 版本 : 1.0.0
+/health 回報版本  : 1.0.0
+
+--- 資料筆數 ---
+    communityPosts        0
+    communitySources        1
+    communitySourcesNeedingSetup        1
+    enabledSources        2
+    events              3
+    offers              4
+    officialAnnouncements        0
+    pendingCandidates        7
+    pendingNotifications        0
+    products            3
+    purchasableOffers        1
+    sources             4
+    watchlists          0
+
+--- 更新狀態 ---
+    /health 未回報更新狀態
+
+完成，結果已寫入 Z:\update-test-counts.txt
+更新前後都跑過之後，把這個檔案的內容給我，資料筆數必須完全相同。
+
+########## 更新後   2026-08-29T19:09:12.1541914+02:00 ##########
+current.json 版本 : 1.0.1
+/health 回報版本  : 1.0.0
+
+--- 資料筆數 ---
+    communityPosts        0
+    communitySources        1
+    communitySourcesNeedingSetup        1
+    enabledSources        2
+    events              3
+    offers              4
+    officialAnnouncements        0
+    pendingCandidates        7
+    pendingNotifications        0
+    products            3
+    purchasableOffers        1
+    sources             4
+    watchlists          0
+
+--- 更新狀態 ---
+    /health 未回報更新狀態
+
+完成，結果已寫入 Z:\update-test-counts.txt
+更新前後都跑過之後，把這個檔案的內容給我，資料筆數必須完全相同。

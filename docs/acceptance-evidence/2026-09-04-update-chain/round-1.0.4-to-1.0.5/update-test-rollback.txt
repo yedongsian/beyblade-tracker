@@ -1,0 +1,18 @@
+﻿=== 更新回滾  AcceptanceUser  2026-09-03T18:20:56.2466164+02:00 ===
+
+目前版本 : 1.0.2
+
+--- 先停止服務（restoreBackup 拒絕覆寫執行中的資料庫）---
+服務已停止。
+
+--- 執行 rollback ---
+    已回滾至 1.0.1；資料庫完整性：ok
+離開代碼 : 0
+
+回滾後版本 : 1.0.1
+回滾成功。
+
+下一步：等服務就緒後跑
+  powershell -NoProfile -ExecutionPolicy Bypass -File Z:\update-test-check.ps1 -Label 回滾後
+
+完成，結果已寫入 Z:\update-test-rollback.txt

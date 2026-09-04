@@ -1,0 +1,23 @@
+﻿=== BT-REL-001 launcher 分層診斷  2026-08-29T19:41:44.1233359+02:00 ===
+
+--- 0. 起點 ---
+current.json : 1.0.1
+/health      : 1.0.0
+
+--- 1. 前置條件（缺任何一項 launcher 就會丟 BT-LCH-001／002）---
+launcher.ps1         True   C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker\launcher.ps1
+node.exe             True   C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker\versions\1.0.1\runtime\node.exe
+service-control.js   True   C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker\versions\1.0.1\scripts\service-control.js
+
+--- 2. 回滾鎖（會擋掉 start／restart）---
+不存在（不是這個原因）
+
+--- 3. 執行 launcher.ps1 -Action restart -NonInteractive（可見）---
+離開代碼 : 1
+stdout : （空）
+stderr :
+    BT-LCH-003
+執行後 /health : 1.0.0
+
+--- 4. 直接執行 service-control.js restart（繞過 launcher）---
+    Tracker 目前沒有執行。

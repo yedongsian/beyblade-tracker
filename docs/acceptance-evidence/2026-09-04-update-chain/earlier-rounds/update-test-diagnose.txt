@@ -1,0 +1,90 @@
+﻿=== 更新後版本落差診斷  AcceptanceUser  2026-08-29T19:18:39.5798824+02:00 ===
+
+--- 1. 兩邊各自宣稱的版本 ---
+current.json        : 1.0.1
+/health 回報        : 1.0.0
+/health status      : ok
+
+>>> 落差確認：安裝的是 1.0.1，實際在跑的是 1.0.0。
+
+--- 2. 8787 由誰持有（關鍵） ---
+PID       : 4448
+啟動時間  : 08/29/2026 19:03:30
+命令列    : "C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker\versions\1.0.0\runtime\node.exe" --no-warnings "C:\Users\AcceptanceUser\AppData\Local\Programs\Beyblade Tracker\versions\1.0.0\bin\service.js"
+
+--- 3. 所有 Beyblade 相關的 node 行程 ---
+PID 4448     版本            啟動 2026/8/29 下午 07:03:30
+（若同時看到兩個不同版本的行程，就是舊行程沒退場、佔住 8787。）
+
+--- 4. 已安裝的版本目錄 ---
+    1.0.0      package.json=1.0.0
+    1.0.1      package.json=1.0.1
+
+--- 5. pid 檔 ---
+tracker.pid 記錄 : 4448
+該 PID 是否存活  : True
+
+--- 6. tracker.log 最後 60 行 ---
+    2026-08-29T15:16:43.851Z [warn] web request failed: code=BT-SRC-003 supportRef=eGdAhnjlgv-O
+    2026-08-29T15:18:54.686Z [info] {"event":"operation","correlationId":"MCT1_BWuupQe","component":"source","operation":"monitor","sourceKey":"hlj-com","status":"failed","durationMs":34,"errorClass":"dns","validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T15:18:54.680Z"}
+    2026-08-29T15:18:54.686Z [warn] source hlj-com failed: getaddrinfo ENOTFOUND www.hlj.com
+    2026-08-29T15:18:54.687Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T15:18:54.688Z [info] next crawl in 2226s
+    2026-08-29T15:23:47.846Z [info] {"event":"operation","correlationId":"PKVcsC07f6fT","component":"parser","operation":"extract","sourceKey":"hlj-com","status":"success","durationMs":5961,"errorClass":null,"validCount":1,"invalidCount":0,"failedCount":0,"pageCount":1,"pageFailedCount":0,"createdAt":"2026-08-29T15:23:47.833Z"}
+    2026-08-29T15:23:47.969Z [info] {"event":"operation","correlationId":"PKVcsC07f6fT","component":"source","operation":"monitor","sourceKey":"hlj-com","status":"success","durationMs":6077,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T15:23:47.949Z"}
+    2026-08-29T15:23:47.970Z [info] source hlj-com: 1 items, 0 events
+    2026-08-29T15:23:47.972Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T15:23:47.977Z [info] next crawl in 1932s
+    2026-08-29T15:23:48.059Z [warn] web request failed: code=BT-SRC-003 supportRef=wiC-I8g2tBaS
+    2026-08-29T15:24:25.759Z [warn] web request failed: code=BT-SRC-005 supportRef=rg7Q_Kp2mDJl
+    2026-08-29T15:26:07.549Z [info] {"event":"operation","correlationId":"bUEv4tAZXLHl","component":"source","operation":"monitor","sourceKey":"hlj-com","status":"failed","durationMs":65,"errorClass":"dns","validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T15:26:07.540Z"}
+    2026-08-29T15:26:07.550Z [warn] source hlj-com failed: getaddrinfo ENOTFOUND www.hlj.com
+    2026-08-29T15:26:07.551Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T15:26:07.553Z [info] next crawl in 1793s
+    2026-08-29T15:55:57.169Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T15:55:57.193Z [info] next crawl in 5s
+    2026-08-29T15:56:06.364Z [info] {"event":"operation","correlationId":"g4Mdw75H7Kpg","component":"parser","operation":"extract","sourceKey":"demo-fixture","status":"success","durationMs":2660,"errorClass":null,"validCount":3,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T15:56:06.312Z"}
+    2026-08-29T15:56:06.619Z [info] {"event":"operation","correlationId":"g4Mdw75H7Kpg","component":"source","operation":"monitor","sourceKey":"demo-fixture","status":"success","durationMs":2941,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T15:56:06.592Z"}
+    2026-08-29T15:56:06.619Z [info] source demo-fixture: 3 items, 0 events
+    2026-08-29T15:56:06.631Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T15:56:06.634Z [info] next crawl in 913s
+    2026-08-29T16:43:20.301Z [info] web app on http://127.0.0.1:8787  (health: /health)
+    2026-08-29T16:43:21.404Z [info] {"event":"operation","correlationId":"J2yIJ1X2zPC9","component":"parser","operation":"extract","sourceKey":"demo-fixture","status":"success","durationMs":794,"errorClass":null,"validCount":3,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T16:43:21.394Z"}
+    2026-08-29T16:43:21.480Z [info] {"event":"operation","correlationId":"J2yIJ1X2zPC9","component":"source","operation":"monitor","sourceKey":"demo-fixture","status":"success","durationMs":869,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T16:43:21.469Z"}
+    2026-08-29T16:43:21.480Z [info] source demo-fixture: 3 items, 0 events
+    2026-08-29T16:43:27.332Z [info] {"event":"operation","correlationId":"J2yIJ1X2zPC9","component":"parser","operation":"extract","sourceKey":"hlj-com","status":"success","durationMs":5829,"errorClass":null,"validCount":1,"invalidCount":0,"failedCount":0,"pageCount":1,"pageFailedCount":0,"createdAt":"2026-08-29T16:43:27.324Z"}
+    2026-08-29T16:43:27.390Z [info] {"event":"operation","correlationId":"J2yIJ1X2zPC9","component":"source","operation":"monitor","sourceKey":"hlj-com","status":"success","durationMs":5885,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T16:43:27.380Z"}
+    2026-08-29T16:43:27.390Z [info] source hlj-com: 1 items, 0 events
+    2026-08-29T16:43:27.398Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T16:43:27.408Z [info] next crawl in 952s
+    2026-08-29T16:59:21.155Z [info] {"event":"operation","correlationId":"el1TRIBpfpH9","component":"parser","operation":"extract","sourceKey":"demo-fixture","status":"success","durationMs":640,"errorClass":null,"validCount":3,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T16:59:21.127Z"}
+    2026-08-29T16:59:21.310Z [info] {"event":"operation","correlationId":"el1TRIBpfpH9","component":"source","operation":"monitor","sourceKey":"demo-fixture","status":"success","durationMs":817,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T16:59:21.303Z"}
+    2026-08-29T16:59:21.311Z [info] source demo-fixture: 3 items, 0 events
+    2026-08-29T16:59:21.321Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T16:59:21.326Z [info] next crawl in 860s
+    2026-08-29T17:00:52.478Z [info] service shutting down: stop.request
+    2026-08-29T17:01:19.077Z [info] web app on http://127.0.0.1:8787  (health: /health)
+    2026-08-29T17:01:19.192Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T17:01:19.195Z [info] next crawl in 742s
+    2026-08-29T17:01:26.380Z [info] {"event":"operation","correlationId":"GUKx_chopcRc","component":"update","operation":"check_available","sourceKey":null,"status":"success","durationMs":2211,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:01:26.331Z"}
+    2026-08-29T17:01:26.381Z [info] scheduled update available: 1.0.1
+    2026-08-29T17:02:15.579Z [info] {"event":"operation","correlationId":"kCA2iocmsMPM","component":"update","operation":"check_available","sourceKey":null,"status":"success","durationMs":414,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:02:15.554Z"}
+    2026-08-29T17:02:14.421Z [info] {"event":"operation","correlationId":"dhB49xL0kSGE","component":"update","operation":"check_available","sourceKey":null,"status":"success","durationMs":117,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:02:14.376Z"}
+    2026-08-29T17:03:19.351Z [info] service shutting down: stop.request
+    2026-08-29T17:03:31.487Z [info] web app on http://127.0.0.1:8787  (health: /health)
+    2026-08-29T17:03:31.585Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T17:03:31.588Z [info] next crawl in 610s
+    2026-08-29T17:04:48.077Z [info] {"event":"operation","correlationId":"KtFqK_agWtQS","component":"update","operation":"check_available","sourceKey":null,"status":"success","durationMs":832,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:04:48.037Z"}
+    2026-08-29T17:06:42.038Z [info] {"event":"operation","correlationId":"Fb0WDbbPOVmN","component":"update","operation":"check_available","sourceKey":null,"status":"success","durationMs":437,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:06:42.005Z"}
+    2026-08-29T17:06:42.055Z [info] {"event":"operation","correlationId":"Fb0WDbbPOVmN","component":"update","operation":"defer","sourceKey":null,"status":"success","durationMs":479,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:06:42.047Z"}
+    2026-08-29T17:07:34.316Z [info] {"event":"operation","correlationId":"7JGxYG3hsWdE","component":"update","operation":"resume","sourceKey":null,"status":"success","durationMs":14,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:07:34.306Z"}
+    2026-08-29T17:07:46.961Z [info] {"event":"operation","correlationId":"JZ5bJtevK2-m5RwyqxAh3W1u","component":"update","operation":"check_available","sourceKey":null,"status":"success","durationMs":703,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:07:46.916Z"}
+    2026-08-29T17:08:18.859Z [info] {"event":"operation","correlationId":"JZ5bJtevK2-m5RwyqxAh3W1u","component":"update","operation":"apply","sourceKey":null,"status":"success","durationMs":32638,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:08:18.851Z"}
+    2026-08-29T17:13:44.185Z [info] {"event":"operation","correlationId":"oJMnADoedgVr","component":"parser","operation":"extract","sourceKey":"demo-fixture","status":"success","durationMs":486,"errorClass":null,"validCount":3,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:13:44.164Z"}
+    2026-08-29T17:13:44.329Z [info] {"event":"operation","correlationId":"oJMnADoedgVr","component":"source","operation":"monitor","sourceKey":"demo-fixture","status":"success","durationMs":630,"errorClass":null,"validCount":0,"invalidCount":0,"failedCount":0,"pageCount":0,"pageFailedCount":0,"createdAt":"2026-08-29T17:13:44.309Z"}
+    2026-08-29T17:13:44.330Z [info] source demo-fixture: 3 items, 0 events
+    2026-08-29T17:13:44.337Z [info] notifications: 0 groups, 0 sent, 0 skipped, 0 failed
+    2026-08-29T17:13:44.348Z [info] next crawl in 889s
+
+完成，結果已寫入 Z:\update-test-diagnose.txt
+請把這個檔案整份給我。

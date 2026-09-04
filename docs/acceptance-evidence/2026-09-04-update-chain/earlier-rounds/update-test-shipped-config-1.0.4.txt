@@ -1,0 +1,16 @@
+﻿
+########## BT-UPD-002 Recheck   2026-09-04T01:24:14.2277407+02:00 ##########
+
+--- 更新設定究竟從哪裡來 ---
+.env 檔案 : 不存在
+產物 release.json updateManifestUrl : https://github.com/yedongsian/beyblade-tracker/releases/latest/download/release-manifest.json
+產物 release.json updatePublicKey   : 有
+
+[目前] 安裝版本   : 1.0.4
+[目前] /health    : 1.0.4
+[目前] 更新來源   : https://github.com/yedongsian/beyblade-tracker/releases/latest/download/release-manifest.json
+
+=== 更新來源來自產物內建值 ✔ BT-UPD-002 通過 ===
+
+完成，結果已寫入 Z:\update-test-shipped-config.txt
+請把這個檔案整份給我。

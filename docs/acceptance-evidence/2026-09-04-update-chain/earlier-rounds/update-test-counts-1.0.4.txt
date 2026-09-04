@@ -1,0 +1,108 @@
+﻿
+########## 更新前   2026-09-03T17:56:21.5727103+02:00 ##########
+current.json 版本 : 1.0.1
+/health 回報版本  : 1.0.1
+
+--- 資料筆數 ---
+    communityPosts        0
+    communitySources        1
+    communitySourcesNeedingSetup        1
+    enabledSources        2
+    events              3
+    offers              4
+    officialAnnouncements        0
+    pendingCandidates        8
+    pendingNotifications        0
+    products            3
+    purchasableOffers        1
+    sources             4
+    watchlists          0
+
+--- 發行資訊 ---
+    通道       : stable
+    更新來源   : https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.2/release-manifest.json
+    整體狀態   : ok
+
+完成，結果已寫入 Z:\update-test-counts.txt
+更新前後都跑過之後，把這個檔案的內容給我，資料筆數必須完全相同。
+
+########## 更新後   2026-09-03T18:01:52.6817469+02:00 ##########
+current.json 版本 : 1.0.2
+/health 回報版本  : 1.0.2
+
+--- 資料筆數 ---
+    communityPosts        0
+    communitySources        1
+    communitySourcesNeedingSetup        1
+    enabledSources        2
+    events              3
+    offers              4
+    officialAnnouncements        0
+    pendingCandidates        8
+    pendingNotifications        0
+    products            3
+    purchasableOffers        1
+    sources             4
+    watchlists          0
+
+--- 發行資訊 ---
+    通道       : stable
+    更新來源   : https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.2/release-manifest.json
+    整體狀態   : ok
+
+完成，結果已寫入 Z:\update-test-counts.txt
+更新前後都跑過之後，把這個檔案的內容給我，資料筆數必須完全相同。
+
+########## 更新後   2026-09-03T18:11:31.1479739+02:00 ##########
+current.json 版本 : 1.0.2
+/health 回報版本  : 1.0.2
+
+--- 資料筆數 ---
+    communityPosts        0
+    communitySources        1
+    communitySourcesNeedingSetup        1
+    enabledSources        2
+    events              3
+    offers              4
+    officialAnnouncements        0
+    pendingCandidates        8
+    pendingNotifications        0
+    products            3
+    purchasableOffers        1
+    sources             4
+    watchlists          0
+
+--- 發行資訊 ---
+    通道       : stable
+    更新來源   : https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.2/release-manifest.json
+    整體狀態   : ok
+
+完成，結果已寫入 Z:\update-test-counts.txt
+更新前後都跑過之後，把這個檔案的內容給我，資料筆數必須完全相同。
+
+########## 回滾後   2026-09-03T18:22:07.3520034+02:00 ##########
+current.json 版本 : 1.0.1
+/health 回報版本  : 1.0.1
+
+--- 資料筆數 ---
+    communityPosts        0
+    communitySources        1
+    communitySourcesNeedingSetup        1
+    enabledSources        2
+    events              3
+    offers              4
+    officialAnnouncements        0
+    pendingCandidates        8
+    pendingNotifications        0
+    products            3
+    purchasableOffers        1
+    sources             4
+    watchlists          0
+
+--- 發行資訊 ---
+    通道       : stable
+    更新來源   : https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.2/release-manifest.json
+    整體狀態   : ok
+
+完成，結果已寫入 Z:\update-test-counts.txt
+更新前後都跑過之後，把這個檔案的內容給我，資料筆數必須完全相同。

@@ -1,0 +1,48 @@
+﻿
+########## BT-UPD-002 Before   2026-09-04T01:11:25.1091360+02:00 ##########
+
+--- 1. 清除前幾輪手動設定的環境變數 ---
+UPDATE_MANIFEST_URL  原本有值  清除後已清空 ✔
+UPDATE_PUBLIC_KEY    原本有值  清除後已清空 ✔
+
+--- 2. 目前狀態（環境變數已清、尚未安裝 1.0.4）---
+[清除後] 安裝版本   : 1.0.3
+[清除後] /health    : 1.0.3
+[清除後] 更新來源   : https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.3/release-manifest.json
+
+=== 下一步 ===
+  1. 開始功能表 →「停止背景追蹤」，再開「Beyblade Tracker」
+     （環境變數只對新行程生效，服務必須重開才會真的失去那兩個值）
+  2. 到設定頁看「版本更新」區塊，應顯示「正式更新來源尚未設定」——
+     那正是修正前一般使用者的處境，也證明先前幾輪是靠環境變數才過的。
+  3. 回到選單按 A，安裝 1.0.4 並記錄修正後的行為。
+
+完成，結果已寫入 Z:\update-test-shipped-config.txt
+請把這個檔案整份給我。
+
+########## BT-UPD-002 After   2026-09-04T01:17:40.1791224+02:00 ##########
+
+--- 1. 安裝器完整性 ---
+預期 SHA-256 : cb0cfd370b82dfe684a2ea7a6f55ea7b414c0096fe802a8ab789ae86bdf14cdf
+實際 SHA-256 : cb0cfd370b82dfe684a2ea7a6f55ea7b414c0096fe802a8ab789ae86bdf14cdf
+雜湊相符 ✔
+
+--- 2. 再次確認環境變數是空的（否則這一輪證明不了任何事）---
+UPDATE_MANIFEST_URL  空 ✔
+UPDATE_PUBLIC_KEY    空 ✔
+
+--- 3. 安裝 1.0.4 ---
+安裝精靈即將出現，請全程使用預設值完成。
+安裝器離開代碼 : 0（成功）
+
+--- 4. 等服務就緒 ---
+
+--- 5. 修正後的狀態 ---
+[安裝後] 安裝版本   : 1.0.4
+[安裝後] /health    : 1.0.4
+[安裝後] 更新來源   : https://github.com/yedongsian/beyblade-tracker/releases/download/v1.0.3/release-manifest.json
+
+=== >>> 可疑：更新來源不是 /releases/latest/download，可能被別處覆寫。 ===
+
+完成，結果已寫入 Z:\update-test-shipped-config.txt
+請把這個檔案整份給我。

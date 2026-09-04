@@ -1,0 +1,22 @@
+﻿=== 更新流程驗收 前置設定  AcceptanceUser  2026-08-29T18:58:48.7057480+02:00 ===
+
+--- 1. 目前安裝的版本 ---
+current.json : 1.0.0
+
+--- 2. 簽章公鑰 ---
+公鑰檔 : Z:\manifest-public-key.pem（113 字元）
+
+--- 3. 寫入使用者環境變數 ---
+
+--- 4. 讀回驗證 ---
+UPDATE_MANIFEST_URL : 正確
+UPDATE_PUBLIC_KEY   : 正確（4 行，含 BEGIN／END）
+
+=== 前置設定完成 ===
+
+下一步（環境變數只對新啟動的行程生效，所以服務一定要重開）：
+  1. 開始功能表 →「停止背景追蹤」
+  2. 開始功能表 →「Beyblade Tracker」
+  3. 等服務就緒（VM 上約 30～60 秒），然後回到 UPDATE-TEST.md 的步驟 4
+
+完成，結果已寫入 Z:\update-test-setup.txt

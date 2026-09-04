@@ -33,7 +33,7 @@ Priority：`P0` 發布／資料／安全 blocker；`P1` 下一階段重要工作
 | BT-UX-006 | P1 | **Verified** | 更新完成後仍兜售剛裝好的那一版，安裝按鈕還在 | 2026-09-04 VM 實測通過 |
 | BT-UX-007 | P2 | Proposed | 更新成功後沒有任何使用者可及的回滾入口 | — |
 | BT-UX-008 | P1 | Fixed（1.0.5） | 無法檢查更新時，畫面仍宣稱「目前已是最新版本」 | 已納入 1.0.5 |
-| BT-UX-009 | P1 | Fixed（待發佈） | 更新成功時顯示「Failed to fetch」，看起來像失敗 | 1.0.5 之後才會到使用者手上 |
+| BT-UX-009 | P1 | Fixed（1.0.6） | 更新成功時顯示「Failed to fetch」，看起來像失敗 | 已納入 1.0.6 |
 | BT-P1-001 | P1 | Done | 使 Local Web 測試不受 ambient proxy 影響 | 無 |
 | BT-P1-002 | P1 | Done | 建立 local-first 可觀測性 | — |
 | BT-P1-003 | P1 | Done | 修正 Windows PowerShell 5.1 Launcher 編碼 | — |

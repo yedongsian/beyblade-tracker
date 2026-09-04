@@ -1181,6 +1181,32 @@ test('the update card speaks the language the page does', () => {
   assert.match(en, /September/);
 });
 
+// BT-UX-009. A successful update stops the very service the page is polling, so the poll always
+// loses its connection - and the page reported that as a failure, showing the browser's own
+// "Failed to fetch": untranslated, no error code, no remedy, on a screen where the product's whole
+// error-code system exists to prevent exactly that. Worse, it says "failed" at the moment the
+// update actually worked, inviting the user to run it again.
+test('losing the connection mid-handover is treated as the update working', () => {
+  const script = settingsScript(createTranslator('zh-TW'));
+  assert.match(script, /let lastPhase=null/, 'the poll must remember how far it got');
+  assert.match(script, /lastPhase=data\.phase/, 'and keep that up to date');
+  // The phases during which the service is expected to go away.
+  assert.match(script, /\['installing','verifying','completed'\]\.includes\(lastPhase\)/,
+    'a dropped connection is only benign once the handover has begun');
+  assert.match(script, /function awaitService/, 'it must wait for the new version rather than give up');
+  assert.doesNotMatch(script, /setSettingsStatus\(error\.message,'error'\)\}\)\;?$/m,
+    'a raw fetch error must not be the last word on an update');
+});
+
+test('a failure before the handover is still reported as a failure', () => {
+  const script = settingsScript(createTranslator('zh-TW'));
+  // The benign branch must be gated on lastPhase, not swallow every error unconditionally.
+  const benign = script.match(/if\(\['installing','verifying','completed'\]\.includes\(lastPhase\)\)/);
+  assert.ok(benign, 'the guard must exist');
+  // checking/downloading failures still reach renderUpdate and setSettingsStatus.
+  assert.match(script, /setUpdateBusy\(false\);renderUpdate\(/, 'the error path must still restore the buttons');
+});
+
 test('a deferred update is still reachable but stops nagging', async () => {
   await withUpdateAvailable(async ({ db, base }) => {
     db.run("INSERT INTO user_settings (key,value_json,updated_at) VALUES ('updateDeferred',?,?)", [
